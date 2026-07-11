@@ -57,6 +57,13 @@ const state = {
 
 const VIEW_CACHE_MS = 25000;
 
+function newLocalId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try { return crypto.randomUUID(); } catch { /* HTTP / insecure context */ }
+  }
+  return `loc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 // ── Storage ──
 function loadSession() {
   try {
@@ -1006,7 +1013,7 @@ document.getElementById('btnHold').addEventListener('click', () => {
   if (!state.cart.length) { toast('السلة فارغة'); return; }
   const held = getHeld();
   held.push({
-    id: crypto.randomUUID(),
+    id: newLocalId(),
     cart: [...state.cart],
     customer: state.customer,
     discount: state.discount,
@@ -1256,7 +1263,9 @@ document.querySelectorAll('[data-close]').forEach((btn) => {
   btn.addEventListener('click', () => btn.closest('dialog')?.close());
 });
 
-document.getElementById('btnConfirmSale').addEventListener('click', () => submitSale());
+document.getElementById('btnConfirmSale')?.addEventListener('click', () => {
+  submitSale().catch((err) => toast(err.message || 'فشل إتمام البيع', 'err'));
+});
 
 function printHtml(html) {
   const clean = String(html).replace(/<script[\s\S]*?<\/script>/gi, '');
@@ -1289,78 +1298,78 @@ async function submitSale() {
   const confirmBtn = document.getElementById('btnConfirmSale');
   if (confirmBtn?.disabled) return;
 
-  const subtotal = state.cart.reduce((s, l) => s + l.lineTotal, 0);
-  const total = Math.max(0, subtotal - state.discount);
-  let paymentMethod = 'cash';
-  let paidAmount = total;
-  let accountId = null;
-
-  if (state.checkoutMethod === 'credit') {
-    if (!state.customer) { toast('اختر حساباً للبيع الآجل', 'err'); return; }
-    paymentMethod = 'credit';
-    paidAmount = 0;
-    accountId = state.customer.id;
-  } else if (state.checkoutMethod === 'partial') {
-    if (!state.customer) { toast('اختر حساباً للبيع الجزئي', 'err'); return; }
-    paymentMethod = 'partial';
-    paidAmount = Number(document.getElementById('paidNow').value || 0);
-    accountId = state.customer.id;
-  }
-
-  const payload = {
-    localId: crypto.randomUUID(),
-    lines: state.cart.map((l) => ({
-      productId: l.productId, barcode: l.barcode, name: l.name,
-      qty: l.qty, giftQty: l.giftQty || 0, unitPrice: l.unitPrice, lineTotal: l.lineTotal,
-      priceEdited: !!l.priceEdited, originalPrice: l.originalPrice
-    })),
-    discount: state.discount,
-    paymentMethod, paidAmount, accountId,
-    customerName: state.customer?.name || '',
-    notes: document.getElementById('checkoutNotes').value || ''
-  };
-
-  const clearCart = () => {
-    state.cart = [];
-    state.customer = null;
-    state.discount = 0;
-    document.getElementById('discountInput').value = '0';
-    document.getElementById('customerLabel').textContent = 'نقدي — بدون حساب';
-    document.getElementById('checkoutNotes').value = '';
-    document.getElementById('lastScanPreview')?.classList.add('hidden');
-    newPosSession();
-    renderCart();
-    focusBarcode();
-  };
-
   try {
     if (confirmBtn) {
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'جاري الحفظ...';
     }
-    const data = await api('/branch/invoices', { method: 'POST', body: JSON.stringify(payload) });
-    if (!data.invoice?.id) throw new Error('لم يُرجع السيرفر رقم الفاتورة');
-    toast(`✓ تم البيع — ${data.invoice.invoiceNo}`);
-    state.lastInvoiceId = data.invoice.id;
-    localStorage.setItem(LAST_INV_KEY, String(data.invoice.id));
-    document.getElementById('checkoutModal').close();
-    clearCart();
-    printInvoice(data.invoice.id);
-    loadTodaySummary();
-    loadProducts();
-    bustViewCache('dashboard', 'invoices', 'accounts');
-  } catch (err) {
-    if (navigator.onLine) {
-      toast(err.message || 'فشل إتمام البيع', 'err');
-      return;
+
+    const subtotal = state.cart.reduce((s, l) => s + l.lineTotal, 0);
+    const total = Math.max(0, subtotal - state.discount);
+    let paymentMethod = 'cash';
+    let paidAmount = total;
+    let accountId = null;
+
+    if (state.checkoutMethod === 'credit') {
+      if (!state.customer) { toast('اختر حساباً للبيع الآجل', 'err'); return; }
+      paymentMethod = 'credit';
+      paidAmount = 0;
+      accountId = state.customer.id;
+    } else if (state.checkoutMethod === 'partial') {
+      if (!state.customer) { toast('اختر حساباً للبيع الجزئي', 'err'); return; }
+      paymentMethod = 'partial';
+      paidAmount = Number(document.getElementById('paidNow').value || 0);
+      accountId = state.customer.id;
     }
-    const outbox = getOutbox();
-    outbox.push({ ...payload, syncStatus: 'pending', createdAt: new Date().toISOString() });
-    saveOutbox(outbox);
-    updateSyncPill();
-    toast('حُفظت محلياً — ستُرفع عند الاتصال', 'warn');
-    document.getElementById('checkoutModal').close();
-    clearCart();
+
+    const payload = {
+      localId: newLocalId(),
+      lines: state.cart.map((l) => ({
+        productId: l.productId, barcode: l.barcode, name: l.name,
+        qty: l.qty, giftQty: l.giftQty || 0, unitPrice: l.unitPrice, lineTotal: l.lineTotal,
+        priceEdited: !!l.priceEdited, originalPrice: l.originalPrice
+      })),
+      discount: state.discount,
+      paymentMethod, paidAmount, accountId,
+      customerName: state.customer?.name || '',
+      notes: document.getElementById('checkoutNotes').value || ''
+    };
+
+    const clearCart = () => {
+      state.cart = [];
+      state.customer = null;
+      state.discount = 0;
+      document.getElementById('discountInput').value = '0';
+      document.getElementById('customerLabel').textContent = 'نقدي';
+      document.getElementById('checkoutNotes').value = '';
+      document.getElementById('lastScanPreview')?.classList.add('hidden');
+      newPosSession();
+      renderCart();
+      focusBarcode();
+    };
+
+    try {
+      const data = await api('/branch/invoices', { method: 'POST', body: JSON.stringify(payload) });
+      if (!data.invoice?.id) throw new Error('لم يُرجع السيرفر رقم الفاتورة');
+      toast(`✓ تم البيع — ${data.invoice.invoiceNo}`);
+      state.lastInvoiceId = data.invoice.id;
+      localStorage.setItem(LAST_INV_KEY, String(data.invoice.id));
+      document.getElementById('checkoutModal').close();
+      clearCart();
+      printInvoice(data.invoice.id);
+      loadTodaySummary();
+      loadProducts();
+      bustViewCache('dashboard', 'invoices', 'accounts');
+    } catch (err) {
+      if (navigator.onLine) throw err;
+      const outbox = getOutbox();
+      outbox.push({ ...payload, syncStatus: 'pending', createdAt: new Date().toISOString() });
+      saveOutbox(outbox);
+      updateSyncPill();
+      toast('حُفظت محلياً — ستُرفع عند الاتصال', 'warn');
+      document.getElementById('checkoutModal').close();
+      clearCart();
+    }
   } finally {
     if (confirmBtn) {
       confirmBtn.disabled = false;
