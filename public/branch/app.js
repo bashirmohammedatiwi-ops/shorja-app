@@ -18,11 +18,11 @@ const DEFAULT_SETTINGS = {
 };
 
 const PAGE_TITLES = {
-  pos: ['نقطة البيع', 'مسح · بحث · بيع سريع'],
+  pos: ['إنشاء فاتورة', 'مبيعات · مرتجعات · إخراج مخزون'],
   dashboard: ['ملخص اليوم', 'إحصائيات مبيعات الفرع'],
-  invoices: ['الفواتير', 'سجل المبيعات والمرتجعات'],
+  invoices: ['الفواتير', 'سجل المبيعات والمرتجعات والإخراج'],
   returns: ['مرتجع مبيعات', 'إرجاع كامل أو جزئي'],
-  held: ['فواتير معلّقة', 'استئناف البيع المحفوظ'],
+  held: ['فواتير معلّقة', 'استئناف الفاتورة المحفوظة'],
   accounts: ['حسابات العملاء', 'الديون والأرصدة'],
   payments: ['تسديد الحسابات', 'تسجيل دفعات العملاء'],
   stock: ['المخزون', 'كل المنتجات · فلاتر وبحث'],
@@ -43,6 +43,8 @@ const state = {
   customer: null,
   discount: 0,
   checkoutMethod: 'cash',
+  invoiceType: 'sale',
+  returnParent: null,
   priceVersion: 0,
   online: navigator.onLine,
   activeInvoice: null,
@@ -145,10 +147,88 @@ async function validateSession() {
 }
 
 function payLabel(method, inv = null) {
+  if (method === 'issue') return 'إخراج';
   if (method === 'partial') return 'جزئي';
   if (method === 'credit') return 'آجل';
   if (inv && inv.paidAmount > 0 && inv.dueAmount > 0) return 'جزئي';
   return 'نقدي';
+}
+
+function kindLabel(kind) {
+  if (kind === 'return') return 'مرتجع';
+  if (kind === 'issue') return 'إخراج';
+  return 'مبيعات';
+}
+
+function kindBadgeClass(kind) {
+  if (kind === 'return') return 'return';
+  if (kind === 'issue') return 'issue';
+  return 'sale';
+}
+
+function invoiceTypeHeading(type) {
+  if (type === 'return') return 'فاتورة مرتجع';
+  if (type === 'issue') return 'إذن إخراج مخزون';
+  return 'فاتورة مبيعات';
+}
+
+function checkoutButtonText(type) {
+  if (type === 'return') return 'تأكيد المرتجع';
+  if (type === 'issue') return 'تأكيد الإخراج';
+  return 'إتمام الفاتورة';
+}
+
+function setInvoiceType(type, { force = false } = {}) {
+  const next = ['sale', 'return', 'issue'].includes(type) ? type : 'sale';
+  if (!force && next !== state.invoiceType && state.cart.length) {
+    if (!confirm('تغيير نوع الفاتورة سيفرغ البنود الحالية — متابعة؟')) return;
+  }
+  state.invoiceType = next;
+  state.cart = [];
+  state.customer = null;
+  state.discount = 0;
+  state.returnParent = null;
+  document.getElementById('discountInput').value = '0';
+  document.getElementById('customerLabel').textContent = 'نقدي';
+  document.getElementById('issueReason') && (document.getElementById('issueReason').value = '');
+  document.getElementById('lastScanPreview')?.classList.add('hidden');
+
+  const viewPos = document.getElementById('viewPos');
+  viewPos?.classList.remove('inv-type-sale', 'inv-type-return', 'inv-type-issue');
+  viewPos?.classList.add(`inv-type-${next}`);
+
+  document.querySelectorAll('.inv-type-tab').forEach((tab) => {
+    const active = tab.dataset.invType === next;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+
+  const heading = document.getElementById('posInvoiceHeading');
+  if (heading) heading.textContent = invoiceTypeHeading(next);
+  const thQty = document.getElementById('thQty');
+  if (thQty) thQty.textContent = next === 'return' ? 'مرتجع' : 'الكمية';
+  const btnText = document.getElementById('checkoutBtnText');
+  if (btnText) btnText.textContent = checkoutButtonText(next);
+  const emptyTitle = document.getElementById('cartEmptyTitle');
+  const emptySub = document.getElementById('cartEmptySub');
+  if (emptyTitle && emptySub) {
+    if (next === 'return') {
+      emptyTitle.textContent = 'اختر فاتورة مبيعات';
+      emptySub.textContent = 'ثم حدّد كميات المرتجع في الجدول';
+    } else if (next === 'issue') {
+      emptyTitle.textContent = 'امسح المنتجات للإخراج';
+      emptySub.textContent = 'اكتب سبب الإخراج قبل التأكيد';
+    } else {
+      emptyTitle.textContent = 'ابدأ بمسح باركود';
+      emptySub.textContent = 'أو ابحث عن منتج بالاسم';
+    }
+  }
+
+  document.getElementById('returnParentBanner')?.classList.add('hidden');
+  if (next === 'return') loadPosReturnCandidates();
+  else focusBarcode();
+  newPosSession();
+  renderCart();
 }
 
 function invalidateProducts() {
@@ -374,19 +454,20 @@ document.getElementById('btnLogout').addEventListener('click', () => {
 document.getElementById('mainNav').addEventListener('click', (e) => {
   const btn = e.target.closest('.nav-item');
   if (!btn) return;
+  const invType = btn.dataset.invType;
+  const view = btn.dataset.view;
   document.querySelectorAll('.nav-item').forEach((b) => b.classList.remove('active'));
   btn.classList.add('active');
-  const view = btn.dataset.view;
   document.querySelectorAll('.view').forEach((v) => v.classList.add('hidden'));
   const el = document.getElementById(`view${view.charAt(0).toUpperCase() + view.slice(1)}`);
   if (el) el.classList.remove('hidden');
   setPosMode(view === 'pos');
   setPageTitle(view);
+  if (view === 'pos' && invType) setInvoiceType(invType, { force: true });
   const loaders = {
     pos: () => focusBarcode(),
     dashboard: loadDashboard,
     invoices: loadInvoices,
-    returns: loadReturnCandidates,
     held: loadHeldList,
     accounts: loadAccounts,
     payments: loadPaymentsView,
@@ -395,6 +476,12 @@ document.getElementById('mainNav').addEventListener('click', (e) => {
     settings: loadSettingsView
   };
   loaders[view]?.();
+});
+
+document.getElementById('invoiceTypeTabs')?.addEventListener('click', (e) => {
+  const tab = e.target.closest('.inv-type-tab');
+  if (!tab) return;
+  setInvoiceType(tab.dataset.invType);
 });
 
 document.getElementById('dashboardActions')?.addEventListener('click', (e) => {
@@ -647,6 +734,10 @@ const onProductSearchInput = debounce(async () => {
 
 // ── Cart ──
 async function addToCart(barcode, qty = 1) {
+  if (state.invoiceType === 'return') {
+    toast('اختر فاتورة مبيعات للمرتجع أولاً', 'warn');
+    return;
+  }
   const product = await resolveProduct(barcode);
   if (!product) {
     toast('المنتج غير موجود — تحقق من الباركود أو الاسم', 'err');
@@ -662,7 +753,8 @@ async function addToCart(barcode, qty = 1) {
     toast('المنتج غير متوفر في المخزون', 'warn');
   }
   const existing = state.cart.find((l) => l.barcode === product.barcode);
-  const newQty = (existing?.qty || 0) + qty;
+  const addQty = state.invoiceType === 'issue' ? Math.max(1, qty) : qty;
+  const newQty = (existing?.qty || 0) + addQty;
   const totalPieces = newQty + (existing?.giftQty || 0);
   if (product.stockQty > 0 && totalPieces > product.stockQty) {
     if (getSettings().blockOverStock) {
@@ -779,6 +871,30 @@ function setLineQty(idx, val) {
   const line = state.cart[idx];
   if (!line) return;
   let q = Math.max(0, Math.round(Number(val) || 0));
+  if (state.invoiceType === 'return') {
+    const max = Number(line.maxQty ?? 0);
+    q = Math.min(q, max);
+    line.qty = q;
+    updateCartRow(idx);
+    renderCart();
+    return;
+  }
+  if (state.invoiceType === 'issue') {
+    q = Math.max(1, q);
+    if (line.stockQty > 0 && q > line.stockQty) {
+      toast(`المخزون لا يكفي (${line.stockQty} قطعة)`, 'warn');
+      q = line.stockQty;
+    }
+    line.qty = q;
+    if (!line.qty) {
+      state.cart.splice(idx, 1);
+      renderCart();
+      return;
+    }
+    updateCartRow(idx);
+    updateCartMeta();
+    return;
+  }
   if (line.stockQty > 0 && q + (line.giftQty || 0) > line.stockQty) {
     toast(`المخزون لا يكفي (${line.stockQty} قطعة)`, 'warn');
     q = Math.max(0, line.stockQty - (line.giftQty || 0));
@@ -814,14 +930,22 @@ function bindCartTableEvents() {
       const line = state.cart[idx];
       if (!line) return;
       if (action === 'inc') {
-        if (line.stockQty > 0 && line.qty + 1 + (line.giftQty || 0) > line.stockQty) {
+        if (state.invoiceType === 'return') {
+          if (line.qty >= (line.maxQty ?? 0)) return;
+        } else if (line.stockQty > 0 && line.qty + 1 + (line.giftQty || 0) > line.stockQty) {
           toast('المخزون لا يكفي', 'warn');
           return;
         }
         line.qty += 1;
       } else if (action === 'dec') {
         line.qty = Math.max(0, line.qty - 1);
-        if (!line.qty && !line.giftQty) {
+        if (state.invoiceType === 'issue') {
+          if (line.qty <= 0) {
+            state.cart.splice(idx, 1);
+            renderCart();
+            return;
+          }
+        } else if (!line.qty && !line.giftQty) {
           state.cart.splice(idx, 1);
           renderCart();
           return;
@@ -833,6 +957,7 @@ function bindCartTableEvents() {
       }
       recalcLine(line);
       updateCartRow(idx);
+      if (state.invoiceType === 'return') renderCart();
       return;
     }
     const resetBtn = e.target.closest('[data-reset-price]');
@@ -936,7 +1061,8 @@ function renderCartNow() {
   const empty = document.getElementById('cartEmpty');
   const countEl = document.getElementById('cartCount');
   const checkout = document.getElementById('btnCheckout');
-  const n = state.cart.reduce((s, l) => s + l.qty, 0);
+  const type = state.invoiceType;
+  const n = state.cart.reduce((s, l) => s + Number(l.qty || 0), 0);
   const lines = state.cart.length;
   if (countEl) countEl.textContent = `${n} قطعة · ${lines} بند`;
 
@@ -950,6 +1076,55 @@ function renderCartNow() {
     return;
   }
   empty.classList.add('hidden');
+
+  if (type === 'return') {
+    const hasReturnQty = state.cart.some((l) => Number(l.qty) > 0);
+    checkout.disabled = !state.returnParent || !hasReturnQty;
+    tbody.innerHTML = state.cart.map((l, i) => `
+      <tr class="invoice-row" data-idx="${i}">
+        <td class="col-num">${i + 1}</td>
+        <td class="col-name"><strong>${esc(l.name)}</strong></td>
+        <td class="col-barcode" dir="ltr">${esc(l.barcode)}</td>
+        <td class="col-stock" dir="ltr">${l.maxQty ?? l.soldQty}</td>
+        <td class="col-qty">
+          <div class="qty-controls">
+            <button type="button" class="qty-btn" data-action="dec" data-idx="${i}">−</button>
+            <input type="number" class="cell-input qty-input" data-idx="${i}" value="${l.qty}" min="0" max="${l.maxQty ?? 0}" title="كمية المرتجع">
+            <button type="button" class="qty-btn" data-action="inc" data-idx="${i}">+</button>
+          </div>
+        </td>
+        <td class="col-act">
+          <button type="button" class="qty-btn del-btn" data-action="del" data-idx="${i}" disabled title="من فاتورة المصدر">×</button>
+        </td>
+      </tr>
+    `).join('');
+    updateCartTotals();
+    return;
+  }
+
+  if (type === 'issue') {
+    checkout.disabled = false;
+    tbody.innerHTML = state.cart.map((l, i) => `
+      <tr class="invoice-row" data-idx="${i}">
+        <td class="col-num">${i + 1}</td>
+        <td class="col-name"><strong>${esc(l.name)}</strong></td>
+        <td class="col-barcode" dir="ltr">${esc(l.barcode)}</td>
+        <td class="col-qty">
+          <div class="qty-controls">
+            <button type="button" class="qty-btn" data-action="dec" data-idx="${i}">−</button>
+            <input type="number" class="cell-input qty-input" data-idx="${i}" value="${l.qty}" min="1" title="كمية الإخراج">
+            <button type="button" class="qty-btn" data-action="inc" data-idx="${i}">+</button>
+          </div>
+        </td>
+        <td class="col-act">
+          <button type="button" class="qty-btn del-btn" data-action="del" data-idx="${i}">×</button>
+        </td>
+      </tr>
+    `).join('');
+    updateCartTotals();
+    return;
+  }
+
   checkout.disabled = false;
   const allowPrice = getSettings().allowPriceEdit !== false;
   tbody.innerHTML = state.cart.map((l, i) => `
@@ -973,7 +1148,7 @@ function renderCartNow() {
       <td class="col-qty">
         <div class="qty-controls">
           <button type="button" class="qty-btn" data-action="dec" data-idx="${i}">−</button>
-          <input type="number" class="cell-input qty-input" data-idx="${i}" value="${l.qty}" min="0" title="كمية البيع (مدفوعة)">
+          <input type="number" class="cell-input qty-input" data-idx="${i}" value="${l.qty}" min="0" title="الكمية المدفوعة">
           <button type="button" class="qty-btn" data-action="inc" data-idx="${i}">+</button>
         </div>
       </td>
@@ -996,20 +1171,28 @@ function renderCartNow() {
 document.getElementById('discountInput').addEventListener('input', updateCartTotals);
 
 document.getElementById('btnClearCart').addEventListener('click', () => {
-  if (!state.cart.length || confirm('تفريغ الفاتورة الحالية؟')) {
-    state.cart = [];
-    state.customer = null;
-    state.discount = 0;
-    document.getElementById('customerLabel').textContent = 'نقدي — بدون حساب';
-    document.getElementById('discountInput').value = '0';
-    document.getElementById('lastScanPreview')?.classList.add('hidden');
-    newPosSession();
-    renderCart();
+  if (!state.cart.length && !state.returnParent) return;
+  if ((state.cart.length || state.returnParent) && !confirm('تفريغ الفاتورة الحالية؟')) return;
+  if (state.invoiceType === 'return') {
+    state.returnParent = null;
+    document.getElementById('returnParentBanner')?.classList.add('hidden');
+    document.getElementById('posReturnList')?.classList.remove('hidden');
+    loadPosReturnCandidates();
   }
+  state.cart = [];
+  state.customer = null;
+  state.discount = 0;
+  document.getElementById('customerLabel').textContent = 'نقدي';
+  document.getElementById('discountInput').value = '0';
+  document.getElementById('issueReason') && (document.getElementById('issueReason').value = '');
+  document.getElementById('lastScanPreview')?.classList.add('hidden');
+  newPosSession();
+  renderCart();
 });
 
 // ── Hold / resume ──
 document.getElementById('btnHold').addEventListener('click', () => {
+  if (state.invoiceType !== 'sale') { toast('التعليق متاح لمبيعات فقط', 'warn'); return; }
   if (!state.cart.length) { toast('السلة فارغة'); return; }
   const held = getHeld();
   held.push({
@@ -1215,6 +1398,14 @@ document.getElementById('btnCreateCustomer')?.addEventListener('click', async ()
 
 // ── Checkout ──
 document.getElementById('btnCheckout').addEventListener('click', () => {
+  if (state.invoiceType === 'return') {
+    submitReturnFromPos().catch((err) => toast(err.message || 'فشل المرتجع', 'err'));
+    return;
+  }
+  if (state.invoiceType === 'issue') {
+    submitIssue().catch((err) => toast(err.message || 'فشل الإخراج', 'err'));
+    return;
+  }
   const subtotal = state.cart.reduce((s, l) => s + l.lineTotal, 0);
   const total = Math.max(0, subtotal - state.discount);
   document.getElementById('checkoutTotal').textContent = fmt(total);
@@ -1307,6 +1498,145 @@ function printHtml(html) {
   printHtml._blobUrl = URL.createObjectURL(new Blob([clean], { type: 'text/html;charset=utf-8' }));
   frame.src = printHtml._blobUrl;
 }
+
+async function submitIssue() {
+  const confirmBtn = document.getElementById('btnCheckout');
+  const notes = document.getElementById('issueReason')?.value?.trim() || '';
+  if (!notes) { toast('اكتب سبب الإخراج', 'err'); document.getElementById('issueReason')?.focus(); return; }
+  if (!state.cart.length) { toast('أضف منتجاً واحداً على الأقل', 'err'); return; }
+
+  try {
+    if (confirmBtn) confirmBtn.disabled = true;
+    const payload = {
+      kind: 'issue',
+      localId: newLocalId(),
+      lines: state.cart.map((l) => ({
+        productId: l.productId, barcode: l.barcode, name: l.name,
+        qty: l.qty, giftQty: 0, unitPrice: 0, lineTotal: 0
+      })),
+      discount: 0,
+      paymentMethod: 'issue',
+      paidAmount: 0,
+      notes
+    };
+    const data = await api('/branch/invoices', { method: 'POST', body: JSON.stringify(payload) });
+    toast(`✓ تم الإخراج — ${data.invoice.invoiceNo}`);
+    state.lastInvoiceId = data.invoice.id;
+    localStorage.setItem(LAST_INV_KEY, String(data.invoice.id));
+    state.cart = [];
+    document.getElementById('issueReason').value = '';
+    newPosSession();
+    renderCart();
+    printInvoice(data.invoice.id);
+    loadTodaySummary();
+    loadProducts();
+    bustViewCache('dashboard', 'invoices', 'stock');
+  } finally {
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+}
+
+async function submitReturnFromPos() {
+  const confirmBtn = document.getElementById('btnCheckout');
+  if (!state.returnParent) { toast('اختر فاتورة مبيعات أولاً', 'err'); return; }
+  const lines = state.cart.filter((l) => Number(l.qty) > 0).map((l) => ({
+    barcode: l.barcode, qty: Number(l.qty)
+  }));
+  if (!lines.length) { toast('حدد كميات المرتجع', 'err'); return; }
+
+  try {
+    if (confirmBtn) confirmBtn.disabled = true;
+    const data = await api(`/branch/invoices/${state.returnParent.id}/return`, {
+      method: 'POST',
+      body: JSON.stringify({ lines })
+    });
+    toast(`✓ تم المرتجع — ${data.invoice.invoiceNo}`);
+    state.lastInvoiceId = data.invoice.id;
+    localStorage.setItem(LAST_INV_KEY, String(data.invoice.id));
+    setInvoiceType('return', { force: true });
+    printInvoice(data.invoice.id);
+    loadTodaySummary();
+    loadProducts();
+    bustViewCache('dashboard', 'invoices', 'accounts');
+  } finally {
+    if (confirmBtn) confirmBtn.disabled = false;
+  }
+}
+
+async function loadPosReturnCandidates() {
+  const q = document.getElementById('posReturnSearch')?.value || '';
+  const today = new Date().toISOString().slice(0, 10);
+  const fromEl = document.getElementById('posReturnDateFrom');
+  const toEl = document.getElementById('posReturnDateTo');
+  if (fromEl && !fromEl.value) fromEl.value = today;
+  if (toEl && !toEl.value) toEl.value = today;
+  const from = fromEl?.value || today;
+  const to = toEl?.value || today;
+  const list = document.getElementById('posReturnList');
+  if (!list) return;
+  try {
+    const data = await api(`/branch/invoices?kind=sale&from=${from}&to=${to}&q=${encodeURIComponent(q)}&limit=40`);
+    const invs = data.invoices || [];
+    if (!invs.length) {
+      list.innerHTML = '<p class="hint">لا توجد فواتير مبيعات مطابقة</p>';
+      return;
+    }
+    list.innerHTML = invs.map((i) => `
+      <button type="button" class="return-picker-card" data-id="${i.id}">
+        <div>
+          <strong>${esc(i.invoiceNo)}</strong>
+          <div style="font-size:0.78rem;color:var(--text-muted)">${esc(i.customerName || 'نقدي')} · ${esc(i.invoiceDate)}</div>
+        </div>
+        <span dir="ltr" style="font-weight:800;color:var(--primary-dark)">${fmt(i.total)}</span>
+      </button>
+    `).join('');
+    list.querySelectorAll('.return-picker-card').forEach((card) => {
+      card.addEventListener('click', () => selectReturnParent(Number(card.dataset.id)));
+    });
+  } catch {
+    list.innerHTML = '<p class="hint">تعذّر تحميل الفواتير</p>';
+  }
+}
+
+async function selectReturnParent(id) {
+  try {
+    const data = await api(`/branch/invoices/${id}`);
+    const inv = data.invoice;
+    if (!inv || inv.kind !== 'sale') { toast('فاتورة غير صالحة للمرتجع', 'err'); return; }
+    state.returnParent = inv;
+    state.cart = inv.lines.map((l) => ({
+      productId: l.productId,
+      barcode: l.barcode,
+      name: l.name,
+      qty: 0,
+      soldQty: l.qty,
+      giftQty: l.giftQty || 0,
+      maxQty: Number(l.qty || 0) + Number(l.giftQty || 0),
+      unitPrice: l.unitPrice,
+      lineTotal: 0
+    }));
+    const banner = document.getElementById('returnParentBanner');
+    const label = document.getElementById('returnParentLabel');
+    if (label) label.textContent = `${inv.invoiceNo} — ${inv.customerName || 'نقدي'} — ${fmt(inv.total)}`;
+    banner?.classList.remove('hidden');
+    document.getElementById('posReturnList')?.classList.add('hidden');
+    renderCart();
+    toast('حدّد كميات المرتجع في الجدول');
+  } catch (err) { toast(err.message || 'تعذّر تحميل الفاتورة', 'err'); }
+}
+
+document.getElementById('btnClearReturnParent')?.addEventListener('click', () => {
+  state.returnParent = null;
+  state.cart = [];
+  document.getElementById('returnParentBanner')?.classList.add('hidden');
+  document.getElementById('posReturnList')?.classList.remove('hidden');
+  renderCart();
+  loadPosReturnCandidates();
+});
+
+document.getElementById('posReturnSearch')?.addEventListener('input', debounce(loadPosReturnCandidates, 300));
+document.getElementById('posReturnDateFrom')?.addEventListener('change', loadPosReturnCandidates);
+document.getElementById('posReturnDateTo')?.addEventListener('change', loadPosReturnCandidates);
 
 async function submitSale() {
   const confirmBtn = document.getElementById('btnConfirmSale');
@@ -1446,7 +1776,7 @@ async function loadDashboard() {
           <div class="invoice-card mini" data-id="${i.id}">
             <div>
               <strong>${esc(i.invoiceNo)}</strong>
-              <span class="kind-badge ${i.kind === 'return' ? 'return' : 'sale'}">${i.kind === 'return' ? 'مرتجع' : 'بيع'}</span>
+              <span class="kind-badge ${kindBadgeClass(i.kind)}">${kindLabel(i.kind)}</span>
               <div class="inv-meta">${esc(i.customerName || 'نقدي')} · ${payLabel(i.paymentMethod)}</div>
             </div>
             <div dir="ltr" class="inv-amt">${fmt(i.total)}</div>
@@ -1774,15 +2104,16 @@ function renderInvoiceList(el, invs, { returnMode = false } = {}) {
     return;
   }
   el.innerHTML = invs.map((i) => `
-    <div class="invoice-card${i.kind === 'return' ? ' kind-return' : ''}" data-id="${i.id}">
+    <div class="invoice-card${i.kind === 'return' ? ' kind-return' : i.kind === 'issue' ? ' kind-issue' : ''}" data-id="${i.id}">
       <div>
         <strong>${esc(i.invoiceNo)}</strong>
-        <span class="kind-badge ${i.kind === 'return' ? 'return' : 'sale'}">${i.kind === 'return' ? 'مرتجع' : 'بيع'}</span>
+        <span class="kind-badge ${kindBadgeClass(i.kind)}">${kindLabel(i.kind)}</span>
         <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px">
-          ${esc(i.customerName || 'نقدي')} · ${payLabel(i.paymentMethod)} · ${esc(i.invoiceDate)}
+          ${esc(i.customerName || (i.kind === 'issue' ? '—' : 'نقدي'))} · ${payLabel(i.paymentMethod, i)} · ${esc(i.invoiceDate)}
+          ${i.kind === 'issue' && i.notes ? ` · ${esc(i.notes)}` : ''}
         </div>
       </div>
-      <div dir="ltr" style="font-weight:800;font-size:1.05rem;color:${i.kind === 'return' ? 'var(--danger)' : 'var(--primary-dark)'}">${fmt(i.total)}</div>
+      <div dir="ltr" style="font-weight:800;font-size:1.05rem;color:${i.kind === 'return' ? 'var(--danger)' : i.kind === 'issue' ? '#1565c0' : 'var(--primary-dark)'}">${i.kind === 'issue' ? '—' : fmt(i.total)}</div>
     </div>
   `).join('');
   el.querySelectorAll('.invoice-card').forEach((card) => {
@@ -1832,7 +2163,7 @@ async function openInvoiceModal(id, returnMode = false) {
     document.getElementById('invoiceModalBody').innerHTML = `
       <div class="inv-detail-meta">
         <div><b>العميل:</b> ${esc(inv.customerName || 'نقدي')}</div>
-        <div><b>التاريخ:</b> ${esc(inv.invoiceDate)} · <b>النوع:</b> ${inv.kind === 'return' ? 'مرتجع' : 'بيع'}</div>
+        <div><b>التاريخ:</b> ${esc(inv.invoiceDate)} · <b>النوع:</b> ${kindLabel(inv.kind)}</div>
         <div><b>طريقة الدفع:</b> ${payLabel(inv.paymentMethod, inv)}</div>
         <div><b>الصافي:</b> <strong dir="ltr">${fmt(inv.total)}</strong></div>
         ${inv.notes ? `<div><b>ملاحظات:</b> ${esc(inv.notes)}</div>` : ''}

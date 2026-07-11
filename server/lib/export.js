@@ -20,6 +20,16 @@ function payIcon(method) {
   return '💵';
 }
 
+function invoiceDocMeta(invoice) {
+  if (invoice.kind === 'return') {
+    return { title: 'إشعار مرتجع', accent: '#b71c1c', accentDark: '#7f0000', accentLight: '#ffebee' };
+  }
+  if (invoice.kind === 'issue') {
+    return { title: 'إذن إخراج مخزون', accent: '#1565c0', accentDark: '#0d47a1', accentLight: '#e3f2fd' };
+  }
+  return { title: 'فاتورة مبيعات', accent: '#2e7d32', accentDark: '#1b5e20', accentLight: '#e8f5e9' };
+}
+
 function formatReceiptDateTime(invoice) {
   const date = invoice.invoiceDate || '';
   let time = '';
@@ -112,13 +122,13 @@ function a4TotalsPanel(invoice, accent, debtInfo) {
 }
 
 function buildA4InvoiceHtml(invoice, branchName, opts) {
-  const isReturn = invoice.kind === 'return';
-  const title = isReturn ? 'إشعار مرتجع' : 'فاتورة مبيعات';
+  const doc = invoiceDocMeta(invoice);
+  const title = doc.title;
   const footer = opts.footer || `شكراً لزيارتكم — ${STORE_NAME}`;
   const debtInfo = opts.debtInfo || null;
-  const accent = isReturn ? '#b71c1c' : '#2e7d32';
-  const accentDark = isReturn ? '#7f0000' : '#1b5e20';
-  const accentLight = isReturn ? '#ffebee' : '#e8f5e9';
+  const accent = doc.accent;
+  const accentDark = doc.accentDark;
+  const accentLight = doc.accentLight;
   const summary = receiptSummary(invoice);
   const giftTotal = (invoice.lines || []).reduce((s, l) => s + Number(l.giftQty || 0), 0);
   const soldTotal = (invoice.lines || []).reduce((s, l) => s + Number(l.qty || 0), 0);
@@ -531,13 +541,13 @@ function totalsBlock(invoice, { compact = false, debtInfo = null } = {}) {
 }
 
 function invoicePrintHtml(invoice, branchName = '', opts = {}) {
-  const isReturn = invoice.kind === 'return';
-  const title = isReturn ? 'إشعار مرتجع' : 'فاتورة مبيعات';
+  const doc = invoiceDocMeta(invoice);
+  const title = doc.title;
   const thermal = !!opts.thermal;
   const footer = opts.footer || `شكراً لزيارتكم — ${STORE_NAME}`;
   const debtInfo = opts.debtInfo || null;
-  const accent = isReturn ? '#dc2626' : '#047857';
-  const accentSoft = isReturn ? '#fef2f2' : '#ecfdf5';
+  const accent = doc.accent;
+  const accentSoft = doc.accentLight;
   const summary = receiptSummary(invoice);
   const dateTime = formatReceiptDateTime(invoice);
   const customer = invoice.customerName || invoice.accountName || 'نقدي';

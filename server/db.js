@@ -137,7 +137,7 @@ function initSchema() {
       cashier_id INTEGER,
       account_id INTEGER,
       customer_name TEXT,
-      kind TEXT NOT NULL DEFAULT 'sale' CHECK(kind IN ('sale', 'return')),
+      kind TEXT NOT NULL DEFAULT 'sale' CHECK(kind IN ('sale', 'return', 'issue')),
       parent_invoice_id INTEGER,
       status TEXT NOT NULL DEFAULT 'posted',
       subtotal REAL DEFAULT 0,
@@ -273,6 +273,49 @@ function migrateSchema() {
   for (const sql of cols) {
     try { db.exec(sql); } catch { /* already exists */ }
   }
+
+  migrateInvoicesKind();
+}
+
+function migrateInvoicesKind() {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='invoices'").get();
+  if (!row?.sql || row.sql.includes("'issue'")) return;
+  db.exec(`
+    PRAGMA foreign_keys=OFF;
+    BEGIN;
+    CREATE TABLE invoices_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      local_id TEXT UNIQUE,
+      invoice_no TEXT NOT NULL UNIQUE,
+      branch_id INTEGER NOT NULL,
+      cashier_id INTEGER,
+      account_id INTEGER,
+      customer_name TEXT,
+      kind TEXT NOT NULL DEFAULT 'sale' CHECK(kind IN ('sale', 'return', 'issue')),
+      parent_invoice_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'posted',
+      subtotal REAL DEFAULT 0,
+      discount REAL DEFAULT 0,
+      total REAL DEFAULT 0,
+      paid_amount REAL DEFAULT 0,
+      due_amount REAL DEFAULT 0,
+      payment_method TEXT DEFAULT 'cash',
+      notes TEXT,
+      sync_status TEXT DEFAULT 'synced',
+      invoice_date TEXT DEFAULT (date('now')),
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (branch_id) REFERENCES branches(id),
+      FOREIGN KEY (account_id) REFERENCES accounts(id),
+      FOREIGN KEY (parent_invoice_id) REFERENCES invoices(id)
+    );
+    INSERT INTO invoices_new SELECT * FROM invoices;
+    DROP TABLE invoices;
+    ALTER TABLE invoices_new RENAME TO invoices;
+    CREATE INDEX IF NOT EXISTS idx_invoices_branch_date ON invoices(branch_id, invoice_date);
+    CREATE INDEX IF NOT EXISTS idx_invoices_local ON invoices(local_id);
+    COMMIT;
+    PRAGMA foreign_keys=ON;
+  `);
 }
 
 function seedDemoProducts() {

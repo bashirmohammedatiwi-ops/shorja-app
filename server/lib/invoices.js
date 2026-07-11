@@ -29,6 +29,19 @@ function nextReturnNo() {
   return `${prefix}-${String(seq).padStart(4, '0')}`;
 }
 
+function nextIssueNo() {
+  const prefix = `OUT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
+  const last = db.prepare(`
+    SELECT invoice_no FROM invoices WHERE invoice_no LIKE ? ORDER BY id DESC LIMIT 1
+  `).get(`${prefix}-%`);
+  let seq = 1;
+  if (last?.invoice_no) {
+    const part = Number(last.invoice_no.split('-').pop());
+    if (!Number.isNaN(part)) seq = part + 1;
+  }
+  return `${prefix}-${String(seq).padStart(4, '0')}`;
+}
+
 function returnedQtyForLine(parentId, barcode) {
   const row = db.prepare(`
     SELECT COALESCE(SUM(l.qty + COALESCE(l.gift_qty, 0)), 0) AS q FROM invoice_lines l
@@ -137,25 +150,30 @@ function createInvoice(data, user) {
   const lines = (data.lines || []).filter((l) => l.name && (Number(l.qty) > 0 || Number(l.giftQty) > 0));
   if (!lines.length) throw new Error('أضف منتجاً واحداً على الأقل');
 
-  const kind = data.kind === 'return' ? 'return' : 'sale';
+  const kind = ['return', 'issue'].includes(data.kind) ? data.kind : 'sale';
   const sign = kind === 'return' ? -1 : 1;
 
   let subtotal = 0;
   const normalized = lines.map((l) => {
     const qty = Math.max(0, Number(l.qty || 0));
     const giftQty = Math.max(0, Math.round(Number(l.giftQty || 0)));
-    const unitPrice = Number(l.unitPrice || 0);
-    const lineDiscount = Number(l.lineDiscount || 0);
-    const lineTotal = Math.round(qty * unitPrice - lineDiscount);
+    const unitPrice = kind === 'issue' ? 0 : Number(l.unitPrice || 0);
+    const lineDiscount = kind === 'issue' ? 0 : Number(l.lineDiscount || 0);
+    const lineTotal = kind === 'issue' ? 0 : Math.round(qty * unitPrice - lineDiscount);
     subtotal += lineTotal;
     return { ...l, qty, giftQty, unitPrice, lineDiscount, lineTotal };
   });
 
-  const discount = Number(data.discount || 0);
-  const total = Math.max(0, subtotal - discount);
-  let paymentMethod = data.paymentMethod || 'cash';
-  let paidAmount = Number(data.paidAmount ?? (paymentMethod === 'cash' ? total : 0));
-  let dueAmount = Math.max(0, total - paidAmount);
+  const discount = kind === 'issue' ? 0 : Number(data.discount || 0);
+  const total = kind === 'issue' ? 0 : Math.max(0, subtotal - discount);
+  let paymentMethod = kind === 'issue' ? 'issue' : (data.paymentMethod || 'cash');
+  let paidAmount = kind === 'issue' ? 0 : Number(data.paidAmount ?? (paymentMethod === 'cash' ? total : 0));
+  let dueAmount = kind === 'issue' ? 0 : Math.max(0, total - paidAmount);
+
+  if (kind === 'issue') {
+    if (!String(data.notes || '').trim()) throw new Error('سبب الإخراج مطلوب في الملاحظات');
+    data.accountId = null;
+  }
 
   if ((paymentMethod === 'credit' || paymentMethod === 'partial') && data.accountId) {
     paidAmount = Number(data.paidAmount || 0);
@@ -175,7 +193,7 @@ function createInvoice(data, user) {
 
   const settings = getBranchSettings(branchId);
 
-  if (kind === 'sale') {
+  if (kind === 'sale' || kind === 'issue') {
     for (const l of normalized) {
       if (!l.barcode) continue;
       const product = getByBarcode(l.barcode);
@@ -208,7 +226,9 @@ function createInvoice(data, user) {
     if (dup) return loadInvoice(dup.id);
   }
 
-  const invoiceNo = data.invoiceNo || nextInvoiceNo(branchId);
+  const invoiceNo = data.invoiceNo || (
+    kind === 'return' ? nextReturnNo() : kind === 'issue' ? nextIssueNo() : nextInvoiceNo(branchId)
+  );
   const account = data.accountId ? getAccount(data.accountId) : null;
   const customerName = data.customerName || account?.name || '';
 
@@ -239,7 +259,7 @@ function createInvoice(data, user) {
         invoiceId, l.productId || null, l.barcode || '', l.name,
         l.qty, l.unitPrice, l.lineDiscount, l.lineTotal, origPrice, edited, l.giftQty || 0
       );
-      if (l.barcode && kind === 'sale') {
+      if (l.barcode && (kind === 'sale' || kind === 'issue')) {
         adjustStock(l.barcode, -(l.qty + (l.giftQty || 0)));
       } else if (l.barcode && kind === 'return') {
         adjustStock(l.barcode, l.qty + (l.giftQty || 0));
