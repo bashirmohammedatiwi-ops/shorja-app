@@ -279,6 +279,7 @@
         </div>
       </div>
       <div class="modal-actions">
+        <button type="button" class="btn btn-danger hidden" id="btnDeleteProduct">حذف المنتج</button>
         <button type="button" class="btn btn-ghost" id="btnProdCancel">إلغاء</button>
         <button type="submit" class="btn btn-primary">حفظ</button>
       </div>
@@ -303,11 +304,12 @@
   <dialog id="productViewModal" class="modal-dialog modal-wide">
     <div id="productViewDetail"></div>
     <div class="modal-actions">
+      <button type="button" class="btn btn-danger" id="btnDeleteFromView">حذف</button>
       <button type="button" class="btn btn-ghost" data-close>إغلاق</button>
       <button type="button" class="btn btn-primary" id="btnEditFromView">تعديل</button>
     </div>
   </dialog>
 
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

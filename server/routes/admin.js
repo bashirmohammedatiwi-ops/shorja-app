@@ -1,6 +1,6 @@
 const express = require('express');
 const { authRequired } = require('../lib/auth');
-const { listProducts, upsertProduct, bulkUpsert, stats, getByBarcode } = require('../lib/products');
+const { listProducts, upsertProduct, bulkUpsert, stats, getByBarcode, getProduct, deactivateProduct } = require('../lib/products');
 const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment } = require('../lib/invoices');
 const { listAccounts, createAccount, getAccount, accountStats } = require('../lib/accounts');
 const { publishPricePackage, listPackages, getLatestVersion } = require('../lib/prices');
@@ -49,6 +49,15 @@ router.get('/products/barcode/:code', (req, res) => {
   const product = getByBarcode(req.params.code);
   if (!product) return res.status(404).json({ ok: false, error: 'المنتج غير موجود' });
   res.json({ ok: true, product });
+});
+
+router.delete('/products/:id', (req, res) => {
+  try {
+    const product = deactivateProduct(Number(req.params.id));
+    res.json({ ok: true, product });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
 });
 
 function mapProductForPackage(p) {

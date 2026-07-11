@@ -58,6 +58,15 @@ function getProduct(id) {
   return mapProduct(db.prepare('SELECT * FROM products WHERE id = ?').get(id));
 }
 
+function deactivateProduct(id) {
+  const product = getProduct(id);
+  if (!product) throw new Error('المنتج غير موجود');
+  db.prepare(`
+    UPDATE products SET is_active = 0, updated_at = datetime('now') WHERE id = ?
+  `).run(id);
+  return product;
+}
+
 function upsertProduct(data) {
   const barcode = String(data.barcode || '').trim();
   if (!barcode) throw new Error('الباركود مطلوب');
@@ -136,6 +145,7 @@ module.exports = {
   listProducts,
   getByBarcode,
   getProduct,
+  deactivateProduct,
   upsertProduct,
   bulkUpsert,
   adjustStock,

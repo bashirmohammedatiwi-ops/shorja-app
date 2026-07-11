@@ -119,6 +119,8 @@ body {
 
 .btn-secondary { background: #e2e8f0; color: var(--text); }
 .btn-secondary:hover { background: #cbd5e1; }
+.btn-danger { background: #fee2e2; color: var(--danger); border: 1px solid #fecaca; }
+.btn-danger:hover { background: #fecaca; }
 .btn-ghost { background: transparent; color: #94a3b8; }
 .btn-ghost:hover { background: rgba(255,255,255,0.08); color: #fff; }
 .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
@@ -852,6 +854,13 @@ tr:hover td { background: #f8fafc; }
 }
 
 .prod-card-actions .btn { flex: 1; padding: 6px 8px; font-size: 0.78rem; }
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  white-space: nowrap;
+}
 
 .prod-empty {
   grid-column: 1 / -1;

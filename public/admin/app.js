@@ -229,7 +229,7 @@ document.getElementById('btnPrintInvoice')?.addEventListener('click', () => {
 });
 
 function productCardHtml(p, opts = {}) {
-  const { showAdd = false, showEdit = false, selected = false } = opts;
+  const { showAdd = false, showEdit = false, showDelete = false, selected = false } = opts;
   const stock = Number(p.stockQty || 0);
   const stockCls = stock <= 0 ? 'out' : stock <= 5 ? 'low' : '';
   const stockLbl = stock <= 0 ? 'نفد' : `متوفر ${fmt(stock)}`;
@@ -243,10 +243,11 @@ function productCardHtml(p, opts = {}) {
         <span class="prod-price" dir="ltr">${fmt(p.price)}</span>
         <span class="prod-stock ${stockCls}">${stockLbl}</span>
       </div>
-      ${showAdd || showEdit ? `
+      ${showAdd || showEdit || showDelete ? `
       <div class="prod-card-actions">
         ${showAdd ? `<button type="button" class="btn btn-primary btn-add-price" data-barcode="${esc(p.barcode)}">${selected ? '✓ مضاف' : '+ إضافة'}</button>` : ''}
         ${showEdit ? `<button type="button" class="btn btn-secondary btn-edit-card" data-barcode="${esc(p.barcode)}">تعديل</button>` : ''}
+        ${showDelete ? `<button type="button" class="btn btn-danger btn-delete-card" data-id="${p.id}">حذف</button>` : ''}
       </div>` : ''}
     </article>`;
 }
@@ -372,6 +373,14 @@ function renderProductGrid(products, containerId, opts = {}) {
       if (p) openProductModal(p);
     });
   });
+
+  el.querySelectorAll('.btn-delete-card').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const p = products.find((x) => String(x.id) === btn.dataset.id);
+      if (p) deleteProduct(p);
+    });
+  });
 }
 
 function renderProductTable(products) {
@@ -387,13 +396,10 @@ function renderProductTable(products) {
           <td dir="ltr">${fmt(p.price)}</td>
           <td dir="ltr">${fmt(p.stockQty)}</td>
           <td>${esc(p.category)}</td>
-          <td><button type="button" class="btn btn-ghost btn-sm btn-edit-prod"
-            data-barcode="${esc(p.barcode)}"
-            data-name="${esc(p.name)}"
-            data-price="${p.price}"
-            data-stock="${p.stockQty}"
-            data-category="${esc(p.category)}"
-            data-unit="${esc(p.unit || 'قطعة')}">تعديل</button></td>
+          <td class="row-actions">
+            <button type="button" class="btn btn-ghost btn-sm btn-edit-prod" data-barcode="${esc(p.barcode)}">تعديل</button>
+            <button type="button" class="btn btn-danger btn-sm btn-delete-prod" data-id="${p.id}">حذف</button>
+          </td>
         </tr>`).join('')}
       </tbody>
     </table>`;
@@ -409,14 +415,16 @@ function renderProductTable(products) {
   el.querySelectorAll('.btn-edit-prod').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      openProductModal({
-        barcode: btn.dataset.barcode,
-        name: btn.dataset.name,
-        price: Number(btn.dataset.price),
-        stockQty: Number(btn.dataset.stock),
-        category: btn.dataset.category,
-        unit: btn.dataset.unit
-      });
+      const p = products.find((x) => x.barcode === btn.dataset.barcode);
+      if (p) openProductModal(p);
+    });
+  });
+
+  el.querySelectorAll('.btn-delete-prod').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const p = products.find((x) => String(x.id) === btn.dataset.id);
+      if (p) deleteProduct(p);
     });
   });
 }
@@ -452,7 +460,7 @@ async function loadProducts() {
       <div class="prod-stat">أقسام <strong>${categoryCatalog.length}</strong></div>`;
   }
 
-  renderProductGrid(products, 'prodGrid', { showEdit: true });
+  renderProductGrid(products, 'prodGrid', { showEdit: true, showDelete: true });
   renderProductTable(products);
   setProductViewMode(productViewMode);
 }
@@ -491,7 +499,30 @@ function openProductModal(product = null) {
   document.getElementById('prodStock').value = product?.stockQty ?? 0;
   document.getElementById('prodFormCategory').value = product?.category || '';
   document.getElementById('prodUnit').value = product?.unit || 'قطعة';
+  document.getElementById('btnDeleteProduct')?.classList.toggle('hidden', !product?.id);
   document.getElementById('productModal').showModal();
+}
+
+async function deleteProduct(product) {
+  if (!product?.id) return;
+  if (!confirm(`حذف المنتج «${product.name}»؟\nسيُخفى من القوائم ويبقى في الفواتير السابقة.`)) return;
+  try {
+    await api(`/admin/products/${product.id}`, { method: 'DELETE' });
+    if (priceSelection.has(product.barcode)) {
+      priceSelection.delete(product.barcode);
+      renderPriceSelection();
+    }
+    document.getElementById('productModal')?.close();
+    document.getElementById('productViewModal')?.close();
+    toast('تم حذف المنتج');
+    loadProducts();
+    loadDashboard();
+    if (!document.getElementById('viewPrices')?.classList.contains('hidden')) {
+      loadPriceBrowse();
+    }
+  } catch (err) {
+    toast(err.message || 'فشل حذف المنتج');
+  }
 }
 
 function fillProductForm(product) {
@@ -576,6 +607,12 @@ document.getElementById('prodViewToggle')?.addEventListener('click', (e) => {
 document.getElementById('btnEditFromView')?.addEventListener('click', () => {
   document.getElementById('productViewModal').close();
   if (viewingProduct) openProductModal(viewingProduct);
+});
+document.getElementById('btnDeleteFromView')?.addEventListener('click', () => {
+  if (viewingProduct) deleteProduct(viewingProduct);
+});
+document.getElementById('btnDeleteProduct')?.addEventListener('click', () => {
+  if (editingProduct) deleteProduct(editingProduct);
 });
 document.getElementById('priceBrowseSearch')?.addEventListener('input', debounce(loadPriceBrowse, 250));
 
