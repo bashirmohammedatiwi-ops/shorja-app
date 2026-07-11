@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:22-slim
 
 WORKDIR /app
 
@@ -11,6 +11,7 @@ COPY public ./public
 RUN mkdir -p /app/data
 
 ENV NODE_ENV=production
+ENV NODE_OPTIONS=--experimental-sqlite
 ENV PORT=5007
 ENV HOST=0.0.0.0
 ENV DATABASE_PATH=/app/data/shorja.db
