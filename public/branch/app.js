@@ -206,15 +206,17 @@ function setInvoiceType(type, { force = false } = {}) {
   const heading = document.getElementById('posInvoiceHeading');
   if (heading) heading.textContent = invoiceTypeHeading(next);
   const thQty = document.getElementById('thQty');
-  if (thQty) thQty.textContent = next === 'return' ? 'مرتجع' : 'الكمية';
+  if (thQty) thQty.textContent = 'الكمية';
+  const dockGrandLbl = document.getElementById('dockGrandLbl');
+  if (dockGrandLbl) dockGrandLbl.textContent = next === 'return' ? 'قيمة المرتجع' : 'الصافي';
   const btnText = document.getElementById('checkoutBtnText');
   if (btnText) btnText.textContent = checkoutButtonText(next);
   const emptyTitle = document.getElementById('cartEmptyTitle');
   const emptySub = document.getElementById('cartEmptySub');
   if (emptyTitle && emptySub) {
     if (next === 'return') {
-      emptyTitle.textContent = 'اختر فاتورة مبيعات';
-      emptySub.textContent = 'ثم حدّد كميات المرتجع في الجدول';
+      emptyTitle.textContent = 'ابدأ بمسح باركود المرتجع';
+      emptySub.textContent = 'اختر عميلاً لخصم قيمة المرتجع من دينه';
     } else if (next === 'issue') {
       emptyTitle.textContent = 'امسح المنتجات للإخراج';
       emptySub.textContent = 'اكتب سبب الإخراج قبل التأكيد';
@@ -224,8 +226,11 @@ function setInvoiceType(type, { force = false } = {}) {
     }
   }
 
+  document.getElementById('viewPos')?.classList.toggle('show-return-link', false);
+  document.getElementById('viewPos')?.classList.toggle('linked-return', false);
   document.getElementById('returnParentBanner')?.classList.add('hidden');
-  if (next === 'return') loadPosReturnCandidates();
+  document.getElementById('returnDebtHint')?.classList.add('hidden');
+  if (next === 'return') focusBarcode();
   else focusBarcode();
   newPosSession();
   renderCart();
@@ -734,8 +739,8 @@ const onProductSearchInput = debounce(async () => {
 
 // ── Cart ──
 async function addToCart(barcode, qty = 1) {
-  if (state.invoiceType === 'return') {
-    toast('اختر فاتورة مبيعات للمرتجع أولاً', 'warn');
+  if (state.invoiceType === 'return' && state.returnParent) {
+    toast('فك الربط بفاتورة أصلية لإضافة منتجات يدوياً', 'warn');
     return;
   }
   const product = await resolveProduct(barcode);
@@ -820,6 +825,24 @@ function updateCartTotals() {
     giftBadge.classList.toggle('hidden', !gifts);
   }
   updateCartMeta();
+  updateReturnCustomerHint();
+}
+
+function updateReturnCustomerHint() {
+  const el = document.getElementById('returnDebtHint');
+  if (!el || state.invoiceType !== 'return') return;
+  const subtotal = state.cart.reduce((s, l) => s + l.lineTotal, 0);
+  const total = Math.max(0, subtotal - state.discount);
+  if (!state.customer || !total) {
+    el.classList.add('hidden');
+    return;
+  }
+  const debt = Number(state.customer.balance || 0);
+  const after = Math.max(0, debt - total);
+  el.innerHTML = `سيُخصم <strong dir="ltr">${fmt(total)}</strong> من دين العميل `
+    + `<strong>${esc(state.customer.name)}</strong> — الدين الحالي: <span dir="ltr">${fmt(debt)}</span>`
+    + ` → بعد المرتجع: <span dir="ltr">${fmt(after)}</span>`;
+  el.classList.remove('hidden');
 }
 
 function setLineGiftQty(idx, val) {
@@ -872,9 +895,10 @@ function setLineQty(idx, val) {
   if (!line) return;
   let q = Math.max(0, Math.round(Number(val) || 0));
   if (state.invoiceType === 'return') {
-    const max = Number(line.maxQty ?? 0);
+    const max = Number(line.maxQty ?? Infinity);
     q = Math.min(q, max);
     line.qty = q;
+    recalcLine(line);
     updateCartRow(idx);
     renderCart();
     return;
@@ -1077,31 +1101,6 @@ function renderCartNow() {
   }
   empty.classList.add('hidden');
 
-  if (type === 'return') {
-    const hasReturnQty = state.cart.some((l) => Number(l.qty) > 0);
-    checkout.disabled = !state.returnParent || !hasReturnQty;
-    tbody.innerHTML = state.cart.map((l, i) => `
-      <tr class="invoice-row" data-idx="${i}">
-        <td class="col-num">${i + 1}</td>
-        <td class="col-name"><strong>${esc(l.name)}</strong></td>
-        <td class="col-barcode" dir="ltr">${esc(l.barcode)}</td>
-        <td class="col-stock" dir="ltr">${l.maxQty ?? l.soldQty}</td>
-        <td class="col-qty">
-          <div class="qty-controls">
-            <button type="button" class="qty-btn" data-action="dec" data-idx="${i}">−</button>
-            <input type="number" class="cell-input qty-input" data-idx="${i}" value="${l.qty}" min="0" max="${l.maxQty ?? 0}" title="كمية المرتجع">
-            <button type="button" class="qty-btn" data-action="inc" data-idx="${i}">+</button>
-          </div>
-        </td>
-        <td class="col-act">
-          <button type="button" class="qty-btn del-btn" data-action="del" data-idx="${i}" disabled title="من فاتورة المصدر">×</button>
-        </td>
-      </tr>
-    `).join('');
-    updateCartTotals();
-    return;
-  }
-
   if (type === 'issue') {
     checkout.disabled = false;
     tbody.innerHTML = state.cart.map((l, i) => `
@@ -1127,13 +1126,18 @@ function renderCartNow() {
 
   checkout.disabled = false;
   const allowPrice = getSettings().allowPriceEdit !== false;
+  const isReturn = type === 'return';
+  const linked = isReturn && !!state.returnParent;
+  if (isReturn) {
+    checkout.disabled = !lines || !n;
+  }
   tbody.innerHTML = state.cart.map((l, i) => `
     <tr class="invoice-row${l.priceEdited ? ' row-edited' : ''}${l.giftQty ? ' row-gift' : ''}" data-idx="${i}">
       <td class="col-num">${i + 1}</td>
       <td class="col-name">
         <strong>${esc(l.name)}</strong>
         ${l.priceEdited ? '<span class="edited-tag">سعر معدّل</span>' : ''}
-        ${l.giftQty ? `<span class="gift-tag">🎁 ${l.giftQty} هدية</span>` : ''}
+        ${!isReturn && l.giftQty ? `<span class="gift-tag">🎁 ${l.giftQty} هدية</span>` : ''}
       </td>
       <td class="col-barcode" dir="ltr">${esc(l.barcode)}</td>
       <td class="col-price">
@@ -1145,23 +1149,25 @@ function renderCartNow() {
         </div>
         ${l.priceEdited ? `<small class="orig-price" dir="ltr">كان: ${fmt(l.originalPrice)}</small>` : ''}
       </td>
+      ${linked ? `<td class="col-stock inv-return-linked" dir="ltr">${l.maxQty ?? 0}</td>` : ''}
       <td class="col-qty">
         <div class="qty-controls">
           <button type="button" class="qty-btn" data-action="dec" data-idx="${i}">−</button>
-          <input type="number" class="cell-input qty-input" data-idx="${i}" value="${l.qty}" min="0" title="الكمية المدفوعة">
+          <input type="number" class="cell-input qty-input" data-idx="${i}" value="${l.qty}" min="${isReturn ? 0 : 0}"${linked ? ` max="${l.maxQty ?? 0}"` : ''} title="${isReturn ? 'كمية المرتجع' : 'الكمية المدفوعة'}">
           <button type="button" class="qty-btn" data-action="inc" data-idx="${i}">+</button>
         </div>
       </td>
+      ${isReturn ? '' : `
       <td class="col-gift">
         <div class="gift-controls">
           <button type="button" class="gift-btn" data-action="dec" data-idx="${i}" title="تقليل الهدايا">−</button>
           <input type="number" class="gift-input" data-idx="${i}" value="${l.giftQty || 0}" min="0" title="هدايا إضافية (مجانية)">
           <button type="button" class="gift-btn" data-action="inc" data-idx="${i}" title="زيادة الهدايا">+</button>
         </div>
-      </td>
+      </td>`}
       <td class="col-total line-total-cell" dir="ltr"><strong>${fmt(l.lineTotal)}</strong></td>
       <td class="col-act">
-        <button type="button" class="qty-btn del-btn" data-action="del" data-idx="${i}">×</button>
+        <button type="button" class="qty-btn del-btn" data-action="del" data-idx="${i}"${linked ? ' disabled' : ''}>×</button>
       </td>
     </tr>
   `).join('');
@@ -1538,25 +1544,59 @@ async function submitIssue() {
 
 async function submitReturnFromPos() {
   const confirmBtn = document.getElementById('btnCheckout');
-  if (!state.returnParent) { toast('اختر فاتورة مبيعات أولاً', 'err'); return; }
+  if (!state.cart.length) { toast('أضف منتجاً واحداً على الأقل', 'err'); return; }
   const lines = state.cart.filter((l) => Number(l.qty) > 0).map((l) => ({
-    barcode: l.barcode, qty: Number(l.qty)
+    productId: l.productId,
+    barcode: l.barcode,
+    name: l.name,
+    qty: Number(l.qty),
+    giftQty: 0,
+    unitPrice: l.unitPrice,
+    lineTotal: l.lineTotal,
+    priceEdited: !!l.priceEdited,
+    originalPrice: l.originalPrice
   }));
   if (!lines.length) { toast('حدد كميات المرتجع', 'err'); return; }
 
+  const payload = {
+    accountId: state.customer?.id || null,
+    customerName: state.customer?.name || '',
+    discount: state.discount,
+    notes: state.returnParent ? `مرتجع عن ${state.returnParent.invoiceNo}` : ''
+  };
+
   try {
     if (confirmBtn) confirmBtn.disabled = true;
-    const data = await api(`/branch/invoices/${state.returnParent.id}/return`, {
-      method: 'POST',
-      body: JSON.stringify({ lines })
-    });
-    toast(`✓ تم المرتجع — ${data.invoice.invoiceNo}`);
+    let data;
+    if (state.returnParent) {
+      data = await api(`/branch/invoices/${state.returnParent.id}/return`, {
+        method: 'POST',
+        body: JSON.stringify({
+          lines: lines.map((l) => ({ barcode: l.barcode, qty: l.qty })),
+          ...payload
+        })
+      });
+    } else {
+      data = await api('/branch/invoices', {
+        method: 'POST',
+        body: JSON.stringify({
+          kind: 'return',
+          localId: newLocalId(),
+          lines,
+          ...payload,
+          paymentMethod: state.customer ? 'credit' : 'cash',
+          paidAmount: 0
+        })
+      });
+    }
+    toast(`✓ تم المرتجع — ${data.invoice.invoiceNo}${state.customer ? ' · خُصم من الدين' : ''}`);
     state.lastInvoiceId = data.invoice.id;
     localStorage.setItem(LAST_INV_KEY, String(data.invoice.id));
     setInvoiceType('return', { force: true });
     printInvoice(data.invoice.id);
     loadTodaySummary();
     loadProducts();
+    loadAccounts();
     bustViewCache('dashboard', 'invoices', 'accounts');
   } finally {
     if (confirmBtn) confirmBtn.disabled = false;
@@ -1604,24 +1644,40 @@ async function selectReturnParent(id) {
     const inv = data.invoice;
     if (!inv || inv.kind !== 'sale') { toast('فاتورة غير صالحة للمرتجع', 'err'); return; }
     state.returnParent = inv;
+    if (inv.accountId && inv.accountName) {
+      state.customer = { id: inv.accountId, name: inv.accountName, code: '', balance: 0 };
+      document.getElementById('customerLabel').textContent = inv.accountName;
+      api(`/branch/accounts/${inv.accountId}`).then((d) => {
+        if (d.account) {
+          state.customer = d.account;
+          document.getElementById('customerLabel').textContent = `${d.account.name} (${d.account.code})`;
+          updateReturnCustomerHint();
+        }
+      }).catch(() => {});
+    }
     state.cart = inv.lines.map((l) => ({
       productId: l.productId,
       barcode: l.barcode,
       name: l.name,
       qty: 0,
       soldQty: l.qty,
-      giftQty: l.giftQty || 0,
+      giftQty: 0,
       maxQty: Number(l.qty || 0) + Number(l.giftQty || 0),
       unitPrice: l.unitPrice,
+      originalPrice: l.originalPrice ?? l.unitPrice,
+      priceEdited: false,
+      stockQty: 0,
       lineTotal: 0
     }));
+    document.getElementById('viewPos')?.classList.add('linked-return');
+    document.getElementById('viewPos')?.classList.remove('show-return-link');
     const banner = document.getElementById('returnParentBanner');
     const label = document.getElementById('returnParentLabel');
     if (label) label.textContent = `${inv.invoiceNo} — ${inv.customerName || 'نقدي'} — ${fmt(inv.total)}`;
     banner?.classList.remove('hidden');
-    document.getElementById('posReturnList')?.classList.add('hidden');
+    document.getElementById('posReturnPanel')?.classList.add('hidden');
     renderCart();
-    toast('حدّد كميات المرتجع في الجدول');
+    toast('حدّد كميات المرتجع — يمكنك اختيار عميل لخصم الدين');
   } catch (err) { toast(err.message || 'تعذّر تحميل الفاتورة', 'err'); }
 }
 
@@ -1629,9 +1685,17 @@ document.getElementById('btnClearReturnParent')?.addEventListener('click', () =>
   state.returnParent = null;
   state.cart = [];
   document.getElementById('returnParentBanner')?.classList.add('hidden');
-  document.getElementById('posReturnList')?.classList.remove('hidden');
+  document.getElementById('viewPos')?.classList.remove('linked-return');
   renderCart();
+});
+
+document.getElementById('btnShowReturnLink')?.addEventListener('click', () => {
+  document.getElementById('viewPos')?.classList.add('show-return-link');
   loadPosReturnCandidates();
+});
+
+document.getElementById('btnHideReturnLink')?.addEventListener('click', () => {
+  document.getElementById('viewPos')?.classList.remove('show-return-link');
 });
 
 document.getElementById('posReturnSearch')?.addEventListener('input', debounce(loadPosReturnCandidates, 300));
@@ -2472,6 +2536,7 @@ async function initApp() {
       document.getElementById('customerLabel').textContent = `${acc.name} (${acc.code})`;
     }
     document.getElementById('customerModal').close();
+    updateReturnCustomerHint();
   });
   window._setCustomerAccounts = (list) => { customerAccounts = list; };
   await loadSettings();

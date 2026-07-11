@@ -2177,25 +2177,46 @@ kbd {
 
 /* Mode visibility */
 .inv-type-sale .inv-return-only,
-.inv-type-sale .inv-issue-only { display: none !important; }
+.inv-type-sale .inv-issue-only,
+.inv-type-sale .inv-return-linked { display: none !important; }
 
-.inv-type-return .inv-sale-only,
-.inv-type-return .inv-issue-only { display: none !important; }
+.inv-type-return .inv-issue-only,
+.inv-type-return .inv-sale-only { display: none !important; }
 
-.inv-type-issue .inv-sale-only,
-.inv-type-issue .inv-return-only { display: none !important; }
+.inv-type-issue .inv-sale-return,
+.inv-type-issue .inv-return-only,
+.inv-type-issue .inv-return-linked { display: none !important; }
 
-.inv-type-return #posScanSection,
-.inv-type-return #lastScanPreview { display: none; }
+.inv-type-return.linked-return .inv-return-linked { display: table-cell !important; }
+.inv-type-return.linked-return th.inv-return-linked { display: table-cell !important; }
 
-.inv-type-return #posReturnPanel { display: block !important; }
-
-.inv-type-return .inv-return-only.hidden { display: table-cell !important; }
-.inv-type-return th.inv-return-only.hidden { display: table-cell !important; }
+.inv-type-return #posReturnPanel { display: none; }
+.inv-type-return.show-return-link #posReturnPanel { display: block !important; }
 
 .inv-type-issue .customer-chip { display: none !important; }
 
 .inv-type-issue #invIssueNotes { display: block !important; }
+
+.return-debt-hint {
+  margin: 0 16px 10px;
+  padding: 10px 12px;
+  background: #ecfdf5;
+  border: 1px solid #6ee7b7;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #047857;
+}
+
+.return-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
 
 .line-total-cell strong {
   display: inline-block;

@@ -191,6 +191,12 @@ function createInvoice(data, user) {
     throw new Error('اختر حساباً للبيع الآجل');
   }
 
+  if (kind === 'return') {
+    paidAmount = 0;
+    dueAmount = 0;
+    paymentMethod = data.accountId ? 'credit' : 'cash';
+  }
+
   const settings = getBranchSettings(branchId);
 
   if (kind === 'sale' || kind === 'issue') {
@@ -266,16 +272,28 @@ function createInvoice(data, user) {
       }
     }
 
-    if (data.accountId && dueAmount > 0) {
-      updateBalance(data.accountId, sign * dueAmount);
+    if (kind === 'return' && data.accountId && total > 0) {
+      updateBalance(data.accountId, -total);
       addJournalEntry({
         accountId: data.accountId,
         branchId,
-        kind: kind === 'return' ? 'return' : 'sale',
-        amount: sign * dueAmount,
+        kind: 'return',
+        amount: -total,
         refType: 'invoice',
         refId: invoiceId,
-        description: `${kind === 'return' ? 'مرتجع' : 'فاتورة'} ${invoiceNo}`,
+        description: `مرتجع ${invoiceNo} — خصم من الدين`,
+        createdBy: user.id
+      });
+    } else if (kind === 'sale' && data.accountId && dueAmount > 0) {
+      updateBalance(data.accountId, dueAmount);
+      addJournalEntry({
+        accountId: data.accountId,
+        branchId,
+        kind: 'sale',
+        amount: dueAmount,
+        refType: 'invoice',
+        refId: invoiceId,
+        description: `فاتورة ${invoiceNo}`,
         createdBy: user.id
       });
     }
@@ -327,13 +345,13 @@ function createReturn(parentId, data, user) {
     kind: 'return',
     invoiceNo: nextReturnNo(),
     parentInvoiceId: parent.id,
-    accountId: parent.accountId,
-    customerName: parent.customerName,
-    paymentMethod: parent.paymentMethod,
+    accountId: data.accountId != null ? data.accountId : parent.accountId,
+    customerName: data.customerName || parent.customerName,
+    paymentMethod: (data.accountId != null ? data.accountId : parent.accountId) ? 'credit' : 'cash',
     paidAmount: 0,
     lines: returnLines,
     notes: data.notes || `مرتجع عن ${parent.invoiceNo}`,
-    discount: 0
+    discount: Number(data.discount || 0)
   }, user);
 }
 

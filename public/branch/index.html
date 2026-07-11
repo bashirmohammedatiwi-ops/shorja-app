@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=21">
+  <link rel="stylesheet" href="styles.css?v=22">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -145,12 +145,16 @@
           <div class="pos-last-scan hidden" id="lastScanPreview"></div>
 
           <div class="pos-return-panel hidden" id="posReturnPanel">
+            <div class="return-panel-head">
+              <span>ربط بفاتورة أصلية (اختياري)</span>
+              <button type="button" class="btn btn-sm btn-ghost" id="btnHideReturnLink">إخفاء</button>
+            </div>
             <div class="return-picker-toolbar">
               <input type="search" id="posReturnSearch" class="field" placeholder="رقم فاتورة أو عميل...">
               <input type="date" id="posReturnDateFrom" class="field field-date">
               <input type="date" id="posReturnDateTo" class="field field-date">
             </div>
-            <p class="hint return-picker-hint">اختر فاتورة مبيعات لإنشاء مرتجع — حدّد الكميات في الجدول أدناه</p>
+            <p class="hint return-picker-hint">أو امسح المنتجات مباشرة — اختيار فاتورة يملأ البنود تلقائياً</p>
             <div class="return-picker-list" id="posReturnList"></div>
             <div class="return-parent-banner hidden" id="returnParentBanner">
               <div>
@@ -170,7 +174,8 @@
                 <span class="gift-count-badge hidden" id="giftCountBadge">0 هدية</span>
               </div>
               <div class="pos-invoice-actions">
-                <button type="button" class="customer-chip inv-sale-only" id="btnPickCustomer">
+                <button type="button" class="btn btn-sm btn-ghost inv-return-only hidden" id="btnShowReturnLink">ربط بفاتورة أصلية</button>
+                <button type="button" class="customer-chip inv-sale-return" id="btnPickCustomer">
                   <span class="customer-chip-ico">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   </span>
@@ -188,6 +193,8 @@
               <input type="text" id="issueReason" class="field" placeholder="مثال: تلف · عينة · استهلاك داخلي · تبرع">
             </div>
 
+            <div class="return-debt-hint inv-return-only hidden" id="returnDebtHint"></div>
+
             <div class="invoice-table-wrap">
               <table class="invoice-table" id="invoiceTable">
                 <thead>
@@ -195,11 +202,11 @@
                     <th class="col-num">#</th>
                     <th class="col-name">المنتج</th>
                     <th class="col-barcode">الباركود</th>
-                    <th class="col-price inv-sale-only">السعر</th>
+                    <th class="col-price inv-sale-return">السعر</th>
                     <th class="col-qty" id="thQty">الكمية</th>
                     <th class="col-gift inv-sale-only">هدايا</th>
-                    <th class="col-stock inv-return-only hidden">المباع</th>
-                    <th class="col-total inv-sale-only">الإجمالي</th>
+                    <th class="col-stock inv-return-linked hidden">المباع</th>
+                    <th class="col-total inv-sale-return">الإجمالي</th>
                     <th class="col-act"></th>
                   </tr>
                 </thead>
@@ -216,7 +223,7 @@
           </section>
 
           <footer class="pos-dock" id="posDock">
-            <div class="pos-dock-stats inv-sale-only inv-issue-only">
+            <div class="pos-dock-stats inv-sale-return inv-issue-only">
               <div class="dock-stat">
                 <span class="dock-stat-lbl">بنود</span>
                 <strong id="posLineCount">0</strong>
@@ -227,7 +234,7 @@
               </div>
             </div>
 
-            <div class="pos-dock-totals inv-sale-only" id="dockSaleTotals">
+            <div class="pos-dock-totals inv-sale-return" id="dockSaleTotals">
               <div class="dock-total-item">
                 <span class="dock-lbl">المجموع</span>
                 <span class="dock-val" id="subtotalVal" dir="ltr">0</span>
@@ -237,7 +244,7 @@
                 <input type="number" id="discountInput" class="dock-discount-input" min="0" value="0">
               </div>
               <div class="dock-total-item dock-grand">
-                <span class="dock-lbl">الصافي</span>
+                <span class="dock-lbl" id="dockGrandLbl">الصافي</span>
                 <span class="dock-val dock-grand-val" id="grandTotal" dir="ltr">0</span>
               </div>
             </div>
@@ -539,6 +546,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=25"></script>
+  <script src="app.js?v=26"></script>
 </body>
 </html>
