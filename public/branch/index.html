@@ -108,6 +108,7 @@
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
                 </span>
                 <input type="text" id="barcodeInput" class="pos-scan-input" placeholder="امسح الباركود..." autocomplete="off" autofocus>
+                <button type="button" class="btn-fetch-barcode" id="btnFetchBarcode" title="جلب المنتج من الإدارة">↻</button>
                 <span class="scan-ready-dot" title="جاهز"></span>
               </div>
               <div class="pos-search-field search-wrap">
@@ -359,6 +360,12 @@
             <label class="check-label wide"><input type="checkbox" id="setThermal" checked> طباعة حرارية 80mm</label>
             <label>نص أسفل الفاتورة</label>
             <input type="text" id="setReceiptFooter" class="field" placeholder="شكراً لزيارتكم">
+            <div class="settings-sync-block">
+              <h4>مزامنة المنتجات من الإدارة</h4>
+              <p class="settings-hint">المخزون المحلي: <strong id="cachedProductCount">0</strong> منتج</p>
+              <p class="settings-hint subtle">عند المسح يُجلب المنتج تلقائياً من قاعدة الإدارة إن وُجد.</p>
+              <button type="button" class="btn btn-secondary btn-block" id="btnSyncProducts">تحديث جميع المنتجات من الإدارة</button>
+            </div>
             <button type="button" class="btn btn-primary" id="btnSaveSettings">حفظ الإعدادات</button>
           </div>
         </div>

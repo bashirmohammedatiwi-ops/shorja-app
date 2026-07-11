@@ -398,16 +398,128 @@ document.getElementById('dashboardActions')?.addEventListener('click', (e) => {
 });
 
 // ── Products (cache for barcode + search) ──
+function mergeProductIntoState(product) {
+  if (!product?.barcode) return false;
+  const idx = state.products.findIndex((p) => p.barcode === product.barcode);
+  const isNew = idx < 0;
+  if (idx >= 0) state.products[idx] = product;
+  else state.products.push(product);
+  cacheProducts(state.products);
+  invalidateProducts();
+  return isNew;
+}
+
+function updateCachedProductCount() {
+  const el = document.getElementById('cachedProductCount');
+  if (el) el.textContent = String(allProducts().length);
+}
+
+async function fetchProductFromAdmin(code) {
+  const c = String(code || '').trim();
+  if (!c) return null;
+  const data = await api(`/branch/products/barcode/${encodeURIComponent(c)}`);
+  if (!data.product) return null;
+  const isNew = mergeProductIntoState(data.product);
+  return { product: data.product, isNew };
+}
+
 async function loadProducts() {
   try {
     const data = await api('/branch/products?limit=500');
     state.products = data.products || [];
     cacheProducts(state.products);
     invalidateProducts();
+    updateCachedProductCount();
   } catch {
     state.products = loadCachedProducts();
     invalidateProducts();
+    updateCachedProductCount();
     if (state.products.length) toast('منتجات محفوظة — وضع offline', 'warn');
+  }
+}
+
+async function syncAllProductsFromAdmin() {
+  if (!navigator.onLine) {
+    toast('لا يوجد اتصال بالسيرفر', 'err');
+    return;
+  }
+  const btn = document.getElementById('btnSyncProducts');
+  const label = btn?.dataset.label || btn?.textContent || 'تحديث جميع المنتجات من الإدارة';
+  if (btn) {
+    btn.dataset.label = label;
+    btn.disabled = true;
+  }
+  try {
+    let offset = 0;
+    const limit = 500;
+    let total = Infinity;
+    const merged = new Map();
+
+    while (offset < total) {
+      if (btn) btn.textContent = `جاري التحديث... ${offset || ''}`;
+      const data = await api(`/branch/products?sync=1&limit=${limit}&offset=${offset}`);
+      const batch = data.products || [];
+      total = Number(data.total) || batch.length;
+      for (const p of batch) merged.set(p.barcode, p);
+      offset += batch.length;
+      if (!batch.length) break;
+    }
+
+    state.products = [...merged.values()];
+    cacheProducts(state.products);
+    invalidateProducts();
+    updateCachedProductCount();
+    await checkPriceUpdate();
+    toast(`تم تحديث ${state.products.length} منتج من الإدارة`);
+  } catch (err) {
+    toast(err.message || 'فشل تحديث المنتجات', 'err');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = btn.dataset.label || label;
+    }
+  }
+}
+
+async function fetchBarcodeFromAdmin() {
+  const input = document.getElementById('barcodeInput');
+  const code = input?.value.trim();
+  if (!code) {
+    toast('أدخل الباركود أولاً', 'warn');
+    focusBarcode();
+    return;
+  }
+  if (!navigator.onLine) {
+    toast('لا يوجد اتصال — يُستخدم المخزون المحلي', 'warn');
+    return;
+  }
+  const btn = document.getElementById('btnFetchBarcode');
+  if (btn) btn.disabled = true;
+  try {
+    const result = await fetchProductFromAdmin(code);
+    if (!result) {
+      toast('المنتج غير موجود في قاعدة الإدارة', 'err');
+      return;
+    }
+    const line = state.cart.find((l) => l.barcode === result.product.barcode);
+    if (line) {
+      line.name = result.product.name;
+      line.unitPrice = result.product.price;
+      line.originalPrice = result.product.price;
+      line.stockQty = result.product.stockQty;
+      line.priceEdited = false;
+      recalcLine(line);
+      renderCart();
+      toast('تم تحديث تفاصيل المنتج في الفاتورة من الإدارة');
+    } else {
+      toast(result.isNew ? 'تم جلب منتج جديد من الإدارة' : 'تم تحديث تفاصيل المنتج من الإدارة');
+      await addToCart(result.product.barcode);
+    }
+  } catch (err) {
+    toast(err.message || 'فشل جلب المنتج', 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+    focusBarcode();
   }
 }
 
@@ -428,22 +540,19 @@ function findProductLocal(code) {
 }
 
 async function resolveProduct(code) {
-  let product = findProductLocal(code);
-  if (product) return product;
-  try {
-    const data = await api(`/branch/products/barcode/${encodeURIComponent(String(code).trim())}`);
-    product = data.product;
-    if (product) {
-      const idx = state.products.findIndex((p) => p.barcode === product.barcode);
-      if (idx >= 0) state.products[idx] = product;
-      else state.products.push(product);
-      cacheProducts(state.products);
-      invalidateProducts();
+  const c = String(code || '').trim();
+  if (!c) return null;
+
+  if (navigator.onLine) {
+    try {
+      const result = await fetchProductFromAdmin(c);
+      if (result?.product) return result.product;
+    } catch {
+      /* fallback to local cache */
     }
-    return product;
-  } catch {
-    return null;
   }
+
+  return findProductLocal(c);
 }
 
 function filterProducts(q) {
@@ -468,13 +577,8 @@ async function searchProducts(q) {
       signal: state.searchAbort.signal
     });
     results = data.products || [];
-    for (const p of results) {
-      const idx = state.products.findIndex((x) => x.barcode === p.barcode);
-      if (idx >= 0) state.products[idx] = p;
-      else state.products.push(p);
-    }
-    cacheProducts(state.products);
-    invalidateProducts();
+    for (const p of results) mergeProductIntoState(p);
+    updateCachedProductCount();
   } catch (err) {
     if (err.name !== 'AbortError') { /* offline */ }
   }
@@ -1766,6 +1870,9 @@ document.getElementById('btnDismissPrices').addEventListener('click', () => {
   document.getElementById('priceBanner').classList.add('hidden');
 });
 
+document.getElementById('btnSyncProducts')?.addEventListener('click', syncAllProductsFromAdmin);
+document.getElementById('btnFetchBarcode')?.addEventListener('click', fetchBarcodeFromAdmin);
+
 // ── Init ──
 async function initApp() {
   setPageTitle('pos');
@@ -1797,6 +1904,7 @@ async function initApp() {
   window._setCustomerAccounts = (list) => { customerAccounts = list; };
   await loadSettings();
   await loadProducts();
+  updateCachedProductCount();
   renderCart();
   loadTodaySummary();
   updateStockBadge();

@@ -14,8 +14,12 @@ router.use(authRequired(['branch', 'admin']));
 router.get('/products', (req, res) => {
   const q = String(req.query.q || '').trim();
   const category = String(req.query.category || '').trim();
-  const limit = Math.min(Number(req.query.limit) || 80, 200);
-  res.json({ ok: true, ...listProducts({ q, category, limit }) });
+  const syncAll = req.query.sync === '1' || req.query.all === '1';
+  const limit = syncAll
+    ? Math.min(Number(req.query.limit) || 500, 5000)
+    : Math.min(Number(req.query.limit) || 80, 200);
+  const offset = Math.max(Number(req.query.offset) || 0, 0);
+  res.json({ ok: true, ...listProducts({ q, category, limit, offset }) });
 });
 
 router.get('/products/barcode/:code', (req, res) => {

@@ -1222,6 +1222,30 @@ kbd {
 .report-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 
 .settings-panel { max-width: 480px; }
+.settings-sync-block {
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+.settings-sync-block h4 { margin: 0 0 8px; font-size: 0.95rem; }
+.settings-hint { margin: 0 0 8px; font-size: 0.85rem; color: var(--muted); }
+.settings-hint.subtle { font-size: 0.8rem; }
+.btn-fetch-barcode {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--primary);
+  font-size: 1.1rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.btn-fetch-barcode:hover:not(:disabled) { background: #eef2ff; }
+.btn-fetch-barcode:disabled { opacity: 0.5; cursor: wait; }
 .check-label.wide { margin: 8px 0; }
 
 .customer-modal-actions {
