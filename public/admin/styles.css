@@ -675,6 +675,35 @@ tr:hover td { background: #f8fafc; }
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
+.barcode-field-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.barcode-field-row .field { flex: 1; }
+
+.btn-fetch-barcode {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--primary);
+  font-size: 1.15rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.btn-fetch-barcode:hover:not(:disabled) { background: var(--primary-soft); }
+.btn-fetch-barcode:disabled { opacity: 0.5; cursor: wait; }
+
+.price-add-bar .btn-fetch-barcode {
+  width: 44px;
+  height: 44px;
+}
+
 .price-selection-wrap { margin: 12px 0 16px; max-height: 320px; }
 
 .price-actions {

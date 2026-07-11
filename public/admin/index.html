@@ -143,13 +143,14 @@
           <div class="action-card compact-card">
             <div class="price-add-bar">
               <input type="text" id="priceBarcode" class="field" placeholder="امسح أو اكتب الباركود ثم Enter..." dir="ltr" autocomplete="off">
+              <button type="button" class="btn-fetch-barcode" id="btnRefreshPriceBarcode" title="تحديث التفاصيل من الإدارة">↻</button>
               <button type="button" class="btn btn-secondary" id="btnAddPriceItem">إضافة للقائمة</button>
             </div>
             <p class="hint" id="priceSelectionHint">لم تُضف منتجات بعد</p>
             <div class="table-wrap price-selection-wrap hidden" id="priceSelectionWrap">
               <table>
                 <thead>
-                  <tr><th>الباركود</th><th>الاسم</th><th>السعر</th><th>المخزون</th><th></th></tr>
+                  <tr><th>الباركود</th><th>الاسم</th><th>سعر الجملة</th><th>سعر البيع</th><th>المخزون</th><th></th></tr>
                 </thead>
                 <tbody id="priceSelectionBody"></tbody>
               </table>
@@ -247,14 +248,21 @@
       <div class="form-grid">
         <div>
           <label>الباركود *</label>
-          <input type="text" id="prodBarcode" class="field" required dir="ltr">
+          <div class="barcode-field-row">
+            <input type="text" id="prodBarcode" class="field" required dir="ltr">
+            <button type="button" class="btn-fetch-barcode" id="btnFetchProdBarcode" title="جلب التفاصيل من الإدارة">↻</button>
+          </div>
         </div>
         <div>
           <label>الاسم *</label>
           <input type="text" id="prodName" class="field" required>
         </div>
         <div>
-          <label>السعر</label>
+          <label>سعر الجملة</label>
+          <input type="number" id="prodCostPrice" class="field" min="0" value="0">
+        </div>
+        <div>
+          <label>سعر البيع</label>
           <input type="number" id="prodPrice" class="field" min="0" value="0">
         </div>
         <div>
@@ -300,6 +308,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=7"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
