@@ -265,7 +265,7 @@ function showLastScan(product, qty = 1) {
 }
 
 function setPosMode(active) {
-  document.querySelector('.main-area')?.classList.toggle('pos-mode', active);
+  document.getElementById('app')?.classList.toggle('pos-mode', active);
 }
 
 function updateDayStatsDisplay(count, net) {
