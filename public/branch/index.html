@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ديما الحياة — نقطة البيع</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=16">
+</head>
+<body>
+  <div id="loginScreen" class="login-screen">
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="login-brand">
+          <div class="brand-logo">د</div>
+          <h1>ديما الحياة</h1>
+          <p>نظام نقطة البيع للفرع</p>
+        </div>
+        <form id="loginForm" class="login-form">
+          <label>اسم المستخدم</label>
+          <input type="text" id="loginUser" autocomplete="username" value="branch" required>
+          <label>كلمة المرور</label>
+          <input type="password" id="loginPass" autocomplete="current-password" value="branch123" required>
+          <button type="submit" class="btn btn-primary btn-block">دخول إلى نقطة البيع</button>
+          <p class="login-error hidden" id="loginError"></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="app" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-logo sm">د</span>
+        <div>
+          <strong>ديما الحياة</strong>
+          <small id="branchBadge">الفرع</small>
+        </div>
+      </div>
+      <nav class="sidebar-nav" id="mainNav">
+        <button type="button" class="nav-item active" data-view="pos">
+          <span class="nav-ico">🛒</span><span>بيع</span>
+        </button>
+        <button type="button" class="nav-item" data-view="dashboard">
+          <span class="nav-ico">📊</span><span>اليوم</span>
+        </button>
+        <button type="button" class="nav-item" data-view="invoices">
+          <span class="nav-ico">🧾</span><span>الفواتير</span>
+        </button>
+        <button type="button" class="nav-item" data-view="returns">
+          <span class="nav-ico">↩</span><span>مرتجع</span>
+        </button>
+        <button type="button" class="nav-item" data-view="held">
+          <span class="nav-ico">⏸</span><span>معلّق</span>
+          <span class="nav-badge hidden" id="heldBadge">0</span>
+        </button>
+        <button type="button" class="nav-item" data-view="accounts">
+          <span class="nav-ico">👥</span><span>الحسابات</span>
+        </button>
+        <button type="button" class="nav-item" data-view="payments">
+          <span class="nav-ico">💳</span><span>تسديد</span>
+        </button>
+        <button type="button" class="nav-item" data-view="stock">
+          <span class="nav-ico">📦</span><span>مخزون</span>
+          <span class="nav-badge hidden" id="stockBadge">0</span>
+        </button>
+        <button type="button" class="nav-item" data-view="reports">
+          <span class="nav-ico">📈</span><span>تقارير</span>
+        </button>
+        <button type="button" class="nav-item" data-view="settings">
+          <span class="nav-ico">⚙</span><span>إعدادات</span>
+        </button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="sync-status" id="syncPill">متصل</div>
+        <button type="button" class="btn btn-ghost btn-sm btn-block" id="btnLogout">خروج</button>
+      </div>
+    </aside>
+
+    <div class="main-area">
+      <header class="page-header">
+        <div class="header-title">
+          <h2 id="pageTitle">نقطة البيع</h2>
+          <p id="pageSubtitle">مسح · بحث · بيع سريع</p>
+        </div>
+        <div class="header-stats" id="headerStats">
+          <div class="stat-pill"><span class="lbl">فواتير</span><strong id="statCount">0</strong></div>
+          <div class="stat-pill accent"><span class="lbl">صافي اليوم</span><strong id="statNet" dir="ltr">0</strong></div>
+          <div class="stat-pill"><span class="lbl">الوقت</span><strong id="clockNow">--:--</strong></div>
+        </div>
+      </header>
+
+      <div id="priceBanner" class="price-banner hidden">
+        <span>🔔 تحديث أسعار جديد متاح من الإدارة</span>
+        <button type="button" class="btn btn-sm btn-accent" id="btnApplyPrices">تطبيق الآن</button>
+        <button type="button" class="btn btn-sm btn-ghost" id="btnDismissPrices">لاحقاً</button>
+      </div>
+
+      <!-- POS — نقطة البيع -->
+      <main id="viewPos" class="view pos-view">
+        <div class="pos-workspace">
+          <header class="pos-header">
+            <div class="pos-inputs">
+              <div class="pos-scan-field scan-bar" id="scanBar">
+                <span class="pos-scan-ico" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+                </span>
+                <input type="text" id="barcodeInput" class="pos-scan-input" placeholder="امسح الباركود..." autocomplete="off" autofocus>
+                <span class="scan-ready-dot" title="جاهز"></span>
+              </div>
+              <div class="pos-search-field search-wrap">
+                <svg class="pos-search-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input type="search" id="productSearch" class="pos-search-input" placeholder="بحث بالاسم..." autocomplete="off">
+                <div id="searchDropdown" class="search-dropdown hidden"></div>
+              </div>
+            </div>
+            <div class="pos-header-meta">
+              <span class="pos-meta-item" id="posSessionId">#0000</span>
+              <span class="pos-meta-item pos-meta-clock" id="posClock">--:--</span>
+              <span class="pos-meta-item pos-meta-day"><span id="posStatCount">0</span> فاتورة · <span id="posStatNet" dir="ltr">0</span></span>
+            </div>
+          </header>
+
+          <div class="pos-last-scan hidden" id="lastScanPreview"></div>
+
+          <section class="pos-invoice">
+            <div class="pos-invoice-bar">
+              <div class="pos-invoice-left">
+                <h3 class="pos-invoice-heading">الفاتورة</h3>
+                <span class="cart-count-pill" id="cartCount">0</span>
+                <span class="price-edit-badge hidden" id="priceEditBadge">0 معدّل</span>
+                <span class="gift-count-badge hidden" id="giftCountBadge">0 هدية</span>
+              </div>
+              <div class="pos-invoice-actions">
+                <button type="button" class="customer-chip" id="btnPickCustomer">
+                  <span class="customer-chip-ico">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  </span>
+                  <span class="customer-chip-body">
+                    <span class="customer-lbl">العميل</span>
+                    <span class="customer-val" id="customerLabel">نقدي</span>
+                  </span>
+                </button>
+                <button type="button" class="btn-pos-clear" id="btnClearCart" title="تفريغ الفاتورة">تفريغ</button>
+              </div>
+            </div>
+
+            <div class="invoice-table-wrap">
+              <table class="invoice-table">
+                <thead>
+                  <tr>
+                    <th class="col-num">#</th>
+                    <th class="col-name">المنتج</th>
+                    <th class="col-barcode">الباركود</th>
+                    <th class="col-price">السعر</th>
+                    <th class="col-qty">البيع</th>
+                    <th class="col-gift">هدايا</th>
+                    <th class="col-total">الإجمالي</th>
+                    <th class="col-act"></th>
+                  </tr>
+                </thead>
+                <tbody id="cartLines"></tbody>
+              </table>
+              <div class="cart-empty" id="cartEmpty">
+                <div class="empty-visual">
+                  <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.25"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 10h8M8 14h5"/></svg>
+                </div>
+                <p class="empty-title">ابدأ بمسح باركود</p>
+                <p class="empty-sub">أو ابحث عن منتج بالاسم</p>
+              </div>
+            </div>
+          </section>
+
+          <footer class="pos-dock">
+            <div class="pos-dock-stats">
+              <div class="dock-stat">
+                <span class="dock-stat-lbl">بنود</span>
+                <strong id="posLineCount">0</strong>
+              </div>
+              <div class="dock-stat">
+                <span class="dock-stat-lbl">قطع</span>
+                <strong id="posItemCount">0</strong>
+              </div>
+            </div>
+
+            <div class="pos-dock-totals">
+              <div class="dock-total-item">
+                <span class="dock-lbl">المجموع</span>
+                <span class="dock-val" id="subtotalVal" dir="ltr">0</span>
+              </div>
+              <div class="dock-total-item dock-discount">
+                <span class="dock-lbl">خصم <kbd>F3</kbd></span>
+                <input type="number" id="discountInput" class="dock-discount-input" min="0" value="0">
+              </div>
+              <div class="dock-total-item dock-grand">
+                <span class="dock-lbl">الصافي</span>
+                <span class="dock-val dock-grand-val" id="grandTotal" dir="ltr">0</span>
+              </div>
+            </div>
+
+            <div class="pos-dock-actions">
+              <button type="button" class="btn-dock-hold" id="btnHold">
+                <span>تعليق</span>
+                <kbd>F6</kbd>
+              </button>
+              <button type="button" class="btn-dock-checkout" id="btnCheckout" disabled>
+                <span class="dock-checkout-text">إتمام البيع</span>
+                <span class="dock-checkout-amt" id="checkoutBtnAmt" dir="ltr">0</span>
+                <kbd>F8</kbd>
+              </button>
+            </div>
+          </footer>
+        </div>
+      </main>
+
+      <!-- Dashboard -->
+      <main id="viewDashboard" class="view hidden">
+        <div class="quick-actions" id="dashboardActions">
+          <button type="button" class="qa-btn" data-goto="pos">🛒 بيع جديد</button>
+          <button type="button" class="qa-btn" data-goto="held">⏸ فواتير معلّقة</button>
+          <button type="button" class="qa-btn" data-goto="invoices">🧾 فواتير اليوم</button>
+          <button type="button" class="qa-btn" data-goto="payments">💳 تسديد</button>
+        </div>
+        <div class="kpi-grid" id="dashboardKpis"></div>
+        <div class="dash-panels">
+          <div class="panel-card">
+            <h3>ملخص اليوم</h3>
+            <div id="dashboardDetail" class="dashboard-detail"></div>
+          </div>
+          <div class="panel-card">
+            <h3>آخر الفواتير</h3>
+            <div id="dashboardRecent" class="list-cards compact-list"></div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Invoices -->
+      <main id="viewInvoices" class="view hidden">
+        <div class="toolbar">
+          <input type="search" id="invoiceSearch" class="field" placeholder="بحث برقم الفاتورة أو العميل...">
+          <input type="date" id="invoiceDate" class="field field-date">
+          <select id="invoiceKind" class="field">
+            <option value="">كل الأنواع</option>
+            <option value="sale">مبيعات</option>
+            <option value="return">مرتجعات</option>
+          </select>
+        </div>
+        <div class="list-cards" id="invoiceList"></div>
+      </main>
+
+      <!-- Returns -->
+      <main id="viewReturns" class="view hidden">
+        <div class="toolbar">
+          <input type="search" id="returnSearch" class="field" placeholder="ابحث برقم فاتورة البيع...">
+          <input type="date" id="returnDateFrom" class="field field-date">
+          <input type="date" id="returnDateTo" class="field field-date">
+        </div>
+        <p class="hint">اختر فاتورة بيع لإنشاء مرتجع — يمكنك إرجاع كمية جزئية أو كاملة</p>
+        <div class="list-cards" id="returnList"></div>
+      </main>
+
+      <!-- Held -->
+      <main id="viewHeld" class="view hidden">
+        <p class="hint">فواتير معلّقة محفوظة على هذا الجهاز — اضغط لاستئناف البيع</p>
+        <div class="list-cards" id="heldList"></div>
+      </main>
+
+      <!-- Accounts -->
+      <main id="viewAccounts" class="view hidden">
+        <div class="split-panels accounts-panels">
+          <div class="panel-card">
+            <h3>إضافة حساب جديد</h3>
+            <div class="form-stack" id="addAccountForm">
+              <label>اسم الحساب / العميل *</label>
+              <input type="text" id="accNewName" class="field" placeholder="الاسم الكامل" required>
+              <label>الهاتف</label>
+              <input type="text" id="accNewPhone" class="field" placeholder="07xxxxxxxx">
+              <label>العنوان</label>
+              <input type="text" id="accNewAddress" class="field" placeholder="اختياري">
+              <label>حد الائتمان</label>
+              <input type="number" id="accNewCredit" class="field" min="0" value="0" placeholder="0">
+              <label>ملاحظات</label>
+              <input type="text" id="accNewNotes" class="field" placeholder="اختياري">
+              <button type="button" class="btn btn-primary btn-block" id="btnAddAccount">حفظ الحساب</button>
+              <p class="form-result hidden" id="addAccountResult"></p>
+            </div>
+          </div>
+          <div class="panel-card flex-grow">
+            <div class="toolbar" style="margin-bottom:12px">
+              <input type="search" id="accountSearch" class="field" placeholder="بحث بالاسم أو الرقم...">
+              <label class="check-label"><input type="checkbox" id="debtOnly"> مديونون فقط</label>
+            </div>
+            <div class="account-grid" id="accountGrid"></div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Payments -->
+      <main id="viewPayments" class="view hidden">
+        <div class="split-panels">
+          <div class="panel-card">
+            <h3>تسديد حساب / دين</h3>
+            <div class="form-stack">
+              <label>الحساب</label>
+              <select id="payAccount" class="field"></select>
+              <label>المبلغ</label>
+              <input type="number" id="payAmount" class="field" min="1" placeholder="0">
+              <label>طريقة الدفع</label>
+              <select id="payMethod" class="field">
+                <option value="cash">نقدي</option>
+                <option value="transfer">تحويل</option>
+                <option value="check">شيك</option>
+              </select>
+              <label>ملاحظات</label>
+              <input type="text" id="payNotes" class="field" placeholder="اختياري">
+              <button type="button" class="btn btn-primary btn-block" id="btnSubmitPayment">تسجيل التسديد</button>
+              <p class="form-result hidden" id="payResult"></p>
+            </div>
+          </div>
+          <div class="panel-card flex-grow">
+            <h3>آخر التسديدات</h3>
+            <div id="paymentsList" class="payments-table-wrap"></div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Stock -->
+      <main id="viewStock" class="view hidden">
+        <div class="toolbar">
+          <span class="hint" style="margin:0">منتجات منخفضة المخزون أو نافدة</span>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshStock">تحديث</button>
+        </div>
+        <div class="stock-grid" id="stockGrid"></div>
+      </main>
+
+      <!-- Reports -->
+      <main id="viewReports" class="view hidden">
+        <div class="toolbar">
+          <input type="date" id="reportFrom" class="field field-date">
+          <input type="date" id="reportTo" class="field field-date">
+          <button type="button" class="btn btn-primary btn-sm" id="btnLoadReport">عرض التقرير</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnPrintReport">طباعة</button>
+        </div>
+        <div id="reportBody" class="report-body"></div>
+      </main>
+
+      <!-- Settings -->
+      <main id="viewSettings" class="view hidden">
+        <div class="panel-card settings-panel">
+          <h3>إعدادات الفرع</h3>
+          <div class="form-stack">
+            <label>حد تنبيه المخزون المنخفض</label>
+            <input type="number" id="setLowStock" class="field" min="0" value="5">
+            <label class="check-label wide"><input type="checkbox" id="setBlockZero"> منع بيع المنتجات النافدة</label>
+            <label class="check-label wide"><input type="checkbox" id="setBlockOver" checked> منع تجاوز الكمية المتاحة</label>
+            <label class="check-label wide"><input type="checkbox" id="setAllowPrice" checked> السماح بتعديل السعر يدوياً</label>
+            <label class="check-label wide"><input type="checkbox" id="setThermal" checked> طباعة حرارية 80mm</label>
+            <label>نص أسفل الفاتورة</label>
+            <input type="text" id="setReceiptFooter" class="field" placeholder="شكراً لزيارتكم">
+            <button type="button" class="btn btn-primary" id="btnSaveSettings">حفظ الإعدادات</button>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Checkout -->
+  <dialog id="checkoutModal" class="modal">
+    <div class="modal-head"><h3>إتمام البيع</h3><button type="button" class="modal-x" data-close>×</button></div>
+    <div class="modal-body">
+      <div class="checkout-amount">الصافي: <strong id="checkoutTotal" dir="ltr">0</strong></div>
+      <div id="checkoutLines" class="checkout-lines"></div>
+      <div class="pay-grid">
+        <button type="button" class="pay-card active" data-method="cash"><span>💵</span><b>نقدي كامل</b></button>
+        <button type="button" class="pay-card" data-method="credit"><span>📋</span><b>آجل / حساب</b></button>
+        <button type="button" class="pay-card" data-method="partial"><span>💰</span><b>دفع جزئي</b></button>
+      </div>
+      <div id="partialFields" class="hidden form-stack">
+        <label>المبلغ المدفوع نقداً</label>
+        <input type="number" id="paidNow" class="field" min="0">
+      </div>
+      <label>ملاحظات</label>
+      <input type="text" id="checkoutNotes" class="field">
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-secondary" data-close>إلغاء</button>
+      <button type="button" class="btn btn-primary" id="btnConfirmSale">تأكيد وطباعة</button>
+    </div>
+  </dialog>
+
+  <!-- Customer -->
+  <dialog id="customerModal" class="modal">
+    <div class="modal-head"><h3>اختر العميل</h3><button type="button" class="modal-x" data-close>×</button></div>
+    <div class="modal-body">
+      <div class="customer-modal-actions">
+        <input type="search" id="customerSearch" class="field" placeholder="بحث بالاسم أو الرقم...">
+        <button type="button" class="btn btn-secondary btn-sm" id="btnNewCustomer">+ عميل جديد</button>
+      </div>
+      <div id="newCustomerForm" class="form-stack hidden">
+        <label>اسم العميل *</label>
+        <input type="text" id="newCustomerName" class="field" placeholder="الاسم الكامل">
+        <label>الهاتف</label>
+        <input type="text" id="newCustomerPhone" class="field" placeholder="اختياري">
+        <button type="button" class="btn btn-primary btn-sm" id="btnCreateCustomer">إنشاء واختيار</button>
+      </div>
+      <div class="picker-list" id="customerList"></div>
+    </div>
+  </dialog>
+
+  <!-- Invoice detail -->
+  <dialog id="invoiceModal" class="modal modal-lg">
+    <div class="modal-head"><h3 id="invoiceModalTitle">تفاصيل الفاتورة</h3><button type="button" class="modal-x" data-close>×</button></div>
+    <div class="modal-body" id="invoiceModalBody"></div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-secondary" id="btnPrintInvoice">طباعة</button>
+      <button type="button" class="btn btn-secondary hidden" id="btnReturnAll">مرتجع كامل</button>
+      <button type="button" class="btn btn-secondary hidden" id="btnStartReturn">مرتجع جزئي</button>
+      <button type="button" class="btn btn-primary hidden" id="btnConfirmReturn">تأكيد المرتجع</button>
+      <button type="button" class="btn btn-ghost" data-close>إغلاق</button>
+    </div>
+  </dialog>
+
+  <!-- Account ledger -->
+  <dialog id="accountModal" class="modal modal-lg">
+    <div class="modal-head"><h3 id="accountModalTitle">كشف حساب</h3><button type="button" class="modal-x" data-close>×</button></div>
+    <div class="modal-body" id="accountModalBody"></div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-primary" id="btnPayFromAccount">تسديد سريع</button>
+      <button type="button" class="btn btn-ghost" data-close>إغلاق</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast hidden"></div>
+  <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
+
+  <script src="app.js?v=16"></script>
+</body>
+</html>

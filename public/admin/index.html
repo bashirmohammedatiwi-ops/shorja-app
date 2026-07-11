@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ديما الحياة — الإدارة</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=5">
+</head>
+<body>
+  <div id="loginScreen" class="login-screen">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="logo-mark">د</div>
+        <h1>ديما الحياة</h1>
+        <p>لوحة إدارة المبيعات والفروع</p>
+      </div>
+      <form id="loginForm">
+        <label>اسم المستخدم</label>
+        <input type="text" id="loginUser" value="admin" autocomplete="username" required>
+        <label>كلمة المرور</label>
+        <input type="password" id="loginPass" value="admin123" autocomplete="current-password" required>
+        <button type="submit" class="btn btn-primary">دخول إلى الإدارة</button>
+        <p class="err hidden" id="loginError"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="logo-wrap">
+        <div class="logo-mark sm">د</div>
+        <div>
+          <strong>ديما الحياة</strong>
+          <small>لوحة الإدارة</small>
+        </div>
+      </div>
+      <nav>
+        <button type="button" class="nav active" data-view="dashboard">لوحة اليوم</button>
+        <button type="button" class="nav" data-view="invoices">الفواتير</button>
+        <button type="button" class="nav" data-view="products">المنتجات</button>
+        <button type="button" class="nav" data-view="prices">الأسعار</button>
+        <button type="button" class="nav" data-view="accounts">الحسابات</button>
+        <button type="button" class="nav" data-view="payments">التسديدات</button>
+        <button type="button" class="nav" data-view="journal">القيود</button>
+      </nav>
+      <button type="button" class="btn btn-ghost logout" id="btnLogout">خروج</button>
+    </aside>
+    <main class="content">
+      <header class="page-top" id="pageTop">
+        <div class="page-top-text">
+          <h1 id="pageTitle">لوحة اليوم</h1>
+          <p id="pageSubtitle">ملخص مبيعات الفروع والحسابات</p>
+        </div>
+      </header>
+
+      <section id="viewDashboard" class="view">
+        <div class="kpi-grid" id="kpiGrid"></div>
+        <h2>حالة الفروع</h2>
+        <div id="branchesList"></div>
+      </section>
+
+      <section id="viewInvoices" class="view hidden">
+        <div class="section-panel">
+          <div class="section-panel-toolbar">
+            <div class="search-box">
+              <span class="search-ico" aria-hidden="true">⌕</span>
+              <input type="search" id="invSearch" placeholder="بحث برقم الفاتورة أو العميل...">
+            </div>
+            <input type="date" id="invDate" class="field-date">
+          </div>
+          <div class="section-panel-body no-pad">
+            <div class="table-wrap" id="invoiceTable"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="viewProducts" class="view hidden">
+        <div class="section-panel">
+          <div class="section-panel-toolbar">
+            <div class="search-box">
+              <span class="search-ico" aria-hidden="true">⌕</span>
+              <input type="search" id="prodSearch" placeholder="بحث بالاسم أو الباركود...">
+            </div>
+            <div class="toolbar-actions">
+              <div class="view-toggle" id="prodViewToggle">
+                <button type="button" class="view-toggle-btn active" data-mode="grid">بطاقات</button>
+                <button type="button" class="view-toggle-btn" data-mode="table">جدول</button>
+              </div>
+              <button type="button" class="btn btn-primary" id="btnNewProduct">+ منتج جديد</button>
+              <label class="file-btn btn btn-secondary">استيراد CSV
+                <input type="file" id="csvImport" accept=".csv,.txt" hidden>
+              </label>
+            </div>
+          </div>
+
+          <div class="category-bar-sticky">
+            <div class="category-bar-label">الأقسام</div>
+            <div class="category-bar-scroll">
+              <div class="category-bar" id="prodCategoryBar"></div>
+            </div>
+          </div>
+
+          <div class="prod-stats" id="prodStats"></div>
+
+          <div class="section-panel-body">
+            <div id="prodGrid" class="prod-grid"></div>
+            <div class="table-wrap hidden" id="productTableWrap">
+              <div id="productTable"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="viewPrices" class="view hidden">
+        <div class="section-panel prices-layout">
+          <div class="price-steps">
+            <div class="step-card">
+              <div class="step-num">1</div>
+              <div>
+                <h3>اختر المنتجات</h3>
+                <p>بالباركود أو من الاستعراض أدناه</p>
+              </div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">2</div>
+              <div>
+                <h3>راجع القائمة</h3>
+                <p>تأكد من المنتجات والأسعار</p>
+              </div>
+            </div>
+            <div class="step-card">
+              <div class="step-num">3</div>
+              <div>
+                <h3>ارفع للفروع</h3>
+                <p>يصل إشعار فوراً لتطبيق الفرع</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="action-card compact-card">
+            <div class="price-add-bar">
+              <input type="text" id="priceBarcode" class="field" placeholder="امسح أو اكتب الباركود ثم Enter..." dir="ltr" autocomplete="off">
+              <button type="button" class="btn btn-secondary" id="btnAddPriceItem">إضافة للقائمة</button>
+            </div>
+            <p class="hint" id="priceSelectionHint">لم تُضف منتجات بعد</p>
+            <div class="table-wrap price-selection-wrap hidden" id="priceSelectionWrap">
+              <table>
+                <thead>
+                  <tr><th>الباركود</th><th>الاسم</th><th>السعر</th><th>المخزون</th><th></th></tr>
+                </thead>
+                <tbody id="priceSelectionBody"></tbody>
+              </table>
+            </div>
+            <div class="price-actions">
+              <button type="button" class="btn btn-ghost" id="btnClearPriceSelection">تفريغ القائمة</button>
+              <button type="button" class="btn btn-primary btn-lg" id="btnPublishPrices" disabled>رفع المحدد للفروع</button>
+            </div>
+            <p id="publishResult" class="result"></p>
+          </div>
+
+          <div class="section-divider">
+            <h2>استعراض المنتجات</h2>
+            <p>اختر من الأقسام أو ابحث ثم اضغط إضافة</p>
+          </div>
+
+          <div class="section-panel-toolbar">
+            <div class="search-box">
+              <span class="search-ico" aria-hidden="true">⌕</span>
+              <input type="search" id="priceBrowseSearch" placeholder="بحث في المنتجات...">
+            </div>
+          </div>
+
+          <div class="category-bar-sticky">
+            <div class="category-bar-label">الأقسام</div>
+            <div class="category-bar-scroll">
+              <div class="category-bar" id="priceCategoryBar"></div>
+            </div>
+          </div>
+
+          <div id="priceBrowseGrid" class="prod-grid price-browse-grid"></div>
+
+          <div class="section-divider">
+            <h2>سجل حزم الأسعار</h2>
+          </div>
+          <div id="packagesList"></div>
+        </div>
+      </section>
+
+      <section id="viewAccounts" class="view hidden">
+        <div class="toolbar">
+          <input type="search" id="accSearch" placeholder="بحث بالاسم أو الرقم...">
+          <button type="button" class="btn btn-secondary" id="btnNewAccount">+ حساب جديد</button>
+        </div>
+        <div class="table-wrap" id="accountTable"></div>
+      </section>
+
+      <section id="viewPayments" class="view hidden">
+        <div class="form-card">
+          <select id="payAcc"></select>
+          <input type="number" id="payAmt" placeholder="المبلغ">
+          <input type="text" id="payNote" placeholder="ملاحظات">
+          <button type="button" class="btn btn-primary" id="btnPay">تسجيل تسديد</button>
+        </div>
+        <div class="table-wrap" id="paymentsTable"></div>
+      </section>
+
+      <section id="viewJournal" class="view hidden">
+        <div class="form-card journal-form">
+          <h3>قيد تسوية يدوي</h3>
+          <select id="adjAcc"></select>
+          <input type="number" id="adjAmt" placeholder="المبلغ (+ دين / − خصم)">
+          <input type="text" id="adjDesc" placeholder="الوصف">
+          <button type="button" class="btn btn-secondary" id="btnAdj">تسجيل قيد</button>
+        </div>
+        <div class="table-wrap" id="journalTable"></div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+
+  <dialog id="accountModal" class="modal-dialog">
+    <form id="accountForm" method="dialog">
+      <h2>حساب جديد</h2>
+      <label>اسم الحساب *</label>
+      <input type="text" id="accFormName" class="field" required>
+      <label>الهاتف</label>
+      <input type="text" id="accFormPhone" class="field">
+      <label>العنوان</label>
+      <input type="text" id="accFormAddress" class="field">
+      <label>حد الائتمان</label>
+      <input type="number" id="accFormCredit" class="field" min="0" value="0">
+      <label>ملاحظات</label>
+      <input type="text" id="accFormNotes" class="field">
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="btnAccCancel">إلغاء</button>
+        <button type="submit" class="btn btn-primary">حفظ</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="productModal" class="modal-dialog modal-wide">
+    <form id="productForm" method="dialog">
+      <h2 id="productModalTitle">منتج جديد</h2>
+      <div class="form-grid">
+        <div>
+          <label>الباركود *</label>
+          <input type="text" id="prodBarcode" class="field" required dir="ltr">
+        </div>
+        <div>
+          <label>الاسم *</label>
+          <input type="text" id="prodName" class="field" required>
+        </div>
+        <div>
+          <label>السعر</label>
+          <input type="number" id="prodPrice" class="field" min="0" value="0">
+        </div>
+        <div>
+          <label>المخزون</label>
+          <input type="number" id="prodStock" class="field" min="0" value="0">
+        </div>
+        <div>
+          <label>القسم</label>
+          <input type="text" id="prodFormCategory" class="field">
+        </div>
+        <div>
+          <label>الوحدة</label>
+          <input type="text" id="prodUnit" class="field" value="قطعة">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="btnProdCancel">إلغاء</button>
+        <button type="submit" class="btn btn-primary">حفظ</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="invoiceModal" class="modal-dialog modal-wide">
+    <div id="invoiceDetail"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-close>إغلاق</button>
+      <button type="button" class="btn btn-primary" id="btnPrintInvoice">طباعة</button>
+    </div>
+  </dialog>
+
+  <dialog id="ledgerModal" class="modal-dialog modal-wide">
+    <div id="ledgerDetail"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-close>إغلاق</button>
+    </div>
+  </dialog>
+
+  <dialog id="productViewModal" class="modal-dialog modal-wide">
+    <div id="productViewDetail"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-close>إغلاق</button>
+      <button type="button" class="btn btn-primary" id="btnEditFromView">تعديل</button>
+    </div>
+  </dialog>
+
+  <script src="app.js?v=7"></script>
+</body>
+</html>
