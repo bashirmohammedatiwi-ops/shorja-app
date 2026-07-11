@@ -536,12 +536,49 @@ function fillProductForm(product) {
   document.getElementById('prodUnit').value = product.unit || 'قطعة';
 }
 
-async function fetchProductByBarcode(code) {
+async function fetchProductFromEdari(code) {
   const c = String(code || '').trim();
   if (!c) throw new Error('أدخل الباركود');
-  const data = await api(`/admin/products/barcode/${encodeURIComponent(c)}`);
-  if (!data.product) throw new Error('المنتج غير موجود في قاعدة الإدارة');
+
+  let liveMaterial = null;
+  if (window.edariDesktop?.lookupEdariMaterial) {
+    const live = await window.edariDesktop.lookupEdariMaterial(c);
+    if (live?.ok && live.material) {
+      liveMaterial = live.material;
+    } else if (live?.error && !live.ok) {
+      throw new Error(live.error);
+    }
+  }
+
+  if (liveMaterial) {
+    const data = await api('/admin/products/edari-cache', {
+      method: 'POST',
+      body: JSON.stringify({ material: liveMaterial })
+    });
+    return data.product;
+  }
+
+  const data = await api(`/admin/products/edari-lookup?code=${encodeURIComponent(c)}`);
+  if (!data.product) throw new Error('المادة غير موجودة في الإداري (Edari)');
   return data.product;
+}
+
+async function saveProductFromEdari(code, extras = {}) {
+  const product = await fetchProductFromEdari(code);
+  const data = await api('/admin/products/from-edari', {
+    method: 'POST',
+    body: JSON.stringify({ ...product, ...extras, barcode: product.barcode })
+  });
+  return data.product;
+}
+
+/** @deprecated use fetchProductFromEdari */
+async function fetchProductByBarcode(code) {
+  try {
+    const data = await api(`/admin/products/barcode/${encodeURIComponent(String(code).trim())}`);
+    if (data.product) return data.product;
+  } catch { /* fall through */ }
+  return fetchProductFromEdari(code);
 }
 
 async function refreshProductFormFromAdmin() {
@@ -555,9 +592,9 @@ async function refreshProductFormFromAdmin() {
   const btn = document.getElementById('btnFetchProdBarcode');
   if (btn) btn.disabled = true;
   try {
-    const product = await fetchProductByBarcode(code);
+    const product = await fetchProductFromEdari(code);
     fillProductForm(product);
-    toast(`تم جلب: ${product.name}`);
+    toast(`تم جلب من الإداري: ${product.name} · جملة ${fmt(product.costPrice)} · مخزون ${fmt(product.stockQty)}`);
   } catch (err) {
     toast(err.message || 'فشل جلب المنتج');
   } finally {
@@ -682,11 +719,11 @@ function renderPriceSelection() {
   tbody.querySelectorAll('.btn-refresh-price-row').forEach((btn) => {
     btn.addEventListener('click', async () => {
       try {
-        const product = await fetchProductByBarcode(btn.dataset.barcode);
+        const product = await saveProductFromEdari(btn.dataset.barcode);
         priceSelection.set(product.barcode, product);
         renderPriceSelection();
         renderPriceBrowse();
-        toast(`تم تحديث: ${product.name}`);
+        toast(`تم تحديث من الإداري: ${product.name}`);
       } catch (err) {
         toast(err.message || 'فشل التحديث');
       }
@@ -713,16 +750,18 @@ async function addPriceItem(forceRefresh = false) {
     return;
   }
   try {
-    const product = await fetchProductByBarcode(code);
+    const product = await saveProductFromEdari(code);
     const existed = priceSelection.has(product.barcode);
     priceSelection.set(product.barcode, product);
     renderPriceSelection();
     renderPriceBrowse();
     input.value = '';
     input.focus();
-    toast(existed ? `تم تحديث: ${product.name}` : `تمت إضافة: ${product.name}`);
+    toast(existed
+      ? `تم تحديث من الإداري: ${product.name}`
+      : `تمت الإضافة من الإداري: ${product.name} · جملة ${fmt(product.costPrice)}`);
   } catch (err) {
-    toast(err.message || 'المنتج غير موجود في الإدارة');
+    toast(err.message || 'المادة غير موجودة في الإداري (Edari)');
   }
 }
 
@@ -737,7 +776,7 @@ async function refreshPriceBarcodeFromAdmin() {
   const btn = document.getElementById('btnRefreshPriceBarcode');
   if (btn) btn.disabled = true;
   try {
-    const product = await fetchProductByBarcode(code);
+    const product = await fetchProductFromEdari(code);
     if (priceSelection.has(product.barcode)) {
       priceSelection.set(product.barcode, product);
       renderPriceSelection();

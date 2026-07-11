@@ -243,6 +243,28 @@ function initSchema() {
 }
 
 function migrateSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS edari_materials (
+      seq TEXT PRIMARY KEY,
+      num TEXT,
+      barcode TEXT,
+      name1 TEXT NOT NULL,
+      name2 TEXT,
+      unit TEXT DEFAULT '',
+      sell_pr1 REAL DEFAULT 0,
+      sell_pr2 REAL DEFAULT 0,
+      sell_pr3 REAL DEFAULT 0,
+      sell_pr5 REAL DEFAULT 0,
+      bonus REAL DEFAULT 0,
+      in_tot REAL DEFAULT 0,
+      out_tot REAL DEFAULT 0,
+      remarks TEXT,
+      synced_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_edari_materials_barcode ON edari_materials(barcode);
+    CREATE INDEX IF NOT EXISTS idx_edari_materials_num ON edari_materials(num);
+  `);
+
   const cols = [
     'ALTER TABLE invoice_lines ADD COLUMN original_price REAL',
     'ALTER TABLE invoice_lines ADD COLUMN price_edited INTEGER DEFAULT 0',

@@ -1,6 +1,7 @@
 const express = require('express');
 const { authRequired } = require('../lib/auth');
 const { listProducts, upsertProduct, bulkUpsert, stats, getByBarcode, getProduct, deactivateProduct } = require('../lib/products');
+const { resolveEdariMaterial, cacheEdariMaterial, mapEdariToShorjaProduct } = require('../lib/edari-materials');
 const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment } = require('../lib/invoices');
 const { listAccounts, createAccount, getAccount, accountStats } = require('../lib/accounts');
 const { publishPricePackage, listPackages, getLatestVersion } = require('../lib/prices');
@@ -49,6 +50,59 @@ router.get('/products/barcode/:code', (req, res) => {
   const product = getByBarcode(req.params.code);
   if (!product) return res.status(404).json({ ok: false, error: 'المنتج غير موجود' });
   res.json({ ok: true, product });
+});
+
+router.get('/products/edari-lookup', async (req, res) => {
+  const code = String(req.query.code || '').trim();
+  if (!code) return res.status(400).json({ ok: false, error: 'الباركود مطلوب' });
+  try {
+    const material = await resolveEdariMaterial(code);
+    if (!material) {
+      return res.status(404).json({ ok: false, error: 'المادة غير موجودة في الإداري (Edari)' });
+    }
+    const product = mapEdariToShorjaProduct(material);
+    res.json({ ok: true, material, product });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || 'فشل جلب المادة من الإداري' });
+  }
+});
+
+router.post('/products/edari-cache', (req, res) => {
+  try {
+    const material = cacheEdariMaterial(req.body?.material || req.body);
+    if (!material) {
+      return res.status(400).json({ ok: false, error: 'بيانات المادة غير كافية' });
+    }
+    res.json({ ok: true, material, product: mapEdariToShorjaProduct(material) });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.post('/products/from-edari', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const code = String(body.barcode || body.code || '').trim();
+    if (!code) return res.status(400).json({ ok: false, error: 'الباركود مطلوب' });
+    const material = body.material
+      ? cacheEdariMaterial(body.material)
+      : await resolveEdariMaterial(code);
+    if (!material) {
+      return res.status(404).json({ ok: false, error: 'المادة غير موجودة في الإداري (Edari)' });
+    }
+    const payload = mapEdariToShorjaProduct(material);
+    const product = upsertProduct({
+      ...payload,
+      category: body.category || payload.category || '',
+      unit: body.unit || payload.unit || 'قطعة',
+      costPrice: body.costPrice != null ? Number(body.costPrice) : payload.costPrice,
+      price: body.price != null ? Number(body.price) : payload.price,
+      stockQty: body.stockQty != null ? Number(body.stockQty) : payload.stockQty
+    });
+    res.json({ ok: true, material, product });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
 });
 
 router.delete('/products/:id', (req, res) => {
