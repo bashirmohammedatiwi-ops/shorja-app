@@ -1268,7 +1268,10 @@ document.getElementById('btnConfirmSale')?.addEventListener('click', () => {
 });
 
 function printHtml(html) {
-  const clean = String(html).replace(/<script[\s\S]*?<\/script>/gi, '');
+  const clean = String(html)
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<title[^>]*>[\s\S]*?<\/title>/gi, '<title></title>');
+
   let frame = document.getElementById('printFrame');
   if (!frame) {
     frame = document.createElement('iframe');
@@ -1277,21 +1280,22 @@ function printHtml(html) {
     frame.style.cssText = 'position:fixed;width:0;height:0;border:0;opacity:0;pointer-events:none';
     document.body.appendChild(frame);
   }
-  const win = frame.contentWindow;
-  const doc = win.document;
-  doc.open();
-  doc.write(clean);
-  doc.close();
+
   const runPrint = () => {
+    const win = frame.contentWindow;
+    if (!win) return;
     try {
+      win.document.title = '';
       win.focus();
       win.print();
     } catch {
       toast('تعذّر فتح نافذة الطباعة', 'err');
     }
   };
-  if (doc.readyState === 'complete') setTimeout(runPrint, 300);
-  else win.onload = () => setTimeout(runPrint, 300);
+
+  frame.onload = () => setTimeout(runPrint, 350);
+  frame.removeAttribute('src');
+  frame.srcdoc = clean;
 }
 
 async function submitSale() {

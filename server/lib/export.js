@@ -72,56 +72,43 @@ function a4LineItems(invoice) {
   return (invoice.lines || []).map((l, i) => {
     const edited = l.priceEdited && l.originalPrice != null && l.originalPrice !== l.unitPrice;
     const gift = Number(l.giftQty || 0);
-    const qtyText = gift > 0 ? `${l.qty} <span class="gift-pill">+${gift} هدية</span>` : String(l.qty);
     return `
       <tr>
-        <td class="c-idx">${i + 1}</td>
-        <td class="c-barcode" dir="ltr">${esc(l.barcode)}</td>
-        <td class="c-name">
-          <span class="p-name">${esc(l.name)}</span>
-          ${edited ? '<span class="tag tag-edit">سعر معدّل</span>' : ''}
-          ${gift > 0 ? '<span class="tag tag-gift">يشمل هدية</span>' : ''}
-        </td>
-        <td class="c-qty" dir="ltr">${qtyText}</td>
-        <td class="c-unit" dir="ltr">
-          ${fmt(l.unitPrice)}
-          ${edited ? `<div class="was-price">كان ${fmt(l.originalPrice)}</div>` : ''}
-        </td>
-        <td class="c-total" dir="ltr"><strong>${fmt(l.lineTotal)}</strong></td>
+        <td class="t-idx">${i + 1}</td>
+        <td class="t-name">${esc(l.name)}${edited ? ' <span class="tag-edit">معدّل</span>' : ''}</td>
+        <td class="t-code" dir="ltr">${esc(l.barcode)}</td>
+        <td class="t-qty" dir="ltr">${l.qty}</td>
+        <td class="t-gift" dir="ltr">${gift > 0 ? `<span class="gift-val">${gift}</span>` : '<span class="gift-zero">—</span>'}</td>
+        <td class="t-price" dir="ltr">${fmt(l.unitPrice)}${edited ? `<div class="was">${fmt(l.originalPrice)}</div>` : ''}</td>
+        <td class="t-total" dir="ltr">${fmt(l.lineTotal)}</td>
       </tr>`;
   }).join('');
 }
 
-function a4TotalsPanel(invoice, accent, accentSoft) {
-  const rows = [];
-  rows.push(`<div class="sum-row"><span>المجموع الفرعي</span><span dir="ltr">${fmt(invoice.subtotal)}</span></div>`);
+function a4TotalsPanel(invoice, accent) {
+  let html = `<div class="tot-line"><span>المجموع الفرعي</span><b dir="ltr">${fmt(invoice.subtotal)}</b></div>`;
   if (Number(invoice.discount)) {
-    rows.push(`<div class="sum-row discount"><span>الخصم</span><span dir="ltr">− ${fmt(invoice.discount)}</span></div>`);
+    html += `<div class="tot-line disc"><span>الخصم</span><b dir="ltr">− ${fmt(invoice.discount)}</b></div>`;
   }
-  rows.push(`
-    <div class="sum-grand">
-      <div class="sum-grand-lbl">الصافي المستحق</div>
-      <div class="sum-grand-val" dir="ltr">${fmt(invoice.total)}</div>
-    </div>`);
+  html += `<div class="tot-grand"><span>الصافي</span><b dir="ltr">${fmt(invoice.total)}</b></div>`;
   if (Number(invoice.paidAmount)) {
-    rows.push(`<div class="sum-row paid"><span>المبلغ المدفوع</span><span dir="ltr">${fmt(invoice.paidAmount)}</span></div>`);
+    html += `<div class="tot-line paid"><span>المدفوع</span><b dir="ltr">${fmt(invoice.paidAmount)}</b></div>`;
   }
   if (Number(invoice.dueAmount)) {
-    rows.push(`<div class="sum-row due"><span>المتبقي على الحساب</span><span dir="ltr">${fmt(invoice.dueAmount)}</span></div>`);
+    html += `<div class="tot-line due"><span>المتبقي</span><b dir="ltr">${fmt(invoice.dueAmount)}</b></div>`;
   }
-  return rows.join('');
+  return html;
 }
 
 function buildA4InvoiceHtml(invoice, branchName, opts) {
   const isReturn = invoice.kind === 'return';
   const title = isReturn ? 'إشعار مرتجع' : 'فاتورة مبيعات';
-  const titleEn = isReturn ? 'RETURN NOTE' : 'TAX INVOICE';
   const footer = opts.footer || `شكراً لزيارتكم — ${STORE_NAME}`;
-  const accent = isReturn ? '#b91c1c' : '#047857';
-  const accentDark = isReturn ? '#7f1d1d' : '#064e3b';
-  const accentSoft = isReturn ? '#fef2f2' : '#ecfdf5';
-  const accentMid = isReturn ? '#fecaca' : '#a7f3d0';
+  const accent = isReturn ? '#c62828' : '#1b7a4e';
+  const accentLight = isReturn ? '#ffebee' : '#e8f5ee';
   const summary = receiptSummary(invoice);
+  const giftTotal = (invoice.lines || []).reduce((s, l) => s + Number(l.giftQty || 0), 0);
+  const soldTotal = (invoice.lines || []).reduce((s, l) => s + Number(l.qty || 0), 0);
   const dateTime = formatReceiptDateTime(invoice);
   const customer = invoice.customerName || invoice.accountName || 'عميل نقدي';
 
@@ -129,528 +116,290 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>${esc(invoice.invoiceNo)} — ${esc(STORE_NAME)}</title>
+  <title></title>
   <style>
-    @page { size: A4 portrait; margin: 10mm 12mm; }
+    @page { size: A4 portrait; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      width: 210mm;
-      min-height: 297mm;
-      font-family: Tahoma, 'Segoe UI', Arial, sans-serif;
-      color: #0f172a;
+    body {
+      font-family: Tahoma, Arial, sans-serif;
+      font-size: 12px;
+      color: #1a1a1a;
       background: #fff;
+      line-height: 1.5;
+      margin: 14mm 16mm;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    body { margin: 0 auto; }
 
-    .sheet {
-      width: 210mm;
-      min-height: 277mm;
-      padding: 0;
-      position: relative;
-      overflow: hidden;
-      background: #fff;
+    .inv {
+      width: 100%;
+      max-width: 100%;
     }
 
-    .watermark {
-      position: absolute;
-      inset: 0;
+    /* ── رأس أنيق وبسيط ── */
+    .hdr {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 72px;
-      font-weight: 900;
-      color: ${accent};
-      opacity: 0.03;
-      transform: rotate(-24deg);
-      pointer-events: none;
-      user-select: none;
-      letter-spacing: 0.08em;
-    }
-
-    .top-band {
-      background: linear-gradient(135deg, ${accentDark} 0%, ${accent} 55%, ${isReturn ? '#ef4444' : '#10b981'} 100%);
-      color: #fff;
-      padding: 22px 28px 20px;
-      position: relative;
-    }
-    .top-band::after {
-      content: '';
-      position: absolute;
-      inset: auto 0 0;
-      height: 4px;
-      background: linear-gradient(90deg, transparent, ${accentMid}, transparent);
-    }
-
-    .head-grid {
-      display: grid;
-      grid-template-columns: 1fr auto;
+      justify-content: space-between;
+      align-items: flex-end;
       gap: 20px;
-      align-items: start;
+      padding-bottom: 14px;
+      border-bottom: 3px solid ${accent};
+      margin-bottom: 18px;
     }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-    .brand-logo {
-      width: 64px;
-      height: 64px;
-      border-radius: 16px;
-      background: rgba(255,255,255,0.14);
-      border: 2px solid rgba(255,255,255,0.35);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 30px;
-      font-weight: 900;
-      flex-shrink: 0;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-    }
-    .brand h1 {
-      font-size: 26px;
-      font-weight: 900;
-      letter-spacing: -0.03em;
-      margin-bottom: 4px;
-      line-height: 1.2;
-    }
-    .brand .branch {
-      font-size: 13px;
-      opacity: 0.9;
+    .hdr-store h1 {
+      font-size: 24px;
       font-weight: 700;
+      color: #111;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
     }
-    .brand .tagline {
-      font-size: 11px;
-      opacity: 0.75;
-      margin-top: 4px;
+    .hdr-store p {
+      font-size: 13px;
+      color: #555;
+      font-weight: 600;
     }
-
-    .inv-box {
-      text-align: left;
-      min-width: 200px;
-    }
-    .inv-box .doc-type {
+    .hdr-meta { text-align: left; flex-shrink: 0; }
+    .hdr-type {
       display: inline-block;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      padding: 5px 14px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.18);
-      border: 1px solid rgba(255,255,255,0.35);
-      margin-bottom: 8px;
-    }
-    .inv-box .doc-type-en {
-      display: block;
-      font-size: 9px;
-      opacity: 0.7;
-      letter-spacing: 0.2em;
+      font-size: 12px;
+      font-weight: 700;
+      color: ${accent};
+      background: ${accentLight};
+      padding: 4px 14px;
+      border-radius: 4px;
       margin-bottom: 6px;
     }
-    .inv-box .inv-no {
-      font-family: Consolas, 'Courier New', monospace;
-      font-size: 15px;
-      font-weight: 800;
+    .hdr-no {
+      display: block;
+      font-family: Consolas, monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: #333;
       direction: ltr;
-      background: rgba(0,0,0,0.2);
-      padding: 8px 14px;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.2);
     }
 
-    .info-strip {
+    /* ── معلومات الفاتورة ── */
+    .meta {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 0;
-      border-bottom: 2px solid ${accent};
-      background: #f8fafc;
-    }
-    .info-cell {
-      padding: 14px 18px;
-      border-left: 1px solid #e2e8f0;
-    }
-    .info-cell:last-child { border-left: none; }
-    .info-cell .lbl {
-      font-size: 10px;
-      font-weight: 800;
-      color: #64748b;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 5px;
-    }
-    .info-cell .val {
-      font-size: 14px;
-      font-weight: 800;
-      color: #0f172a;
-      line-height: 1.35;
-    }
-    .info-cell .val.mono {
-      font-family: Consolas, monospace;
-      font-size: 12px;
-      direction: ltr;
-      text-align: right;
-    }
-
-    .body-pad { padding: 20px 24px 16px; }
-
-    .customer-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 14px 18px;
+      gap: 10px;
       margin-bottom: 18px;
-      background: ${accentSoft};
-      border: 1.5px solid ${accentMid};
-      border-radius: 12px;
     }
-    .customer-bar .cust-lbl {
-      font-size: 11px;
-      font-weight: 800;
-      color: ${accent};
+    .meta-item {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: #fafafa;
+    }
+    .meta-item .k {
+      font-size: 10px;
+      color: #888;
+      font-weight: 700;
       margin-bottom: 3px;
     }
-    .customer-bar .cust-name {
-      font-size: 17px;
-      font-weight: 900;
-      color: #0f172a;
-    }
-    .customer-bar .pay-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 18px;
-      border-radius: 999px;
-      background: #fff;
-      border: 1.5px solid ${accentMid};
-      font-weight: 800;
+    .meta-item .v {
       font-size: 13px;
-      color: ${accent};
-      white-space: nowrap;
+      font-weight: 700;
+      color: #222;
     }
+    .meta-item .v.ltr { direction: ltr; text-align: right; font-family: Consolas, monospace; font-size: 12px; }
 
-    .lines-table {
+    /* ── جدول المنتجات ── */
+    .tbl {
       width: 100%;
       border-collapse: collapse;
-      font-size: 12px;
-      border: 1.5px solid #cbd5e1;
-      border-radius: 12px;
-      overflow: hidden;
+      table-layout: fixed;
       margin-bottom: 20px;
+      font-size: 11.5px;
     }
-    .lines-table thead { display: table-header-group; }
-    .lines-table th {
-      background: linear-gradient(180deg, ${accentSoft}, #f1f5f9);
-      color: ${accent};
-      font-size: 10px;
-      font-weight: 900;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      padding: 12px 10px;
-      text-align: right;
-      border-bottom: 2px solid ${accent};
-    }
-    .lines-table td {
-      padding: 11px 10px;
-      border-bottom: 1px solid #e2e8f0;
-      vertical-align: middle;
-    }
-    .lines-table tbody tr:nth-child(even) { background: #fafbfc; }
-    .lines-table tbody tr:last-child td { border-bottom: none; }
-    .lines-table tbody tr { page-break-inside: avoid; }
-
-    .c-idx { width: 36px; text-align: center; color: #94a3b8; font-weight: 800; }
-    .c-barcode { width: 108px; font-family: Consolas, monospace; font-size: 10px; color: #64748b; }
-    .c-name .p-name { font-weight: 800; font-size: 12.5px; display: block; margin-bottom: 3px; }
-    .c-qty { width: 72px; text-align: center; font-weight: 800; }
-    .c-unit { width: 90px; text-align: center; font-weight: 700; }
-    .c-total { width: 100px; text-align: center; }
-    .c-total strong { color: ${accent}; font-size: 13px; }
-    .was-price { font-size: 9px; color: #94a3b8; text-decoration: line-through; margin-top: 2px; }
-    .gift-pill {
-      display: inline-block;
-      font-size: 9px;
-      font-weight: 800;
-      background: #fce7f3;
-      color: #be185d;
-      padding: 1px 6px;
-      border-radius: 999px;
-      margin-top: 2px;
-    }
-    .tag {
-      display: inline-block;
-      font-size: 9px;
-      font-weight: 800;
-      padding: 2px 8px;
-      border-radius: 999px;
-      margin-inline-start: 4px;
-    }
-    .tag-edit { background: #fef3c7; color: #b45309; }
-    .tag-gift { background: #fce7f3; color: #be185d; }
-
-    .bottom-grid {
-      display: grid;
-      grid-template-columns: 1fr 300px;
-      gap: 20px;
-      align-items: start;
-      margin-bottom: 18px;
-    }
-
-    .notes-panel {
-      border: 1.5px dashed #cbd5e1;
-      border-radius: 12px;
-      padding: 16px 18px;
-      min-height: 120px;
-      background: #fafbfc;
-    }
-    .notes-panel .np-title {
-      font-size: 11px;
-      font-weight: 900;
-      color: #64748b;
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .notes-panel .np-body {
-      font-size: 12px;
-      line-height: 1.7;
-      color: #334155;
-      font-weight: 600;
-    }
-    .notes-panel .np-empty {
-      color: #94a3b8;
-      font-style: italic;
-    }
-
-    .totals-panel {
-      border: 2px solid ${accent};
-      border-radius: 14px;
-      overflow: hidden;
-      background: #fff;
-    }
-    .totals-head {
+    .tbl thead { display: table-header-group; }
+    .tbl th {
       background: ${accent};
       color: #fff;
-      padding: 10px 16px;
-      font-size: 12px;
-      font-weight: 900;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 9px 6px;
       text-align: center;
-      letter-spacing: 0.06em;
+      border: 1px solid ${accent};
     }
-    .totals-body { padding: 14px 16px; }
-    .sum-row {
+    .tbl th.th-name { text-align: right; padding-right: 10px; }
+    .tbl td {
+      padding: 8px 6px;
+      border: 1px solid #e0e0e0;
+      text-align: center;
+      vertical-align: middle;
+      word-wrap: break-word;
+    }
+    .tbl tbody tr:nth-child(even) { background: #f9f9f9; }
+    .tbl tbody tr { page-break-inside: avoid; }
+
+    .t-idx { width: 28px; color: #999; font-weight: 700; }
+    .t-name { text-align: right !important; padding-right: 10px !important; font-weight: 600; }
+    .t-code { width: 90px; font-family: Consolas, monospace; font-size: 10px; color: #666; }
+    .t-qty { width: 48px; font-weight: 700; font-size: 13px; }
+    .t-gift { width: 48px; }
+    .t-price { width: 72px; font-weight: 600; }
+    .t-total { width: 80px; font-weight: 700; color: ${accent}; font-size: 12px; }
+
+    .gift-val {
+      display: inline-block;
+      background: #fce4ec;
+      color: #c2185b;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .gift-zero { color: #ccc; }
+    .tag-edit {
+      display: inline-block;
+      font-size: 9px;
+      background: #fff8e1;
+      color: #f57f17;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 700;
+      margin-right: 4px;
+    }
+    .was { font-size: 9px; color: #aaa; text-decoration: line-through; }
+
+    /* ── أسفل الفاتورة ── */
+    .footer-grid {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      page-break-inside: avoid;
+    }
+    .notes-box {
+      flex: 1;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 12px 14px;
+      min-height: 90px;
+    }
+    .notes-box .k { font-size: 10px; color: #888; font-weight: 700; margin-bottom: 6px; }
+    .notes-box .v { font-size: 12px; color: #444; }
+    .notes-box .empty { color: #bbb; font-style: italic; }
+
+    .totals-box {
+      width: 240px;
+      flex-shrink: 0;
+      border: 2px solid ${accent};
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .totals-box .tot-head {
+      background: ${accent};
+      color: #fff;
+      text-align: center;
+      padding: 8px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .totals-box .tot-body { padding: 10px 14px; }
+    .tot-line {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 7px 0;
+      padding: 5px 0;
       font-size: 12px;
-      font-weight: 700;
-      border-bottom: 1px dashed #e2e8f0;
+      border-bottom: 1px dashed #e0e0e0;
     }
-    .sum-row:last-of-type { border-bottom: none; }
-    .sum-row.discount { color: #b45309; }
-    .sum-row.paid { color: #047857; }
-    .sum-row.due { color: #dc2626; font-weight: 900; }
-
-    .sum-grand {
-      margin-top: 12px;
-      padding: 16px;
-      background: ${accentSoft};
-      border: 2px solid ${accentMid};
-      border-radius: 10px;
-      text-align: center;
-    }
-    .sum-grand-lbl {
-      font-size: 11px;
-      font-weight: 800;
-      color: ${accent};
-      margin-bottom: 4px;
-      letter-spacing: 0.04em;
-    }
-    .sum-grand-val {
-      font-size: 28px;
-      font-weight: 900;
-      color: ${accentDark};
-      letter-spacing: -0.02em;
-    }
-
-    .stats-row {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-      margin-bottom: 18px;
-    }
-    .stat-box {
-      text-align: center;
-      padding: 12px;
-      border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      background: #f8fafc;
-    }
-    .stat-box .sb-lbl { font-size: 10px; color: #64748b; font-weight: 800; margin-bottom: 4px; }
-    .stat-box .sb-val { font-size: 16px; font-weight: 900; color: ${accent}; }
-
-    .signatures {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 16px;
-      padding-top: 8px;
-    }
-    .sig-box {
-      text-align: center;
-      padding-top: 36px;
-      border-top: 1.5px solid #cbd5e1;
-      font-size: 11px;
-      font-weight: 800;
-      color: #64748b;
-    }
-
-    .sheet-foot {
-      border-top: 3px double ${accent};
-      padding: 16px 24px 20px;
-      text-align: center;
-      background: linear-gradient(180deg, #f8fafc, #fff);
-    }
-    .foot-msg {
+    .tot-line:last-child { border-bottom: none; }
+    .tot-line.disc { color: #e65100; }
+    .tot-line.paid { color: #2e7d32; }
+    .tot-line.due { color: #c62828; font-weight: 700; }
+    .tot-grand {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      padding: 10px 12px;
+      background: ${accentLight};
+      border-radius: 4px;
       font-size: 14px;
-      font-weight: 900;
-      color: ${accentDark};
-      margin-bottom: 6px;
+      font-weight: 700;
     }
-    .foot-sub {
-      font-size: 11px;
-      color: #64748b;
-      font-weight: 600;
-      line-height: 1.6;
+    .tot-grand b { font-size: 18px; color: ${accent}; }
+
+    .inv-foot {
+      margin-top: 24px;
+      padding-top: 14px;
+      border-top: 1px solid #ddd;
+      text-align: center;
     }
-    .foot-code {
-      margin-top: 10px;
-      font-family: Consolas, monospace;
-      font-size: 10px;
-      letter-spacing: 0.15em;
-      color: #94a3b8;
-      direction: ltr;
-    }
+    .inv-foot .msg { font-size: 13px; font-weight: 700; color: ${accent}; margin-bottom: 4px; }
+    .inv-foot .sub { font-size: 10px; color: #999; }
 
     @media print {
-      html, body { width: 210mm; background: #fff; }
-      .sheet { min-height: auto; }
-      .no-print { display: none; }
+      body { background: #fff; }
     }
   </style>
 </head>
 <body>
-  <div class="sheet">
-    <div class="watermark">${esc(STORE_NAME)}</div>
+  <div class="inv">
 
-    <header class="top-band">
-      <div class="head-grid">
-        <div class="brand">
-          <div class="brand-logo">د</div>
-          <div>
-            <h1>${esc(STORE_NAME)}</h1>
-            <div class="branch">${esc(branchName || 'نقطة البيع')}</div>
-            <div class="tagline">فاتورة رسمية · ${title}</div>
-          </div>
-        </div>
-        <div class="inv-box">
-          <div class="doc-type">${title}</div>
-          <div class="doc-type-en">${titleEn}</div>
-          <div class="inv-no">${esc(invoice.invoiceNo)}</div>
-        </div>
+    <header class="hdr">
+      <div class="hdr-store">
+        <h1>${esc(STORE_NAME)}</h1>
+        <p>${esc(branchName || 'نقطة البيع')}</p>
+      </div>
+      <div class="hdr-meta">
+        <span class="hdr-type">${title}</span>
+        <span class="hdr-no">${esc(invoice.invoiceNo)}</span>
       </div>
     </header>
 
-    <div class="info-strip">
-      <div class="info-cell">
-        <div class="lbl">التاريخ والوقت</div>
-        <div class="val mono">${esc(dateTime)}</div>
+    <div class="meta">
+      <div class="meta-item">
+        <div class="k">التاريخ والوقت</div>
+        <div class="v ltr">${esc(dateTime)}</div>
       </div>
-      <div class="info-cell">
-        <div class="lbl">رقم الفاتورة</div>
-        <div class="val mono">${esc(invoice.invoiceNo)}</div>
+      <div class="meta-item">
+        <div class="k">العميل</div>
+        <div class="v">${esc(customer)}</div>
       </div>
-      <div class="info-cell">
-        <div class="lbl">عدد البنود / القطع</div>
-        <div class="val">${summary.lineCount} بند · ${summary.itemQty} قطعة</div>
+      <div class="meta-item">
+        <div class="k">طريقة الدفع</div>
+        <div class="v">${payLabel(invoice.paymentMethod)}</div>
       </div>
-      <div class="info-cell">
-        <div class="lbl">حالة المستند</div>
-        <div class="val">${isReturn ? 'مرتجع معتمد' : 'بيع معتمد'}</div>
-      </div>
-    </div>
-
-    <div class="body-pad">
-      <div class="customer-bar">
-        <div>
-          <div class="cust-lbl">العميل / الحساب</div>
-          <div class="cust-name">${esc(customer)}</div>
-        </div>
-        <div class="pay-badge">
-          <span>${payIcon(invoice.paymentMethod)}</span>
-          <span>${payLabel(invoice.paymentMethod)}</span>
-          <span>·</span>
-          <span dir="ltr">${fmt(invoice.total)}</span>
-        </div>
-      </div>
-
-      <table class="lines-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>الباركود</th>
-            <th>اسم المنتج</th>
-            <th>الكمية</th>
-            <th>سعر الوحدة</th>
-            <th>الإجمالي</th>
-          </tr>
-        </thead>
-        <tbody>${a4LineItems(invoice)}</tbody>
-      </table>
-
-      <div class="stats-row">
-        <div class="stat-box">
-          <div class="sb-lbl">عدد الأصناف</div>
-          <div class="sb-val">${summary.lineCount}</div>
-        </div>
-        <div class="stat-box">
-          <div class="sb-lbl">إجمالي القطع</div>
-          <div class="sb-val">${summary.itemQty}</div>
-        </div>
-        <div class="stat-box">
-          <div class="sb-lbl">طريقة الدفع</div>
-          <div class="sb-val" style="font-size:13px">${payLabel(invoice.paymentMethod)}</div>
-        </div>
-      </div>
-
-      <div class="bottom-grid">
-        <div class="notes-panel">
-          <div class="np-title">ملاحظات</div>
-          <div class="np-body">${invoice.notes ? esc(invoice.notes) : '<span class="np-empty">لا توجد ملاحظات</span>'}</div>
-        </div>
-        <div class="totals-panel">
-          <div class="totals-head">ملخص المبالغ</div>
-          <div class="totals-body">
-            ${a4TotalsPanel(invoice, accent, accentSoft)}
-          </div>
-        </div>
-      </div>
-
-      <div class="signatures">
-        <div class="sig-box">توقيع البائع</div>
-        <div class="sig-box">توقيع العميل</div>
-        <div class="sig-box">ختم المحل</div>
+      <div class="meta-item">
+        <div class="k">العدد / الهدايا</div>
+        <div class="v">${soldTotal} قطعة · ${giftTotal} هدية</div>
       </div>
     </div>
 
-    <footer class="sheet-foot">
-      <div class="foot-msg">${esc(footer)}</div>
-      <div class="foot-sub">${esc(STORE_NAME)}${branchName ? ` — ${esc(branchName)}` : ''} · هذه الفاتورة صادرة إلكترونياً من نظام نقطة البيع</div>
-      <div class="foot-code">${esc(invoice.invoiceNo)}</div>
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th class="t-idx">#</th>
+          <th class="th-name">اسم المنتج</th>
+          <th>الباركود</th>
+          <th>العدد</th>
+          <th>الهدايا</th>
+          <th>السعر</th>
+          <th>الإجمالي</th>
+        </tr>
+      </thead>
+      <tbody>${a4LineItems(invoice)}</tbody>
+    </table>
+
+    <div class="footer-grid">
+      <div class="notes-box">
+        <div class="k">ملاحظات</div>
+        <div class="v">${invoice.notes ? esc(invoice.notes) : '<span class="empty">—</span>'}</div>
+      </div>
+      <div class="totals-box">
+        <div class="tot-head">ملخص المبالغ</div>
+        <div class="tot-body">${a4TotalsPanel(invoice, accent)}</div>
+      </div>
+    </div>
+
+    <footer class="inv-foot">
+      <div class="msg">${esc(footer)}</div>
+      <div class="sub">${esc(STORE_NAME)}${branchName ? ` — ${esc(branchName)}` : ''} · ${summary.lineCount} صنف · ${soldTotal} قطعة مباعة${giftTotal ? ` · ${giftTotal} هدية` : ''}</div>
     </footer>
+
   </div>
   <script>window.onload = () => { window.print(); };</script>
 </body>
@@ -689,14 +438,14 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>${esc(invoice.invoiceNo)}</title>
+  <title></title>
   <style>
-    @page { size: 80mm auto; margin: 3mm 4mm; }
+    @page { size: 80mm auto; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: Tahoma, 'Segoe UI', Arial, sans-serif;
       width: 72mm;
-      margin: 0 auto;
+      margin: 4mm auto;
       padding: 6px 4px 10px;
       font-size: 11px;
       color: #0b1220;
