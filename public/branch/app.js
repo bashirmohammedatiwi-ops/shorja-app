@@ -14,7 +14,7 @@ const DEFAULT_SETTINGS = {
   blockOverStock: true,
   allowPriceEdit: true,
   receiptFooter: 'شكراً لزيارتكم — ديما الحياة',
-  thermalPrint: true
+  thermalPrint: false
 };
 
 const PAGE_TITLES = {

@@ -1679,8 +1679,9 @@ kbd {
   background: #f8fafc;
 }
 .settings-sync-block h4 { margin: 0 0 8px; font-size: 0.95rem; }
-.settings-hint { margin: 0 0 8px; font-size: 0.85rem; color: var(--muted); }
+.settings-hint { margin: 0 0 8px; font-size: 0.85rem; color: var(--text-muted); }
 .settings-hint.subtle { font-size: 0.8rem; }
+.settings-hint-inline { font-size: 0.78rem; color: var(--text-muted); font-weight: 600; }
 .btn-fetch-barcode {
   flex-shrink: 0;
   width: 34px;
