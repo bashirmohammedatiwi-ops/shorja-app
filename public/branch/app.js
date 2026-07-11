@@ -1270,22 +1270,31 @@ document.getElementById('btnConfirmSale')?.addEventListener('click', () => {
 function printHtml(html) {
   const clean = String(html)
     .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<title[^>]*>[\s\S]*?<\/title>/gi, '<title></title>');
+    .replace(/<title[^>]*>[\s\S]*?<\/title>/gi, '<title> </title>');
+
+  if (printHtml._blobUrl) {
+    try { URL.revokeObjectURL(printHtml._blobUrl); } catch {}
+    printHtml._blobUrl = null;
+  }
 
   let frame = document.getElementById('printFrame');
   if (!frame) {
     frame = document.createElement('iframe');
     frame.id = 'printFrame';
     frame.setAttribute('aria-hidden', 'true');
-    frame.style.cssText = 'position:fixed;width:0;height:0;border:0;opacity:0;pointer-events:none';
+    frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none';
     document.body.appendChild(frame);
   }
 
   const runPrint = () => {
     const win = frame.contentWindow;
-    if (!win) return;
+    const doc = win?.document;
+    if (!win || !doc) return;
     try {
-      win.document.title = '';
+      doc.title = ' ';
+      const reinforce = doc.createElement('style');
+      reinforce.textContent = '@page{margin:0!important}';
+      doc.head.appendChild(reinforce);
       win.focus();
       win.print();
     } catch {
@@ -1293,9 +1302,10 @@ function printHtml(html) {
     }
   };
 
-  frame.onload = () => setTimeout(runPrint, 350);
-  frame.removeAttribute('src');
-  frame.srcdoc = clean;
+  frame.onload = () => setTimeout(runPrint, 400);
+  frame.removeAttribute('srcdoc');
+  printHtml._blobUrl = URL.createObjectURL(new Blob([clean], { type: 'text/html;charset=utf-8' }));
+  frame.src = printHtml._blobUrl;
 }
 
 async function submitSale() {

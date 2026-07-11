@@ -131,7 +131,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   <meta charset="UTF-8">
   <title></title>
   <style>
-    @page { size: A4 portrait; margin: 10mm; }
+    @page { size: A4 portrait; margin: 0; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { width: 100%; }
     body {
@@ -153,6 +153,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       width: 100%;
       max-width: 190mm;
       margin: 0 auto;
+      padding: 10mm;
       overflow: hidden;
     }
 
@@ -414,8 +415,9 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .inv-foot .sub { font-size: 9px; color: #9e9e9e; line-height: 1.5; }
 
     @media print {
-      html, body { width: 100%; overflow: hidden; }
-      .inv { max-width: 100%; }
+      html, body { width: 100%; overflow: hidden; margin: 0; padding: 0; }
+      @page { margin: 0; }
+      .inv { max-width: 100%; padding: 10mm; }
       .tbl-wrap { overflow: visible; }
     }
   </style>
@@ -773,7 +775,8 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     }
 
     @media print {
-      body { width: 72mm; padding: 0; }
+      @page { margin: 0; }
+      body { width: 72mm; padding: 0; margin: 4mm auto; }
       .receipt { page-break-inside: avoid; }
     }
   </style>
