@@ -3,7 +3,7 @@ const { authRequired } = require('../lib/auth');
 const { listProducts, upsertProduct, bulkUpsert, stats, getByBarcode, getProduct, deactivateProduct } = require('../lib/products');
 const { resolveEdariMaterial, cacheEdariMaterial, mapEdariToShorjaProduct } = require('../lib/edari-materials');
 const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment } = require('../lib/invoices');
-const { listAccounts, createAccount, getAccount, accountStats } = require('../lib/accounts');
+const { listAccounts, createAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { publishPricePackage, listPackages, getLatestVersion } = require('../lib/prices');
 const { parseProductsCsv, invoicePrintHtml } = require('../lib/export');
 const db = require('../db');
@@ -211,8 +211,9 @@ router.get('/invoices/:id/print', (req, res) => {
   if (!invoice) return res.status(404).send('غير موجود');
   const branch = db.prepare('SELECT name FROM branches WHERE id = ?').get(invoice.branchId);
   const thermal = req.query.thermal === '1';
+  const debtInfo = resolveInvoiceDebtInfo(invoice);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(invoicePrintHtml(invoice, branch?.name || '', { thermal }));
+  res.send(invoicePrintHtml(invoice, branch?.name || '', { thermal, debtInfo }));
 });
 
 router.get('/accounts', (req, res) => {

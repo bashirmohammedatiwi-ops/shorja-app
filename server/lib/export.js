@@ -85,7 +85,7 @@ function a4LineItems(invoice) {
   }).join('');
 }
 
-function a4TotalsPanel(invoice, accent) {
+function a4TotalsPanel(invoice, accent, debtInfo) {
   let html = `<div class="tot-line"><span>المجموع الفرعي</span><b dir="ltr">${fmt(invoice.subtotal)}</b></div>`;
   if (Number(invoice.discount)) {
     html += `<div class="tot-line disc"><span>الخصم</span><b dir="ltr">− ${fmt(invoice.discount)}</b></div>`;
@@ -94,7 +94,18 @@ function a4TotalsPanel(invoice, accent) {
   if (Number(invoice.paidAmount)) {
     html += `<div class="tot-line paid"><span>المدفوع</span><b dir="ltr">${fmt(invoice.paidAmount)}</b></div>`;
   }
-  if (Number(invoice.dueAmount)) {
+  if (debtInfo && (debtInfo.previousDebt > 0 || debtInfo.invoiceDue > 0)) {
+    html += `<div class="tot-sep">حساب العميل</div>`;
+    if (debtInfo.previousDebt > 0) {
+      html += `<div class="tot-line debt-prev"><span>دين سابق على الحساب</span><b dir="ltr">${fmt(debtInfo.previousDebt)}</b></div>`;
+    }
+    if (debtInfo.invoiceDue > 0) {
+      html += `<div class="tot-line due"><span>دين هذه الفاتورة</span><b dir="ltr">${fmt(debtInfo.invoiceDue)}</b></div>`;
+      if (debtInfo.totalDebt > 0) {
+        html += `<div class="tot-line debt-total"><span>إجمالي الدين على الحساب</span><b dir="ltr">${fmt(debtInfo.totalDebt)}</b></div>`;
+      }
+    }
+  } else if (Number(invoice.dueAmount)) {
     html += `<div class="tot-line due"><span>المتبقي</span><b dir="ltr">${fmt(invoice.dueAmount)}</b></div>`;
   }
   return html;
@@ -104,6 +115,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   const isReturn = invoice.kind === 'return';
   const title = isReturn ? 'إشعار مرتجع' : 'فاتورة مبيعات';
   const footer = opts.footer || `شكراً لزيارتكم — ${STORE_NAME}`;
+  const debtInfo = opts.debtInfo || null;
   const accent = isReturn ? '#b71c1c' : '#2e7d32';
   const accentDark = isReturn ? '#7f0000' : '#1b5e20';
   const accentLight = isReturn ? '#ffebee' : '#e8f5e9';
@@ -360,6 +372,24 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .tot-line.disc { color: #e65100; }
     .tot-line.paid { color: #2e7d32; }
     .tot-line.due { color: #c62828; font-weight: 700; }
+    .tot-line.debt-prev { color: #e65100; font-weight: 700; }
+    .tot-line.debt-total {
+      color: #b71c1c;
+      font-weight: 800;
+      border-bottom: none;
+      margin-top: 2px;
+      padding-top: 6px;
+      border-top: 2px solid #ffcdd2;
+    }
+    .tot-sep {
+      margin: 8px 0 4px;
+      padding: 4px 0 2px;
+      font-size: 9px;
+      font-weight: 800;
+      color: #757575;
+      text-align: center;
+      border-top: 1px solid #e0e0e0;
+    }
     .tot-grand {
       display: flex;
       justify-content: space-between;
@@ -456,7 +486,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       </div>
       <div class="totals-box">
         <div class="tot-head">ملخص المبالغ</div>
-        <div class="tot-body">${a4TotalsPanel(invoice, accent)}</div>
+        <div class="tot-body">${a4TotalsPanel(invoice, accent, debtInfo)}</div>
       </div>
     </div>
 
@@ -471,7 +501,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
 </html>`;
 }
 
-function totalsBlock(invoice, { compact = false } = {}) {
+function totalsBlock(invoice, { compact = false, debtInfo = null } = {}) {
   const rows = [];
   rows.push(`<div class="total-row"><span>المجموع الفرعي</span><span dir="ltr">${fmt(invoice.subtotal)}</span></div>`);
   if (Number(invoice.discount)) {
@@ -481,7 +511,18 @@ function totalsBlock(invoice, { compact = false } = {}) {
   if (Number(invoice.paidAmount)) {
     rows.push(`<div class="total-row paid"><span>المبلغ المدفوع</span><span dir="ltr">${fmt(invoice.paidAmount)}</span></div>`);
   }
-  if (Number(invoice.dueAmount)) {
+  if (debtInfo && (debtInfo.previousDebt > 0 || debtInfo.invoiceDue > 0)) {
+    rows.push(`<div class="total-row debt-sep"><span>حساب العميل</span><span></span></div>`);
+    if (debtInfo.previousDebt > 0) {
+      rows.push(`<div class="total-row debt-prev"><span>دين سابق على الحساب</span><span dir="ltr">${fmt(debtInfo.previousDebt)}</span></div>`);
+    }
+    if (debtInfo.invoiceDue > 0) {
+      rows.push(`<div class="total-row due"><span>دين هذه الفاتورة</span><span dir="ltr">${fmt(debtInfo.invoiceDue)}</span></div>`);
+      if (debtInfo.totalDebt > 0) {
+        rows.push(`<div class="total-row debt-total"><span>إجمالي الدين على الحساب</span><span dir="ltr">${fmt(debtInfo.totalDebt)}</span></div>`);
+      }
+    }
+  } else if (Number(invoice.dueAmount)) {
     rows.push(`<div class="total-row due"><span>المتبقي على الحساب</span><span dir="ltr">${fmt(invoice.dueAmount)}</span></div>`);
   }
   return rows.join('');
@@ -492,6 +533,7 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
   const title = isReturn ? 'إشعار مرتجع' : 'فاتورة مبيعات';
   const thermal = !!opts.thermal;
   const footer = opts.footer || `شكراً لزيارتكم — ${STORE_NAME}`;
+  const debtInfo = opts.debtInfo || null;
   const accent = isReturn ? '#dc2626' : '#047857';
   const accentSoft = isReturn ? '#fef2f2' : '#ecfdf5';
   const summary = receiptSummary(invoice);
@@ -661,6 +703,16 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     .total-row.grand span:last-child { font-size: 15px; }
     .total-row.paid { color: #047857; }
     .total-row.due { color: #dc2626; font-weight: 800; }
+    .total-row.debt-prev { color: #b45309; font-weight: 800; }
+    .total-row.debt-total { color: #b91c1c; font-weight: 800; }
+    .total-row.debt-sep {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px dashed #bbb;
+      font-size: 9px;
+      font-weight: 800;
+      color: #666;
+    }
 
     .pay-strip {
       display: flex;
@@ -770,7 +822,7 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     <hr class="rule-double">
 
     <div class="totals">
-      ${totalsBlock(invoice)}
+      ${totalsBlock(invoice, { debtInfo })}
     </div>
 
     <div class="pay-strip">
@@ -795,7 +847,7 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
 </html>`;
   }
 
-  return buildA4InvoiceHtml(invoice, branchName, { footer });
+  return buildA4InvoiceHtml(invoice, branchName, { footer, debtInfo });
 }
 
 function parseProductsCsv(text) {

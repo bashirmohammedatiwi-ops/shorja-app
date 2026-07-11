@@ -75,11 +75,30 @@ function accountStats() {
   return { total, withDebt, totalDebt: Number(totalDebt) };
 }
 
+/** Debt snapshot for invoice print: previous balance before this invoice, current invoice due, total after. */
+function resolveInvoiceDebtInfo(invoice) {
+  if (!invoice?.accountId) return null;
+  const acc = getAccount(invoice.accountId);
+  if (!acc) return null;
+  const invoiceDue = Number(invoice.dueAmount || 0);
+  const sign = invoice.kind === 'return' ? -1 : 1;
+  const totalDebt = Number(acc.balance || 0);
+  const previousDebt = totalDebt - sign * invoiceDue;
+  return {
+    accountId: acc.id,
+    accountName: acc.name,
+    previousDebt: Math.max(0, previousDebt),
+    invoiceDue,
+    totalDebt: Math.max(0, totalDebt)
+  };
+}
+
 module.exports = {
   mapAccount,
   listAccounts,
   getAccount,
   createAccount,
   updateBalance,
-  accountStats
+  accountStats,
+  resolveInvoiceDebtInfo
 };

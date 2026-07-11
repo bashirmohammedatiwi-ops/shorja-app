@@ -2,7 +2,7 @@ const express = require('express');
 const { authRequired } = require('../lib/auth');
 const { listProducts, getByBarcode, categories, listLowStock, stockSummary } = require('../lib/products');
 const { createInvoice, listInvoices, loadInvoice, dailySummary, createPayment, listPayments, createReturn, salesReport } = require('../lib/invoices');
-const { listAccounts, getAccount, createAccount } = require('../lib/accounts');
+const { listAccounts, getAccount, createAccount, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { checkPriceUpdate, applyPricePackage } = require('../lib/prices');
 const { invoicePrintHtml } = require('../lib/export');
 const { getBranchSettings, saveBranchSettings } = require('../lib/settings');
@@ -139,8 +139,9 @@ router.get('/invoices/:id/print', (req, res) => {
   const branch = db.prepare('SELECT name FROM branches WHERE id = ?').get(invoice.branchId);
   const settings = getBranchSettings(invoice.branchId);
   const thermal = req.query.thermal === '1' || settings.thermalPrint;
+  const debtInfo = resolveInvoiceDebtInfo(invoice);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(invoicePrintHtml(invoice, branch?.name || '', { thermal, footer: settings.receiptFooter }));
+  res.send(invoicePrintHtml(invoice, branch?.name || '', { thermal, footer: settings.receiptFooter, debtInfo }));
 });
 
 router.post('/invoices/:id/return', (req, res) => {
