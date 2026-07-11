@@ -5,7 +5,14 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node server/index.js"
+    "dev": "node server/index.js",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "build:admin": "cd desktop-admin && npm install && npm run build",
+    "build:branch": "cd desktop-branch && npm install && npm run build",
+    "build:desktop": "npm run build:admin && npm run build:branch"
   },
   "engines": {
     "node": ">=18"

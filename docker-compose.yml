@@ -1,0 +1,26 @@
+services:
+  shorja:
+    build: .
+    image: shorja-sales:latest
+    container_name: shorja-sales
+    restart: unless-stopped
+    ports:
+      - "5007:5007"
+    env_file:
+      - .env
+    environment:
+      PORT: 5007
+      HOST: 0.0.0.0
+      DATABASE_PATH: /app/data/shorja.db
+      NODE_ENV: production
+    volumes:
+      - shorja_data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5007/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  shorja_data:

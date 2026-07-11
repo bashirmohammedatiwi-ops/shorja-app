@@ -84,16 +84,70 @@ npm start
 - **استيراد منتجات CSV** — من الإدارة
 - **تطبيق سطح مكتب** — Electron للفرع والإدارة
 
-## النشر على السيرفر
+## النشر على السيرفر (Docker — VPS)
+
+السيرفر الافتراضي: **http://187.124.23.65:5007**
+
+### على VPS (Linux)
+
+```bash
+git clone https://github.com/bashirmohammedatiwi-ops/shorja-app.git
+cd shorja-app
+cp .env.example .env
+# عدّل JWT_SECRET و ADMIN_PASS و SYNC_KEY في .env
+chmod +x deploy.sh
+./deploy.sh
+```
+
+أو يدوياً:
+
+```bash
+docker compose build
+docker compose up -d
+docker compose logs -f
+```
+
+### الروابط بعد النشر
+
+| الخدمة | الرابط |
+|--------|--------|
+| نقطة البيع | http://187.124.23.65:5007/branch/ |
+| الإدارة | http://187.124.23.65:5007/admin/ |
+| API | http://187.124.23.65:5007/api/health |
+
+> تأكد من فتح المنفذ **5007** في جدار الحماية (ufw / firewall).
+
+### بدون Docker
 
 ```bash
 PORT=5007 HOST=0.0.0.0 npm start
 ```
 
-أو استخدم pm2:
-```bash
-pm2 start server/index.js --name shorja -- 5007
+## بناء تطبيقات Windows (EXE)
+
+التطبيقات تتصل تلقائياً بـ `http://187.124.23.65:5007`  
+يمكن تغيير العنوان عبر ملف `server.json` بجانب البرنامج:
+
+```json
+{ "server": "http://187.124.23.65:5007" }
 ```
+
+### بناء سريع (Windows)
+
+```bat
+build-desktop.bat
+```
+
+### يدوياً
+
+```bash
+cd desktop-admin && npm install && npm run build
+cd ../desktop-branch && npm install && npm run build
+```
+
+الملفات الناتجة:
+- `desktop-admin/dist/Shorja-Admin-Setup-1.0.0.exe`
+- `desktop-branch/dist/Shorja-Branch-Setup-1.0.0.exe`
 
 ## باركود تجريبي
 

@@ -1,10 +1,10 @@
 const { app, BrowserWindow } = require('electron');
-const path = require('path');
-
-const SERVER = process.env.SHORJA_SERVER || 'http://localhost:5007';
-const START_URL = `${SERVER.replace(/\/$/, '')}/branch/`;
+const { getServerUrl } = require('./server-config');
 
 function createWindow() {
+  const server = getServerUrl();
+  const startUrl = `${server}/branch/`;
+
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -17,7 +17,8 @@ function createWindow() {
       nodeIntegration: false
     }
   });
-  win.loadURL(START_URL);
+
+  win.loadURL(startUrl);
 }
 
 app.whenReady().then(createWindow);

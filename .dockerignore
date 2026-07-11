@@ -1,0 +1,12 @@
+node_modules
+data
+.git
+.gitignore
+desktop-admin
+desktop-branch
+.env
+*.log
+dist
+release
+*.md
+!README.md

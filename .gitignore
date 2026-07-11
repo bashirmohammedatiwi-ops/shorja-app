@@ -2,3 +2,7 @@ node_modules/
 data/
 .env
 *.log
+desktop-admin/dist/
+desktop-admin/node_modules/
+desktop-branch/dist/
+desktop-branch/node_modules/
