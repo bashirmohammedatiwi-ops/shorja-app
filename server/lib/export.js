@@ -104,8 +104,9 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   const isReturn = invoice.kind === 'return';
   const title = isReturn ? 'إشعار مرتجع' : 'فاتورة مبيعات';
   const footer = opts.footer || `شكراً لزيارتكم — ${STORE_NAME}`;
-  const accent = isReturn ? '#c62828' : '#1b7a4e';
-  const accentLight = isReturn ? '#ffebee' : '#e8f5ee';
+  const accent = isReturn ? '#b71c1c' : '#2e7d32';
+  const accentDark = isReturn ? '#7f0000' : '#1b5e20';
+  const accentLight = isReturn ? '#ffebee' : '#e8f5e9';
   const summary = receiptSummary(invoice);
   const giftTotal = (invoice.lines || []).reduce((s, l) => s + Number(l.giftQty || 0), 0);
   const soldTotal = (invoice.lines || []).reduce((s, l) => s + Number(l.qty || 0), 0);
@@ -118,194 +119,244 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   <meta charset="UTF-8">
   <title></title>
   <style>
-    @page { size: A4 portrait; margin: 0; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    @page { size: A4 portrait; margin: 10mm; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { width: 100%; }
     body {
       font-family: Tahoma, Arial, sans-serif;
-      font-size: 12px;
-      color: #1a1a1a;
+      font-size: 11px;
+      color: #212121;
       background: #fff;
-      line-height: 1.5;
-      margin: 14mm 16mm;
+      line-height: 1.45;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      max-width: 100%;
+      overflow-x: hidden;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
 
     .inv {
       width: 100%;
-      max-width: 100%;
+      max-width: 190mm;
+      margin: 0 auto;
+      overflow: hidden;
     }
 
-    /* ── رأس أنيق وبسيط ── */
+    /* ── رأس ── */
     .hdr {
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
-      gap: 20px;
-      padding-bottom: 14px;
-      border-bottom: 3px solid ${accent};
-      margin-bottom: 18px;
+      gap: 12px;
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+      border-bottom: 2px solid ${accent};
     }
+    .hdr-store { min-width: 0; flex: 1; }
     .hdr-store h1 {
-      font-size: 24px;
+      font-size: 20px;
       font-weight: 700;
-      color: #111;
-      letter-spacing: -0.02em;
-      margin-bottom: 4px;
+      color: ${accentDark};
+      margin-bottom: 2px;
+      line-height: 1.25;
     }
     .hdr-store p {
-      font-size: 13px;
-      color: #555;
+      font-size: 12px;
+      color: #616161;
       font-weight: 600;
     }
-    .hdr-meta { text-align: left; flex-shrink: 0; }
+    .hdr-meta {
+      text-align: left;
+      flex-shrink: 0;
+      max-width: 48%;
+    }
     .hdr-type {
-      display: inline-block;
-      font-size: 12px;
+      display: block;
+      font-size: 11px;
       font-weight: 700;
       color: ${accent};
-      background: ${accentLight};
-      padding: 4px 14px;
-      border-radius: 4px;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
     .hdr-no {
       display: block;
       font-family: Consolas, monospace;
-      font-size: 13px;
+      font-size: 11px;
       font-weight: 700;
-      color: #333;
+      color: #424242;
       direction: ltr;
+      word-break: break-all;
     }
 
-    /* ── معلومات الفاتورة ── */
+    /* ── معلومات ── */
     .meta {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-      margin-bottom: 18px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
     }
     .meta-item {
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      padding: 10px 12px;
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+      padding: 7px 10px;
       background: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      min-width: 0;
     }
     .meta-item .k {
       font-size: 10px;
-      color: #888;
+      color: #757575;
       font-weight: 700;
-      margin-bottom: 3px;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
+    .meta-item .k::after { content: ':'; margin-inline-start: 2px; }
     .meta-item .v {
-      font-size: 13px;
+      font-size: 11px;
       font-weight: 700;
-      color: #222;
+      color: #212121;
+      min-width: 0;
+      word-break: break-word;
     }
-    .meta-item .v.ltr { direction: ltr; text-align: right; font-family: Consolas, monospace; font-size: 12px; }
+    .meta-item .v.ltr {
+      direction: ltr;
+      text-align: left;
+      font-family: Consolas, monospace;
+      font-size: 10px;
+    }
 
-    /* ── جدول المنتجات ── */
+    /* ── جدول ── */
+    .tbl-wrap {
+      width: 100%;
+      max-width: 100%;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
     .tbl {
       width: 100%;
+      max-width: 100%;
       border-collapse: collapse;
       table-layout: fixed;
-      margin-bottom: 20px;
-      font-size: 11.5px;
+      font-size: 10.5px;
     }
     .tbl thead { display: table-header-group; }
     .tbl th {
       background: ${accent};
       color: #fff;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
-      padding: 9px 6px;
+      padding: 7px 4px;
       text-align: center;
-      border: 1px solid ${accent};
+      border: 1px solid ${accentDark};
+      line-height: 1.3;
     }
-    .tbl th.th-name { text-align: right; padding-right: 10px; }
+    .tbl th.th-name { text-align: right; padding-right: 8px; }
     .tbl td {
-      padding: 8px 6px;
+      padding: 6px 4px;
       border: 1px solid #e0e0e0;
       text-align: center;
       vertical-align: middle;
+      line-height: 1.35;
+      overflow: hidden;
       word-wrap: break-word;
+      overflow-wrap: anywhere;
     }
-    .tbl tbody tr:nth-child(even) { background: #f9f9f9; }
+    .tbl tbody tr:nth-child(even) { background: #f5f5f5; }
     .tbl tbody tr { page-break-inside: avoid; }
 
-    .t-idx { width: 28px; color: #999; font-weight: 700; }
-    .t-name { text-align: right !important; padding-right: 10px !important; font-weight: 600; }
-    .t-code { width: 90px; font-family: Consolas, monospace; font-size: 10px; color: #666; }
-    .t-qty { width: 48px; font-weight: 700; font-size: 13px; }
-    .t-gift { width: 48px; }
-    .t-price { width: 72px; font-weight: 600; }
-    .t-total { width: 80px; font-weight: 700; color: ${accent}; font-size: 12px; }
+    .t-name {
+      text-align: right !important;
+      padding-right: 8px !important;
+      font-weight: 600;
+      font-size: 10.5px;
+    }
+    .t-code {
+      font-family: Consolas, monospace;
+      font-size: 9px;
+      color: #616161;
+      direction: ltr;
+    }
+    .t-qty { font-weight: 700; font-size: 11px; direction: ltr; }
+    .t-total { font-weight: 700; color: ${accentDark}; font-size: 10.5px; direction: ltr; }
+    .t-price { font-weight: 600; font-size: 10px; direction: ltr; }
 
     .gift-val {
       display: inline-block;
-      background: #fce4ec;
-      color: #c2185b;
+      background: #f8bbd0;
+      color: #880e4f;
       font-weight: 800;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 12px;
-    }
-    .gift-zero { color: #ccc; }
-    .tag-edit {
-      display: inline-block;
-      font-size: 9px;
-      background: #fff8e1;
-      color: #f57f17;
       padding: 1px 6px;
       border-radius: 3px;
-      font-weight: 700;
-      margin-right: 4px;
+      font-size: 10px;
+      direction: ltr;
     }
-    .was { font-size: 9px; color: #aaa; text-decoration: line-through; }
+    .gift-zero { color: #bdbdbd; font-size: 11px; }
+    .tag-edit {
+      display: inline-block;
+      font-size: 8px;
+      background: #fff9c4;
+      color: #f57f17;
+      padding: 1px 4px;
+      border-radius: 2px;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+    .was { font-size: 8px; color: #9e9e9e; text-decoration: line-through; }
 
-    /* ── أسفل الفاتورة ── */
+    /* ── أسفل ── */
     .footer-grid {
-      display: flex;
-      gap: 16px;
-      align-items: flex-start;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 36%);
+      gap: 10px;
+      max-width: 100%;
       page-break-inside: avoid;
     }
     .notes-box {
-      flex: 1;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      padding: 12px 14px;
-      min-height: 90px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 10px;
+      min-height: 72px;
+      min-width: 0;
     }
-    .notes-box .k { font-size: 10px; color: #888; font-weight: 700; margin-bottom: 6px; }
-    .notes-box .v { font-size: 12px; color: #444; }
-    .notes-box .empty { color: #bbb; font-style: italic; }
+    .notes-box .k {
+      font-size: 10px;
+      color: #757575;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .notes-box .v { font-size: 10.5px; color: #424242; word-break: break-word; }
+    .notes-box .empty { color: #bdbdbd; }
 
     .totals-box {
-      width: 240px;
-      flex-shrink: 0;
-      border: 2px solid ${accent};
-      border-radius: 6px;
+      width: 100%;
+      max-width: 100%;
+      border: 1.5px solid ${accent};
+      border-radius: 4px;
       overflow: hidden;
+      min-width: 0;
     }
     .totals-box .tot-head {
       background: ${accent};
       color: #fff;
       text-align: center;
-      padding: 8px;
-      font-size: 12px;
+      padding: 6px;
+      font-size: 10px;
       font-weight: 700;
     }
-    .totals-box .tot-body { padding: 10px 14px; }
+    .totals-box .tot-body { padding: 8px 10px; }
     .tot-line {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 5px 0;
-      font-size: 12px;
+      gap: 6px;
+      padding: 4px 0;
+      font-size: 10.5px;
       border-bottom: 1px dashed #e0e0e0;
     }
-    .tot-line:last-child { border-bottom: none; }
+    .tot-line b { font-weight: 700; white-space: nowrap; }
     .tot-line.disc { color: #e65100; }
     .tot-line.paid { color: #2e7d32; }
     .tot-line.due { color: #c62828; font-weight: 700; }
@@ -313,26 +364,29 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-top: 8px;
-      padding: 10px 12px;
+      gap: 6px;
+      margin-top: 6px;
+      padding: 8px;
       background: ${accentLight};
-      border-radius: 4px;
-      font-size: 14px;
+      border-radius: 3px;
+      font-size: 12px;
       font-weight: 700;
     }
-    .tot-grand b { font-size: 18px; color: ${accent}; }
+    .tot-grand b { font-size: 15px; color: ${accentDark}; white-space: nowrap; }
 
     .inv-foot {
-      margin-top: 24px;
-      padding-top: 14px;
-      border-top: 1px solid #ddd;
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid #e0e0e0;
       text-align: center;
     }
-    .inv-foot .msg { font-size: 13px; font-weight: 700; color: ${accent}; margin-bottom: 4px; }
-    .inv-foot .sub { font-size: 10px; color: #999; }
+    .inv-foot .msg { font-size: 11px; font-weight: 700; color: ${accentDark}; margin-bottom: 3px; }
+    .inv-foot .sub { font-size: 9px; color: #9e9e9e; line-height: 1.5; }
 
     @media print {
-      body { background: #fff; }
+      html, body { width: 100%; overflow: hidden; }
+      .inv { max-width: 100%; }
+      .tbl-wrap { overflow: visible; }
     }
   </style>
 </head>
@@ -352,37 +406,48 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
 
     <div class="meta">
       <div class="meta-item">
-        <div class="k">التاريخ والوقت</div>
-        <div class="v ltr">${esc(dateTime)}</div>
+        <span class="k">التاريخ</span>
+        <span class="v ltr">${esc(dateTime)}</span>
       </div>
       <div class="meta-item">
-        <div class="k">العميل</div>
-        <div class="v">${esc(customer)}</div>
+        <span class="k">العميل</span>
+        <span class="v">${esc(customer)}</span>
       </div>
       <div class="meta-item">
-        <div class="k">طريقة الدفع</div>
-        <div class="v">${payLabel(invoice.paymentMethod)}</div>
+        <span class="k">الدفع</span>
+        <span class="v">${payLabel(invoice.paymentMethod)}</span>
       </div>
       <div class="meta-item">
-        <div class="k">العدد / الهدايا</div>
-        <div class="v">${soldTotal} قطعة · ${giftTotal} هدية</div>
+        <span class="k">مباع / هدايا</span>
+        <span class="v">${soldTotal} / ${giftTotal}</span>
       </div>
     </div>
 
-    <table class="tbl">
-      <thead>
-        <tr>
-          <th class="t-idx">#</th>
-          <th class="th-name">اسم المنتج</th>
-          <th>الباركود</th>
-          <th>العدد</th>
-          <th>الهدايا</th>
-          <th>السعر</th>
-          <th>الإجمالي</th>
-        </tr>
-      </thead>
-      <tbody>${a4LineItems(invoice)}</tbody>
-    </table>
+    <div class="tbl-wrap">
+      <table class="tbl">
+        <colgroup>
+          <col style="width:4%">
+          <col style="width:30%">
+          <col style="width:14%">
+          <col style="width:8%">
+          <col style="width:8%">
+          <col style="width:14%">
+          <col style="width:14%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th class="th-name">المنتج</th>
+            <th>الباركود</th>
+            <th>العدد</th>
+            <th>هدايا</th>
+            <th>السعر</th>
+            <th>الإجمالي</th>
+          </tr>
+        </thead>
+        <tbody>${a4LineItems(invoice)}</tbody>
+      </table>
+    </div>
 
     <div class="footer-grid">
       <div class="notes-box">
@@ -397,7 +462,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
 
     <footer class="inv-foot">
       <div class="msg">${esc(footer)}</div>
-      <div class="sub">${esc(STORE_NAME)}${branchName ? ` — ${esc(branchName)}` : ''} · ${summary.lineCount} صنف · ${soldTotal} قطعة مباعة${giftTotal ? ` · ${giftTotal} هدية` : ''}</div>
+      <div class="sub">${esc(STORE_NAME)}${branchName ? ` — ${esc(branchName)}` : ''} · ${summary.lineCount} صنف · ${soldTotal} مباع${giftTotal ? ` · ${giftTotal} هدية` : ''}</div>
     </footer>
 
   </div>
