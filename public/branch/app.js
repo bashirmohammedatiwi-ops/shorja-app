@@ -25,7 +25,7 @@ const PAGE_TITLES = {
   held: ['فواتير معلّقة', 'استئناف البيع المحفوظ'],
   accounts: ['حسابات العملاء', 'الديون والأرصدة'],
   payments: ['تسديد الحسابات', 'تسجيل دفعات العملاء'],
-  stock: ['المخزون', 'منتجات منخفضة أو نافدة'],
+  stock: ['المخزون', 'كل المنتجات · فلاتر وبحث'],
   reports: ['التقارير', 'مبيعات وتحصيلات حسب الفترة'],
   settings: ['الإعدادات', 'تخصيص سلوك نقطة البيع والطباعة']
 };
@@ -1258,7 +1258,37 @@ document.querySelectorAll('[data-close]').forEach((btn) => {
 
 document.getElementById('btnConfirmSale').addEventListener('click', () => submitSale());
 
+function printHtml(html) {
+  const clean = String(html).replace(/<script[\s\S]*?<\/script>/gi, '');
+  let frame = document.getElementById('printFrame');
+  if (!frame) {
+    frame = document.createElement('iframe');
+    frame.id = 'printFrame';
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'position:fixed;width:0;height:0;border:0;opacity:0;pointer-events:none';
+    document.body.appendChild(frame);
+  }
+  const win = frame.contentWindow;
+  const doc = win.document;
+  doc.open();
+  doc.write(clean);
+  doc.close();
+  const runPrint = () => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      toast('تعذّر فتح نافذة الطباعة', 'err');
+    }
+  };
+  if (doc.readyState === 'complete') setTimeout(runPrint, 300);
+  else win.onload = () => setTimeout(runPrint, 300);
+}
+
 async function submitSale() {
+  const confirmBtn = document.getElementById('btnConfirmSale');
+  if (confirmBtn?.disabled) return;
+
   const subtotal = state.cart.reduce((s, l) => s + l.lineTotal, 0);
   const total = Math.max(0, subtotal - state.discount);
   let paymentMethod = 'cash';
@@ -1304,7 +1334,12 @@ async function submitSale() {
   };
 
   try {
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'جاري الحفظ...';
+    }
     const data = await api('/branch/invoices', { method: 'POST', body: JSON.stringify(payload) });
+    if (!data.invoice?.id) throw new Error('لم يُرجع السيرفر رقم الفاتورة');
     toast(`✓ تم البيع — ${data.invoice.invoiceNo}`);
     state.lastInvoiceId = data.invoice.id;
     localStorage.setItem(LAST_INV_KEY, String(data.invoice.id));
@@ -1314,7 +1349,11 @@ async function submitSale() {
     loadTodaySummary();
     loadProducts();
     bustViewCache('dashboard', 'invoices', 'accounts');
-  } catch {
+  } catch (err) {
+    if (navigator.onLine) {
+      toast(err.message || 'فشل إتمام البيع', 'err');
+      return;
+    }
     const outbox = getOutbox();
     outbox.push({ ...payload, syncStatus: 'pending', createdAt: new Date().toISOString() });
     saveOutbox(outbox);
@@ -1322,6 +1361,11 @@ async function submitSale() {
     toast('حُفظت محلياً — ستُرفع عند الاتصال', 'warn');
     document.getElementById('checkoutModal').close();
     clearCart();
+  } finally {
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'تأكيد وطباعة';
+    }
   }
 }
 
@@ -1404,8 +1448,9 @@ async function loadTodaySummary() {
 async function updateStockBadge() {
   try {
     const threshold = getSettings().lowStockThreshold || 5;
-    const data = await api(`/branch/products/low-stock?threshold=${threshold}`);
-    const n = (data.products || []).length;
+    const data = await api(`/branch/products?summary=1&limit=1&stock=low&threshold=${threshold}`);
+    const summary = data.summary;
+    const n = summary ? Number(summary.low) + Number(summary.out) : (data.products || []).length;
     const el = document.getElementById('stockBadge');
     if (el) {
       el.textContent = n;
@@ -1414,31 +1459,193 @@ async function updateStockBadge() {
   } catch { /* */ }
 }
 
-async function loadStockView() {
-  try {
-    const threshold = getSettings().lowStockThreshold || 5;
-    const data = await api(`/branch/products/low-stock?threshold=${threshold}`);
-    const products = data.products || [];
-    const grid = document.getElementById('stockGrid');
-    if (!products.length) {
-      grid.innerHTML = '<p class="hint">لا توجد منتجات منخفضة المخزون</p>';
-      return;
-    }
-    grid.innerHTML = products.map((p) => {
-      const out = Number(p.stockQty) <= 0;
-      return `
-      <div class="stock-card${out ? ' out' : ''}">
-        <div class="name">${esc(p.name)}</div>
-        <div class="code" dir="ltr">${esc(p.barcode)}</div>
-        <div class="stock-val">${out ? 'نفد' : `متبقي: ${fmt(p.stockQty)}`}</div>
-        <div class="price" dir="ltr">${fmt(p.price)}</div>
-      </div>`;
-    }).join('');
-    updateStockBadge();
-  } catch { toast('تعذّر تحميل المخزون', 'err'); }
+const stockState = {
+  q: '',
+  category: '',
+  status: 'all',
+  sort: 'name',
+  page: 0,
+  pageSize: 50,
+  total: 0,
+  loading: false
+};
+let stockSearchTimer = null;
+let stockCategoriesLoaded = false;
+
+function stockStatusOf(qty, threshold) {
+  const n = Number(qty) || 0;
+  if (n <= 0) return { key: 'out', label: 'نافد', cls: 'st-out' };
+  if (n <= threshold) return { key: 'low', label: 'منخفض', cls: 'st-low' };
+  return { key: 'in', label: 'متوفر', cls: 'st-ok' };
 }
 
-document.getElementById('btnRefreshStock')?.addEventListener('click', loadStockView);
+function renderStockSummary(summary) {
+  if (!summary) return;
+  const map = {
+    stockSumAll: summary.total,
+    stockSumIn: summary.inStock,
+    stockSumLow: summary.low,
+    stockSumOut: summary.out
+  };
+  Object.entries(map).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = String(val ?? 0);
+  });
+  document.querySelectorAll('.stock-chip').forEach((chip) => {
+    chip.classList.toggle('active', chip.dataset.stock === stockState.status);
+  });
+}
+
+function renderStockPagination() {
+  const el = document.getElementById('stockPagination');
+  if (!el) return;
+  const pages = Math.max(1, Math.ceil(stockState.total / stockState.pageSize));
+  const page = stockState.page + 1;
+  if (stockState.total <= stockState.pageSize) {
+    el.innerHTML = stockState.total
+      ? `<span class="stock-page-info">عرض ${stockState.total} منتج</span>`
+      : '';
+    return;
+  }
+  el.innerHTML = `
+    <button type="button" class="btn btn-secondary btn-sm" id="stockPrev" ${stockState.page <= 0 ? 'disabled' : ''}>السابق</button>
+    <span class="stock-page-info">صفحة ${page} من ${pages} · ${stockState.total} منتج</span>
+    <button type="button" class="btn btn-secondary btn-sm" id="stockNext" ${page >= pages ? 'disabled' : ''}>التالي</button>
+  `;
+  document.getElementById('stockPrev')?.addEventListener('click', () => {
+    if (stockState.page > 0) {
+      stockState.page -= 1;
+      loadStockView();
+    }
+  });
+  document.getElementById('stockNext')?.addEventListener('click', () => {
+    if (stockState.page < pages - 1) {
+      stockState.page += 1;
+      loadStockView();
+    }
+  });
+}
+
+function renderStockTable(products, threshold) {
+  const tbody = document.getElementById('stockTableBody');
+  const empty = document.getElementById('stockEmpty');
+  if (!tbody) return;
+  if (!products.length) {
+    tbody.innerHTML = '';
+    empty?.classList.remove('hidden');
+    return;
+  }
+  empty?.classList.add('hidden');
+  const offset = stockState.page * stockState.pageSize;
+  tbody.innerHTML = products.map((p, i) => {
+    const st = stockStatusOf(p.stockQty, threshold);
+    const rowCls = st.key === 'out' ? 'row-out' : st.key === 'low' ? 'row-low' : '';
+    return `
+      <tr class="${rowCls}">
+        <td class="col-idx">${offset + i + 1}</td>
+        <td class="col-name">
+          <strong>${esc(p.name)}</strong>
+          ${p.sku ? `<div class="sku-sub" dir="ltr">${esc(p.sku)}</div>` : ''}
+        </td>
+        <td class="col-cat">${esc(p.category || '—')}</td>
+        <td class="col-code" dir="ltr">${esc(p.barcode)}</td>
+        <td class="col-price" dir="ltr">${fmt(p.price)}</td>
+        <td class="col-qty" dir="ltr"><strong>${fmt(p.stockQty)}</strong> <small>${esc(p.unit || 'قطعة')}</small></td>
+        <td class="col-status"><span class="stock-status ${st.cls}">${st.label}</span></td>
+      </tr>`;
+  }).join('');
+}
+
+async function ensureStockCategories() {
+  if (stockCategoriesLoaded) return;
+  try {
+    const data = await api('/branch/categories');
+    const sel = document.getElementById('stockCategory');
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">كل التصنيفات</option>' +
+      (data.categories || []).map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    sel.value = current;
+    stockCategoriesLoaded = true;
+  } catch { /* */ }
+}
+
+async function loadStockView() {
+  if (stockState.loading) return;
+  stockState.loading = true;
+  const meta = document.getElementById('stockMeta');
+  if (meta) meta.textContent = 'جاري التحميل...';
+  try {
+    await ensureStockCategories();
+    const threshold = getSettings().lowStockThreshold || 5;
+    const params = new URLSearchParams({
+      summary: '1',
+      limit: String(stockState.pageSize),
+      offset: String(stockState.page * stockState.pageSize),
+      sort: stockState.sort,
+      stock: stockState.status,
+      threshold: String(threshold)
+    });
+    if (stockState.q) params.set('q', stockState.q);
+    if (stockState.category) params.set('category', stockState.category);
+    const data = await api(`/branch/products?${params}`);
+    stockState.total = Number(data.total) || 0;
+    renderStockSummary(data.summary);
+    renderStockTable(data.products || [], threshold);
+    renderStockPagination();
+    const from = stockState.total ? stockState.page * stockState.pageSize + 1 : 0;
+    const to = Math.min(stockState.total, (stockState.page + 1) * stockState.pageSize);
+    if (meta) {
+      meta.textContent = stockState.total
+        ? `عرض ${from}–${to} من ${stockState.total} منتج`
+        : 'لا توجد منتجات مطابقة';
+    }
+    updateStockBadge();
+  } catch {
+    if (meta) meta.textContent = '';
+    toast('تعذّر تحميل المخزون', 'err');
+  } finally {
+    stockState.loading = false;
+  }
+}
+
+function bindStockFilters() {
+  document.getElementById('btnRefreshStock')?.addEventListener('click', () => {
+    stockState.page = 0;
+    loadStockView();
+  });
+
+  document.getElementById('stockSearch')?.addEventListener('input', (e) => {
+    clearTimeout(stockSearchTimer);
+    stockSearchTimer = setTimeout(() => {
+      stockState.q = e.target.value.trim();
+      stockState.page = 0;
+      loadStockView();
+    }, 320);
+  });
+
+  document.getElementById('stockCategory')?.addEventListener('change', (e) => {
+    stockState.category = e.target.value;
+    stockState.page = 0;
+    loadStockView();
+  });
+
+  document.getElementById('stockSort')?.addEventListener('change', (e) => {
+    stockState.sort = e.target.value;
+    stockState.page = 0;
+    loadStockView();
+  });
+
+  document.getElementById('stockSummaryBar')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.stock-chip');
+    if (!chip) return;
+    stockState.status = chip.dataset.stock || 'all';
+    stockState.page = 0;
+    loadStockView();
+  });
+}
+
+bindStockFilters();
 
 function initReportDates() {
   const today = new Date().toISOString().slice(0, 10);
@@ -1629,12 +1836,23 @@ async function openInvoiceModal(id, returnMode = false) {
 }
 
 function printInvoice(id) {
+  if (!id) {
+    toast('لا توجد فاتورة للطباعة', 'err');
+    return;
+  }
   const thermal = getSettings().thermalPrint ? '?thermal=1' : '';
-  const w = window.open('', '_blank', 'width=420,height=680');
-  fetch(`/api/branch/invoices/${id}/print${thermal}`, { headers: { Authorization: `Bearer ${state.token}` } })
-    .then((r) => r.text())
-    .then((html) => { w.document.write(html); w.document.close(); })
-    .catch(() => toast('تعذّر الطباعة', 'err'));
+  fetch(`/api/branch/invoices/${id}/print${thermal}`, {
+    headers: { Authorization: `Bearer ${state.token}` }
+  })
+    .then(async (r) => {
+      if (!r.ok) {
+        const msg = await r.text().catch(() => '');
+        throw new Error(msg || 'فشل جلب الفاتورة للطباعة');
+      }
+      return r.text();
+    })
+    .then((html) => printHtml(html))
+    .catch((err) => toast(err.message || 'تعذّر الطباعة', 'err'));
 }
 
 document.getElementById('btnPrintInvoice').addEventListener('click', () => {

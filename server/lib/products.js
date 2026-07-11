@@ -20,7 +20,16 @@ function mapProduct(row) {
   };
 }
 
-function listProducts({ q = '', category = '', limit = 100, offset = 0, activeOnly = true } = {}) {
+function listProducts({
+  q = '',
+  category = '',
+  limit = 100,
+  offset = 0,
+  activeOnly = true,
+  stockFilter = 'all',
+  lowThreshold = 5,
+  sort = 'name'
+} = {}) {
   const where = [];
   const params = [];
   if (activeOnly) where.push('is_active = 1');
@@ -33,17 +42,48 @@ function listProducts({ q = '', category = '', limit = 100, offset = 0, activeOn
     const like = `%${q}%`;
     params.push(like, like, like);
   }
+  const threshold = Math.max(0, Number(lowThreshold) || 5);
+  if (stockFilter === 'in') {
+    where.push('stock_qty > ?');
+    params.push(threshold);
+  } else if (stockFilter === 'low') {
+    where.push('stock_qty > 0 AND stock_qty <= ?');
+    params.push(threshold);
+  } else if (stockFilter === 'out') {
+    where.push('stock_qty <= 0');
+  }
+  const orderBy = {
+    stock_asc: 'stock_qty ASC, name COLLATE NOCASE',
+    stock_desc: 'stock_qty DESC, name COLLATE NOCASE',
+    price_asc: 'price ASC, name COLLATE NOCASE',
+    price_desc: 'price DESC, name COLLATE NOCASE',
+    name: 'name COLLATE NOCASE'
+  }[sort] || 'name COLLATE NOCASE';
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const sql = `
     SELECT * FROM products
-    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-    ORDER BY name LIMIT ? OFFSET ?
+    ${whereSql}
+    ORDER BY ${orderBy} LIMIT ? OFFSET ?
   `;
-  params.push(limit, offset);
-  const rows = db.prepare(sql).all(...params);
+  const queryParams = [...params, limit, offset];
+  const rows = db.prepare(sql).all(...queryParams);
   const total = db.prepare(`
-    SELECT COUNT(*) AS c FROM products ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-  `).get(...params.slice(0, -2)).c;
-  return { products: rows.map(mapProduct), total };
+    SELECT COUNT(*) AS c FROM products ${whereSql}
+  `).get(...params).c;
+  return { products: rows.map(mapProduct), total, limit, offset };
+}
+
+function stockSummary(threshold = 5) {
+  const t = Math.max(0, Number(threshold) || 5);
+  const total = db.prepare('SELECT COUNT(*) AS c FROM products WHERE is_active = 1').get().c;
+  const out = db.prepare('SELECT COUNT(*) AS c FROM products WHERE is_active = 1 AND stock_qty <= 0').get().c;
+  const low = db.prepare(`
+    SELECT COUNT(*) AS c FROM products WHERE is_active = 1 AND stock_qty > 0 AND stock_qty <= ?
+  `).get(t).c;
+  const inStock = db.prepare(`
+    SELECT COUNT(*) AS c FROM products WHERE is_active = 1 AND stock_qty > ?
+  `).get(t).c;
+  return { total, inStock, low, out, threshold: t };
 }
 
 function getByBarcode(barcode) {
@@ -151,5 +191,6 @@ module.exports = {
   adjustStock,
   categories,
   stats,
-  listLowStock
+  listLowStock,
+  stockSummary
 };

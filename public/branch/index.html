@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=18">
+  <link rel="stylesheet" href="styles.css?v=20">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -339,11 +339,61 @@
 
       <!-- Stock -->
       <main id="viewStock" class="view hidden">
-        <div class="toolbar">
-          <span class="hint" style="margin:0">منتجات منخفضة المخزون أو نافدة</span>
-          <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshStock">تحديث</button>
+        <div class="stock-panel">
+          <div class="stock-summary-bar" id="stockSummaryBar">
+            <button type="button" class="stock-chip active" data-stock="all">
+              <span class="chip-lbl">الكل</span><strong id="stockSumAll">0</strong>
+            </button>
+            <button type="button" class="stock-chip ok" data-stock="in">
+              <span class="chip-lbl">متوفر</span><strong id="stockSumIn">0</strong>
+            </button>
+            <button type="button" class="stock-chip warn" data-stock="low">
+              <span class="chip-lbl">منخفض</span><strong id="stockSumLow">0</strong>
+            </button>
+            <button type="button" class="stock-chip danger" data-stock="out">
+              <span class="chip-lbl">نافد</span><strong id="stockSumOut">0</strong>
+            </button>
+          </div>
+
+          <div class="toolbar stock-filters">
+            <input type="search" id="stockSearch" class="field field-grow" placeholder="بحث بالاسم أو الباركود أو SKU..." autocomplete="off">
+            <select id="stockCategory" class="field">
+              <option value="">كل التصنيفات</option>
+            </select>
+            <select id="stockSort" class="field">
+              <option value="name">ترتيب: الاسم</option>
+              <option value="stock_asc">ترتيب: المخزون (الأقل)</option>
+              <option value="stock_desc">ترتيب: المخزون (الأعلى)</option>
+              <option value="price_desc">ترتيب: السعر (الأعلى)</option>
+              <option value="price_asc">ترتيب: السعر (الأقل)</option>
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshStock">تحديث</button>
+          </div>
+
+          <div class="stock-meta" id="stockMeta"></div>
+
+          <div class="stock-table-wrap">
+            <table class="stock-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>المنتج</th>
+                  <th>التصنيف</th>
+                  <th>الباركود</th>
+                  <th>السعر</th>
+                  <th>المخزون</th>
+                  <th>الحالة</th>
+                </tr>
+              </thead>
+              <tbody id="stockTableBody"></tbody>
+            </table>
+            <div class="stock-empty hidden" id="stockEmpty">
+              <p>لا توجد منتجات مطابقة للفلتر</p>
+            </div>
+          </div>
+
+          <div class="stock-pagination" id="stockPagination"></div>
         </div>
-        <div class="stock-grid" id="stockGrid"></div>
       </main>
 
       <!-- Reports -->
@@ -453,6 +503,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=18"></script>
+  <script src="app.js?v=20"></script>
 </body>
 </html>

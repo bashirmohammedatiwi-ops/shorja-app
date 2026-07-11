@@ -1476,6 +1476,183 @@ kbd {
   flex: 1;
 }
 
+/* ── Stock inventory panel ── */
+.stock-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 12px;
+}
+
+.stock-summary-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.stock-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 88px;
+  padding: 10px 16px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-white);
+  cursor: pointer;
+  font: inherit;
+  transition: all 0.18s var(--ease);
+  box-shadow: var(--shadow);
+}
+
+.stock-chip .chip-lbl {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stock-chip strong {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.stock-chip:hover { transform: translateY(-1px); box-shadow: var(--shadow-lg); }
+
+.stock-chip.active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.15);
+}
+
+.stock-chip.ok strong { color: #047857; }
+.stock-chip.warn strong { color: #b45309; }
+.stock-chip.danger strong { color: var(--danger); }
+.stock-chip.active.ok { border-color: #059669; background: #ecfdf5; }
+.stock-chip.active.warn { border-color: #f59e0b; background: #fffbeb; }
+.stock-chip.active.danger { border-color: #dc2626; background: #fef2f2; }
+
+.stock-filters {
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.field-grow { flex: 1; min-width: 180px; }
+
+.stock-meta {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.stock-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.stock-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.stock-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.stock-table th {
+  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 12px 14px;
+  text-align: right;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+
+.stock-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: middle;
+}
+
+.stock-table tbody tr:hover { background: #f8fafc; }
+.stock-table tbody tr.row-low { background: #fffbeb; }
+.stock-table tbody tr.row-out { background: #fffbfb; }
+.stock-table tbody tr.row-low:hover { background: #fef3c7; }
+.stock-table tbody tr.row-out:hover { background: #fef2f2; }
+
+.stock-table .col-idx {
+  width: 42px;
+  text-align: center;
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.stock-table .col-name strong { font-weight: 700; font-size: 0.9rem; }
+.stock-table .sku-sub { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+.stock-table .col-cat { color: var(--text-muted); font-size: 0.82rem; max-width: 120px; }
+.stock-table .col-code {
+  font-family: Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.stock-table .col-price { font-weight: 700; color: var(--primary-dark); white-space: nowrap; }
+.stock-table .col-qty { white-space: nowrap; }
+.stock-table .col-qty small { color: var(--text-muted); font-weight: 600; }
+.stock-table .col-status { white-space: nowrap; }
+
+.stock-status {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.stock-status.st-ok { background: #d1fae5; color: #047857; }
+.stock-status.st-low { background: #fef3c7; color: #b45309; }
+.stock-status.st-out { background: #fee2e2; color: #dc2626; }
+
+.stock-empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.stock-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.stock-page-info {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .stock-card {
   background: var(--bg-white);
   border: 1px solid var(--border);
@@ -2074,4 +2251,7 @@ kbd {
   .col-barcode { display: none; }
   .col-gift { width: 100px; }
   .login-card { padding: 32px 24px; }
+  .stock-table .col-cat { display: none; }
+  .stock-chip { min-width: 72px; padding: 8px 12px; }
+  .stock-chip strong { font-size: 1.05rem; }
 }

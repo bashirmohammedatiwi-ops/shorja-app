@@ -1,6 +1,6 @@
 const express = require('express');
 const { authRequired } = require('../lib/auth');
-const { listProducts, getByBarcode, categories, listLowStock } = require('../lib/products');
+const { listProducts, getByBarcode, categories, listLowStock, stockSummary } = require('../lib/products');
 const { createInvoice, listInvoices, loadInvoice, dailySummary, createPayment, listPayments, createReturn, salesReport } = require('../lib/invoices');
 const { listAccounts, getAccount, createAccount } = require('../lib/accounts');
 const { checkPriceUpdate, applyPricePackage } = require('../lib/prices');
@@ -17,9 +17,26 @@ router.get('/products', (req, res) => {
   const syncAll = req.query.sync === '1' || req.query.all === '1';
   const limit = syncAll
     ? Math.min(Number(req.query.limit) || 500, 5000)
-    : Math.min(Number(req.query.limit) || 80, 200);
+    : Math.min(Number(req.query.limit) || 80, 500);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
-  res.json({ ok: true, ...listProducts({ q, category, limit, offset }) });
+  const settings = getBranchSettings(req.user.branchId);
+  const stockFilter = String(req.query.stock || 'all').trim();
+  const sort = String(req.query.sort || 'name').trim();
+  const lowThreshold = Number(req.query.threshold) || settings.lowStockThreshold || 5;
+  const result = listProducts({
+    q,
+    category,
+    limit,
+    offset,
+    stockFilter: ['all', 'in', 'low', 'out'].includes(stockFilter) ? stockFilter : 'all',
+    lowThreshold,
+    sort
+  });
+  const payload = { ok: true, ...result };
+  if (req.query.summary === '1') {
+    payload.summary = stockSummary(lowThreshold);
+  }
+  res.json(payload);
 });
 
 router.get('/products/barcode/:code', (req, res) => {

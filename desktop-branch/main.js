@@ -18,6 +18,8 @@ function createWindow() {
     }
   });
 
+  win.webContents.setWindowOpenHandler(() => ({ action: 'allow' }));
+
   win.loadURL(startUrl);
 }
 
