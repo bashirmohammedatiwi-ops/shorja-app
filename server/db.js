@@ -275,6 +275,34 @@ function migrateSchema() {
   }
 
   migrateInvoicesKind();
+  migrateEdariSync();
+}
+
+function migrateEdariSync() {
+  const cols = [
+    'ALTER TABLE accounts ADD COLUMN edari_seq TEXT',
+    'ALTER TABLE accounts ADD COLUMN edari_num TEXT',
+    'ALTER TABLE accounts ADD COLUMN edari_sync_status TEXT DEFAULT \'none\'',
+    'ALTER TABLE accounts ADD COLUMN edari_sync_error TEXT'
+  ];
+  for (const sql of cols) {
+    try { db.exec(sql); } catch { /* exists */ }
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS edari_sync_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      ref_type TEXT,
+      ref_id INTEGER,
+      payload TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error TEXT,
+      attempts INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_edari_sync_status ON edari_sync_queue(status);
+  `);
 }
 
 function migrateInvoicesKind() {

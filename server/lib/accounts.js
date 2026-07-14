@@ -1,4 +1,5 @@
 const db = require('../db');
+const { syncAccountToEdari } = require('./edari-sync');
 
 function mapAccount(row) {
   if (!row) return null;
@@ -12,6 +13,10 @@ function mapAccount(row) {
     creditLimit: Number(row.credit_limit || 0),
     isActive: !!row.is_active,
     notes: row.notes || '',
+    edariSeq: row.edari_seq || '',
+    edariNum: row.edari_num || '',
+    edariSyncStatus: row.edari_sync_status || 'none',
+    edariSyncError: row.edari_sync_error || '',
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -41,16 +46,20 @@ function getAccount(id) {
   return mapAccount(db.prepare('SELECT * FROM accounts WHERE id = ?').get(id));
 }
 
-function createAccount(data) {
+async function createAccount(data) {
   const code = String(data.code || '').trim() || nextAccountCode();
   const row = db.prepare(`
-    INSERT INTO accounts (code, name, phone, address, balance, credit_limit, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO accounts (code, name, phone, address, balance, credit_limit, notes, edari_sync_status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
     RETURNING id
   `).get(
     code, data.name, data.phone || '', data.address || '',
     Number(data.balance || 0), Number(data.creditLimit || 0), data.notes || ''
   );
+  const account = getAccount(Number(row.id));
+  if (process.env.EDARI_SYNC_ACCOUNTS !== '0') {
+    await syncAccountToEdari(account, data);
+  }
   return getAccount(Number(row.id));
 }
 

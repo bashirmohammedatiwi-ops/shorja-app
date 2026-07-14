@@ -60,13 +60,13 @@ router.get('/accounts', (req, res) => {
   res.json({ ok: true, ...listAccounts({ q, hasDebt: req.query.debt === '1' }) });
 });
 
-router.post('/accounts', (req, res) => {
+router.post('/accounts', async (req, res) => {
   try {
     const body = req.body || {};
     if (!String(body.name || '').trim()) {
       return res.status(400).json({ ok: false, error: 'اسم الحساب مطلوب' });
     }
-    const account = createAccount({
+    const account = await createAccount({
       name: String(body.name).trim(),
       phone: body.phone || '',
       address: body.address || '',

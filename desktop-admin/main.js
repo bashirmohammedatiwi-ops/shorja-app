@@ -20,6 +20,7 @@ function applyEdariEnv() {
   const { connectionToEnv } = require(connPath);
   Object.assign(process.env, {
     EDARI_READER_ROOT: getEdariReaderRoot(),
+    EDARI_WRITE_ENABLED: '1',
     ...connectionToEnv()
   });
 }
@@ -37,6 +38,32 @@ ipcMain.handle('lookup-edari-material', async (_e, code) => {
     return { ok: false, error: err.message || 'فشل الاتصال بـ Edari' };
   }
 });
+
+async function processEdariQueueLocal() {
+  try {
+    applyEdariEnv();
+    const accountsPath = getEdariLibPath('edari-accounts.js');
+    const bridgePath = getEdariLibPath('edari-bridge.js');
+    delete require.cache[require.resolve(accountsPath)];
+    delete require.cache[require.resolve(bridgePath)];
+    const { createEdariCustomerAccount } = require(accountsPath);
+    const { canWriteEdari } = require(bridgePath);
+    const { runEdariSyncWorker } = require('./edari-sync-worker');
+    return await runEdariSyncWorker({ createEdariCustomerAccount, canWriteEdari });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+ipcMain.handle('process-edari-sync', processEdariQueueLocal);
+
+let edariSyncTimer = null;
+function startEdariSyncLoop() {
+  if (edariSyncTimer) return;
+  const tick = () => { processEdariQueueLocal().catch(() => {}); };
+  edariSyncTimer = setInterval(tick, 60_000);
+  setTimeout(tick, 8_000);
+}
 
 function createWindow() {
   const server = getServerUrl();
@@ -59,5 +86,8 @@ function createWindow() {
   win.loadURL(startUrl);
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  startEdariSyncLoop();
+});
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

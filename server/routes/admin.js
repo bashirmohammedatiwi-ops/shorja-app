@@ -4,6 +4,9 @@ const { listProducts, upsertProduct, bulkUpsert, stats, getByBarcode, getProduct
 const { resolveEdariMaterial, cacheEdariMaterial, mapEdariToShorjaProduct } = require('../lib/edari-materials');
 const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment } = require('../lib/invoices');
 const { listAccounts, createAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
+const { getEdariParentInfo } = require('../lib/edari-accounts');
+const { listPendingSync, processEdariQueue, syncAccountToEdari } = require('../lib/edari-sync');
+const { canWriteEdari } = require('../lib/edari-bridge');
 const { publishPricePackage, listPackages, getLatestVersion } = require('../lib/prices');
 const { parseProductsCsv, invoicePrintHtml } = require('../lib/export');
 const db = require('../db');
@@ -223,10 +226,41 @@ router.get('/accounts', (req, res) => {
   }) });
 });
 
-router.post('/accounts', (req, res) => {
+router.post('/accounts', async (req, res) => {
   try {
-    const account = createAccount(req.body || {});
+    const account = await createAccount(req.body || {});
     res.json({ ok: true, account });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.get('/edari/parent', async (_req, res) => {
+  const info = await getEdariParentInfo();
+  res.json({ ok: info.ok, parent: info.parent, error: info.error, canWrite: canWriteEdari() });
+});
+
+router.get('/edari/sync-queue', (req, res) => {
+  const limit = Math.min(200, Number(req.query.limit) || 50);
+  res.json({ ok: true, items: listPendingSync(limit), canWrite: canWriteEdari() });
+});
+
+router.post('/edari/sync-queue/process', async (req, res) => {
+  try {
+    const limit = Math.min(100, Number(req.body?.limit) || 20);
+    const results = await processEdariQueue(limit);
+    res.json({ ok: true, results, canWrite: canWriteEdari() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.post('/accounts/:id/sync-edari', async (req, res) => {
+  try {
+    const account = getAccount(Number(req.params.id));
+    if (!account) return res.status(404).json({ ok: false, error: 'غير موجود' });
+    const result = await syncAccountToEdari(account, req.body || {});
+    res.json({ ok: true, account: getAccount(account.id), result });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }

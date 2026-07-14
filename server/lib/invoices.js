@@ -2,6 +2,7 @@ const db = require('../db');
 const { updateBalance, getAccount } = require('./accounts');
 const { adjustStock, getByBarcode } = require('./products');
 const { getBranchSettings } = require('./settings');
+const { queueInvoiceEdariSync, queuePaymentEdariSync } = require('./edari-sync');
 
 function nextInvoiceNo(branchId) {
   const prefix = `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
@@ -303,7 +304,12 @@ function createInvoice(data, user) {
   });
 
   const invoiceId = tx();
-  return loadInvoice(invoiceId);
+  const invoice = loadInvoice(invoiceId);
+  if (process.env.EDARI_SYNC_EVENTS !== '0') {
+    const acc = invoice.accountId ? getAccount(invoice.accountId) : null;
+    queueInvoiceEdariSync({ ...invoice, edariSeq: acc?.edariSeq || '' });
+  }
+  return invoice;
 }
 
 function createReturn(parentId, data, user) {
@@ -446,10 +452,17 @@ function createPayment({ accountId, amount, method, notes, branchId, createdBy, 
       paymentNo,
       accountId,
       amount: payAmount,
+      method: method || 'cash',
+      notes: notes || '',
+      paymentDate: paymentDate || new Date().toISOString().slice(0, 10),
       balanceAfter: updated.balance
     };
   });
-  return tx();
+  const payment = tx();
+  if (process.env.EDARI_SYNC_EVENTS !== '0') {
+    queuePaymentEdariSync(payment, acc);
+  }
+  return payment;
 }
 
 function listPayments({ accountId, branchId, dateFrom, dateTo, limit = 50 } = {}) {
