@@ -3,6 +3,7 @@ const fs = require('fs');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { getEdariConnection } = require('./edari-connection');
+const { runExecuteViaNxscript, isTrialExpiredError } = require('./edari-nxscript');
 
 const execFileAsync = promisify(execFile);
 
@@ -41,10 +42,7 @@ async function runQuery(sql, connOverrides = {}) {
   return odbcBridge.runQuery({ ...getEdariConnection(connOverrides), sql });
 }
 
-async function runExecute(sql, connOverrides = {}) {
-  if (!canWriteEdari()) {
-    return { ok: false, error: 'كتابة Edari متاحة على Windows مع ODBC فقط', needsDriver: true };
-  }
+async function runExecuteOdbc(sql, connOverrides = {}) {
   const conn = getEdariConnection(connOverrides);
   const payload = JSON.stringify({
     action: 'execute',
@@ -61,13 +59,35 @@ async function runExecute(sql, connOverrides = {}) {
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', resolveExecutePs(), payload],
       { maxBuffer: 10 * 1024 * 1024, windowsHide: true, encoding: 'utf8' }
     );
-    const result = JSON.parse(out.stdout.trim());
-    return result;
+    return JSON.parse(out.stdout.trim());
   } catch (err) {
     const parsed = tryParse(err.stdout);
     if (parsed) return parsed;
     return { ok: false, error: err.message || 'فشل تنفيذ Edari' };
   }
+}
+
+async function runExecute(sql, connOverrides = {}) {
+  if (!canWriteEdari()) {
+    return { ok: false, error: 'كتابة Edari متاحة على Windows فقط', needsDriver: true };
+  }
+
+  if (process.env.EDARI_WRITE_VIA_NXSCRIPT !== '0') {
+    const nx = await runExecuteViaNxscript(sql, connOverrides);
+    if (nx.ok) return nx;
+    if (!isTrialExpiredError(nx.error) && !nx.needsNxServer && !nx.needsNxScript) {
+      return nx;
+    }
+  }
+
+  const odbc = await runExecuteOdbc(sql, connOverrides);
+  if (odbc.ok) return odbc;
+  if (isTrialExpiredError(odbc.error) && process.env.EDARI_WRITE_VIA_NXSCRIPT !== '0') {
+    const nx = await runExecuteViaNxscript(sql, connOverrides);
+    if (nx.ok) return nx;
+    return { ok: false, error: nx.error || odbc.error };
+  }
+  return odbc;
 }
 
 function tryParse(text) {

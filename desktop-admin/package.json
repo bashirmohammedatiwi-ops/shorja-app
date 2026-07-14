@@ -40,6 +40,14 @@
         "to": "edari/edari-bridge.js"
       },
       {
+        "from": "../server/lib/edari-nxscript.js",
+        "to": "edari/edari-nxscript.js"
+      },
+      {
+        "from": "../server/scripts/edari-execute.nxscript",
+        "to": "edari/edari-execute.nxscript"
+      },
+      {
         "from": "../server/scripts/edari-execute.ps1",
         "to": "edari/edari-execute.ps1"
       }
