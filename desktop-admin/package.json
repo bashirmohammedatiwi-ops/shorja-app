@@ -44,6 +44,10 @@
         "to": "edari/edari-bridge.js"
       },
       {
+        "from": "../server/lib/edari-sync-worker.js",
+        "to": "edari/edari-sync-worker.js"
+      },
+      {
         "from": "../server/lib/edari-nxscript.js",
         "to": "edari/edari-nxscript.js"
       },

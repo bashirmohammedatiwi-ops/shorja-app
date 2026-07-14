@@ -1,6 +1,14 @@
 const fs = require('fs');
 const path = require('path');
-const { runEdariSyncWorker } = require('../server/lib/edari-sync-worker');
+
+function getCoreSyncWorkerPath() {
+  const { app } = require('electron');
+  const packaged = path.join(process.resourcesPath, 'edari', 'edari-sync-worker.js');
+  if (app?.isPackaged && fs.existsSync(packaged)) return packaged;
+  return path.join(__dirname, '..', 'server', 'lib', 'edari-sync-worker.js');
+}
+
+const { runEdariSyncWorker } = require(getCoreSyncWorkerPath());
 
 function getServerJsonPaths() {
   const { app } = require('electron');

@@ -292,6 +292,7 @@ function queueInvoiceEdariSync(invoice) {
       kind: invoice.kind,
       accountId: invoice.accountId,
       edariSeq: invoice.edariSeq || null,
+      subtotal: invoice.subtotal,
       total: invoice.total,
       dueAmount: invoice.dueAmount,
       paidAmount: invoice.paidAmount,
@@ -307,6 +308,7 @@ function queueInvoiceEdariSync(invoice) {
         qty: l.qty,
         giftQty: l.giftQty,
         unitPrice: l.unitPrice,
+        lineDiscount: l.lineDiscount,
         lineTotal: l.lineTotal
       }))
     }

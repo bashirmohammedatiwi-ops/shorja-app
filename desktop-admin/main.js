@@ -2,7 +2,6 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { getServerUrl } = require('./server-config');
-const { logSync } = require('../server/lib/edari-sync-worker');
 
 const SYNC_INTERVAL_MS = Math.max(5000, Number(process.env.EDARI_SYNC_INTERVAL_MS || 10000));
 
@@ -16,6 +15,8 @@ function getEdariLibPath(name) {
   if (app.isPackaged && fs.existsSync(packaged)) return packaged;
   return path.join(__dirname, '..', 'server', 'lib', name);
 }
+
+const { logSync } = require(getEdariLibPath('edari-sync-worker.js'));
 
 function applyEdariEnv() {
   const connPath = getEdariLibPath('edari-connection.js');
