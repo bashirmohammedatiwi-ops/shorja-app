@@ -1,13 +1,19 @@
 const { runQuery, runExecute, rowObjects, canWriteEdari } = require('./edari-bridge');
 const { edariSqlLiteral, sqlEscAscii, loadParentAccount } = require('./edari-accounts');
 const { lookupEdariMaterial } = require('./edari-lookup');
+const {
+  canWriteEdariInvoices,
+  canWriteEdariStock,
+  shorjaBillNumFloor,
+  shorjaRemarksTag
+} = require('./edari-safety');
 
 const SALES_ACCOUNT_SEQ = Number(process.env.EDARI_SALES_ACCOUNT_SEQ || 41);
 const RETURNS_ACCOUNT_SEQ = Number(process.env.EDARI_RETURNS_ACCOUNT_SEQ || 42);
 const CASH_ACCOUNT_SEQ = Number(process.env.EDARI_CASH_ACCOUNT_SEQ || 316);
 const DISCOUNT_ACCOUNT_SEQ = Number(process.env.EDARI_DISCOUNT_ACCOUNT_SEQ || 132);
 const WALKIN_CUSTOMER_SEQ = Number(process.env.EDARI_WALKIN_CUSTOMER_SEQ || 0);
-const SHORJA_REMARKS = String(process.env.EDARI_SHORJA_REMARKS || 'شورجة SHORJA');
+const SHORJA_REMARKS = shorjaRemarksTag();
 
 const KIND_SALE = 4;
 const KIND_RETURN = 5;
@@ -31,12 +37,27 @@ async function nextSeq(table) {
 }
 
 async function nextBillNum() {
-  const floor = Number(process.env.EDARI_SHORJA_BILL_NUM_START || 9000000);
-  const r = await runQuery('SELECT MAX(Num) AS maxNum FROM File15n');
-  if (!r.ok) throw new Error(r.error || 'فشل جلب رقم الفاتورة من إداري');
+  const floor = shorjaBillNumFloor();
+  const r = await runQuery(`SELECT MAX(Num) AS maxNum FROM File15n WHERE Num >= ${floor}`);
+  if (!r.ok) throw new Error(r.error || 'فشل جلب رقم فاتورة الشورجة من إداري');
   const rows = rowObjects(r);
-  const maxNum = Number(rows[0]?.maxNum ?? rows[0]?.MAXNUM ?? 0);
-  return Math.max(maxNum + 1, floor);
+  const maxInRange = Number(rows[0]?.maxNum ?? rows[0]?.MAXNUM ?? 0);
+  return maxInRange > 0 ? maxInRange + 1 : floor;
+}
+
+async function findExistingShorjaBill(payload) {
+  const invoiceNo = String(payload.invoiceNo || '').trim();
+  if (!invoiceNo) return null;
+  const r = await runQuery(
+    `SELECT TOP 1 Seq, Num FROM File15n WHERE remarks LIKE '%${sqlEscAscii(invoiceNo)}%' ORDER BY Seq DESC`
+  );
+  if (!r.ok) return null;
+  const row = rowObjects(r)[0];
+  if (!row) return null;
+  return {
+    edariBillSeq: String(row.Seq ?? row.seq),
+    edariBillNum: String(row.Num ?? row.num)
+  };
 }
 
 async function resolveWalkInCustomerSeq() {
@@ -113,6 +134,7 @@ async function resolveMaterial(line) {
 }
 
 async function adjustMaterialStock(matSeq, qtyDelta) {
+  if (!canWriteEdariStock()) return { ok: true, skipped: true, reason: 'stock_writes_disabled' };
   const delta = Number(qtyDelta || 0);
   if (!matSeq || !delta) return { ok: true, skipped: true };
   const sql = `UPDATE File13n SET OutTot = OutTot + ${delta} WHERE Seq = ${Number(matSeq)}`;
@@ -158,6 +180,14 @@ function invoiceAmounts(payload) {
 async function createEdariInvoice(payload) {
   if (!canWriteEdari()) {
     return { ok: false, queued: true, error: 'كتابة Edari غير متاحة على هذا السيرفر' };
+  }
+  if (!canWriteEdariInvoices()) {
+    return { ok: false, queued: true, error: 'كتابة فواتير Edari معطّلة — الإداري الأصلي محمي (EDARI_WRITE_INVOICES=0)' };
+  }
+
+  const existing = await findExistingShorjaBill(payload);
+  if (existing) {
+    return { ok: true, ...existing, deduped: true };
   }
 
   const kind = payload.kind === 'return' ? 'return' : 'sale';
@@ -277,6 +307,9 @@ async function createEdariInvoice(payload) {
 async function createEdariPayment(payload) {
   if (!canWriteEdari()) {
     return { ok: false, queued: true, error: 'كتابة Edari غير متاحة على هذا السيرفر' };
+  }
+  if (!canWriteEdariInvoices()) {
+    return { ok: false, queued: true, error: 'كتابة تسديدات Edari معطّلة — الإداري الأصلي محمي (EDARI_WRITE_INVOICES=0)' };
   }
 
   const customerSeq = Number(payload.edariSeq || 0);

@@ -1,0 +1,112 @@
+<%
+function HexDecode(const s: string): string;
+var
+  i: integer;
+  hex: string;
+  b: integer;
+begin
+  Result := '';
+  i := 1;
+  while i + 1 <= Length(s) do
+  begin
+    hex := Copy(s, i, 2);
+    b := StrToInt('$' + hex);
+    Result := Result + Chr(b);
+    i := i + 2;
+  end;
+end;
+
+function UrlDecode(const s: string): string;
+var
+  i: integer;
+  hex: string;
+begin
+  Result := '';
+  i := 1;
+  while i <= Length(s) do
+  begin
+    if s[i] = '+' then
+    begin
+      Result := Result + ' ';
+      Inc(i);
+    end
+    else if (s[i] = '%') and (i + 2 <= Length(s)) then
+    begin
+      hex := Copy(s, i + 1, 2);
+      Result := Result + Chr(StrToInt('$' + hex));
+      i := i + 3;
+    end
+    else
+    begin
+      Result := Result + s[i];
+      Inc(i);
+    end;
+  end;
+end;
+
+var
+  aSession: TnxSession;
+  adb: TnxDatabase;
+  aQuery: TnxQuery;
+  aliasName, sqlText, upperSql, maintKey: string;
+  affected: integer;
+begin
+  aliasName := UrlDecode(Trim(Request('alias')));
+  maintKey := UrlDecode(Trim(Request('key')));
+  if Trim(Request('sqlhex')) <> '' then
+    sqlText := HexDecode(Trim(Request('sqlhex')))
+  else
+    sqlText := UrlDecode(Trim(Request('sql')));
+
+  if (aliasName = '') or (sqlText = '') then
+  begin
+    Output.Write('{"ok":false,"error":"alias and sql required"}');
+    Exit;
+  end;
+
+  if maintKey <> 'shorja-maintenance' then
+  begin
+    Output.Write('{"ok":false,"error":"maintenance key required"}');
+    Exit;
+  end;
+
+  upperSql := UpperCase(Trim(sqlText));
+  if Copy(upperSql, 1, 6) <> 'DELETE' then
+  begin
+    Output.Write('{"ok":false,"error":"Only DELETE allowed in maintenance mode"}');
+    Exit;
+  end;
+
+  if (Pos('FROM FILE15N', upperSql) = 0) and (Pos('FROM FILE14N', upperSql) = 0) and (Pos('FROM FILE12N', upperSql) = 0) then
+  begin
+    Output.Write('{"ok":false,"error":"DELETE limited to File15n/file14n/File12n"}');
+    Exit;
+  end;
+
+  if Pos(';', sqlText) > 0 then
+  begin
+    Output.Write('{"ok":false,"error":"Multiple statements not allowed"}');
+    Exit;
+  end;
+
+  aSession := TnxSession.Create(nil);
+  adb := TnxDatabase.Create(nil);
+  aQuery := TnxQuery.Create(nil);
+  try
+    aSession.ServerEngine := ServerEngine;
+    aSession.Active := true;
+    adb.AliasName := aliasName;
+    adb.Session := aSession;
+    adb.Open;
+    aQuery.Database := adb;
+    aQuery.SQL.Text := sqlText;
+    aQuery.ExecSQL;
+    affected := aQuery.RowsAffected;
+    Output.Write('{"ok":true,"driver":"nxServer","affected":'+IntToStr(affected)+',"viaMaintenance":true}');
+  finally
+    aQuery.Free;
+    adb.Free;
+    aSession.Free;
+  end;
+end.
+%>

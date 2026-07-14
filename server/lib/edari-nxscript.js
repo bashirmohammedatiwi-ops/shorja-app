@@ -3,6 +3,8 @@ const path = require('path');
 const { getEdariConnection } = require('./edari-connection');
 
 const EXECUTE_SCRIPT = 'edari-execute.nxscript';
+const MAINTENANCE_SCRIPT = 'edari-maintenance.nxscript';
+const MAINTENANCE_KEY = 'shorja-maintenance';
 
 function resolveBundledScript() {
   const sibling = path.join(__dirname, EXECUTE_SCRIPT);
@@ -29,6 +31,29 @@ function getEdariNxRoot() {
     if (fs.existsSync(path.join(dir, 'index.nxscript'))) return dir;
   }
   return null;
+}
+
+function resolveBundledMaintenanceScript() {
+  const sibling = path.join(__dirname, MAINTENANCE_SCRIPT);
+  if (fs.existsSync(sibling)) return sibling;
+  return path.join(__dirname, '..', 'scripts', MAINTENANCE_SCRIPT);
+}
+
+function ensureMaintenanceScriptDeployed() {
+  const adminRoot = getEdariNxRoot();
+  if (!adminRoot) return false;
+  const target = path.join(adminRoot, MAINTENANCE_SCRIPT);
+  const bundledPath = resolveBundledMaintenanceScript();
+  if (!fs.existsSync(bundledPath)) return false;
+  try {
+    const bundled = fs.readFileSync(bundledPath, 'utf8');
+    if (!fs.existsSync(target) || fs.readFileSync(target, 'utf8') !== bundled) {
+      fs.writeFileSync(target, bundled, 'utf8');
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function ensureExecuteScriptDeployed() {
@@ -123,8 +148,46 @@ async function runExecuteViaNxscript(sql, connOverrides = {}) {
   return parsed;
 }
 
+async function runMaintenanceViaNxscript(sql, connOverrides = {}) {
+  const conn = getEdariConnection(connOverrides);
+  const alias = String(conn.alias || '').trim();
+  const sqlText = String(sql || '').trim();
+  if (!sqlText) return { ok: false, error: 'SQL is required' };
+  if (!alias) return { ok: false, error: 'Database alias is required' };
+
+  if (!ensureMaintenanceScriptDeployed()) {
+    return { ok: false, error: 'تعذر نشر edari-maintenance.nxscript', needsNxScript: true };
+  }
+
+  try {
+    await pingNxAdmin();
+  } catch (err) {
+    return { ok: false, error: `nxServer غير متاح: ${err.message}`, needsNxServer: true };
+  }
+
+  const url = `${getNexusAdminUrl()}/${MAINTENANCE_SCRIPT}?alias=${encodeURIComponent(alias)}&key=${encodeURIComponent(MAINTENANCE_KEY)}&sqlhex=${sqlToHex(sqlText)}`;
+  let response;
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+  } catch (err) {
+    return { ok: false, error: `فشل الاتصال بـ nxServer: ${err.message}` };
+  }
+
+  const bodyBuf = Buffer.from(await response.arrayBuffer());
+  const parsed = extractJsonBody(bodyBuf);
+  if (!parsed) {
+    const bodyText = bodyBuf.toString('utf8');
+    const preMatch = bodyText.match(/<pre>([\s\S]*?)<\/pre>/i);
+    const errText = preMatch ? preMatch[1].replace(/<BR>/gi, '\n').trim() : bodyText.trim();
+    return { ok: false, error: errText || 'maintenance script invalid JSON' };
+  }
+  return parsed;
+}
+
 module.exports = {
   ensureExecuteScriptDeployed,
+  ensureMaintenanceScriptDeployed,
   runExecuteViaNxscript,
+  runMaintenanceViaNxscript,
   isTrialExpiredError
 };

@@ -5,7 +5,9 @@ const path = require('path');
 const { runEdariSyncWorker, logSync } = require('../server/lib/edari-sync-worker');
 const { ensureExecuteScriptDeployed } = require('../server/lib/edari-nxscript');
 
-process.env.EDARI_WRITE_ENABLED = process.env.EDARI_WRITE_ENABLED || '1';
+process.env.EDARI_WRITE_ENABLED = process.env.EDARI_WRITE_ENABLED || '0';
+process.env.EDARI_WRITE_INVOICES = process.env.EDARI_WRITE_INVOICES || '0';
+process.env.EDARI_WRITE_ACCOUNTS = process.env.EDARI_WRITE_ACCOUNTS || '0';
 process.env.EDARI_WRITE_VIA_NXSCRIPT = process.env.EDARI_WRITE_VIA_NXSCRIPT || '1';
 
 const serverJsonPaths = [
@@ -28,7 +30,8 @@ const serverJsonPaths = [
   });
   if (result.skipped) {
     logSync('تخطي المزامنة', result.reason);
-    process.exit(result.reason === 'not_windows' ? 0 : 1);
+    const benign = result.reason === 'not_windows' || result.reason === 'edari_writes_disabled';
+    process.exit(benign ? 0 : 1);
   }
   if (result.processed > 0) {
     logSync('انتهت المزامنة', { processed: result.processed });

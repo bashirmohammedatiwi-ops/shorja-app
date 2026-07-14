@@ -56,9 +56,21 @@ function syncQueueStats() {
 
 function listPendingSync(limit = 50) {
   return db.prepare(`
-    SELECT * FROM edari_sync_queue
-    WHERE status IN ('pending', 'error')
-    ORDER BY id ASC LIMIT ?
+    SELECT q.* FROM edari_sync_queue q
+    LEFT JOIN invoices i ON q.kind = 'invoice' AND q.ref_type = 'invoice' AND i.id = q.ref_id
+    LEFT JOIN payments p ON q.kind = 'payment' AND q.ref_type = 'payment' AND p.id = q.ref_id
+    WHERE q.status IN ('pending', 'error')
+      AND NOT (
+        q.kind = 'invoice'
+        AND COALESCE(i.edari_sync_status, '') = 'synced'
+        AND COALESCE(i.edari_bill_seq, '') != ''
+      )
+      AND NOT (
+        q.kind = 'payment'
+        AND COALESCE(p.edari_sync_status, '') = 'synced'
+        AND COALESCE(p.edari_journal_seq, '') != ''
+      )
+    ORDER BY q.id ASC LIMIT ?
   `).all(limit);
 }
 
@@ -215,6 +227,9 @@ async function processPaymentSyncItem(item) {
 }
 
 async function processEdariQueue(limit = 20) {
+  if (!canWriteEdari()) {
+    return [{ ok: false, skipped: true, reason: 'edari_writes_disabled' }];
+  }
   const items = listPendingSync(limit);
   const results = [];
   for (const item of items) {
@@ -283,6 +298,7 @@ async function syncAccountToEdari(account, data = {}) {
 
 function queueInvoiceEdariSync(invoice) {
   if (invoice.kind === 'issue') return null;
+  if (invoice.edariSyncStatus === 'synced' && invoice.edariBillSeq) return null;
   enqueueEdariSync({
     kind: 'invoice',
     refType: 'invoice',
@@ -320,6 +336,7 @@ function queueInvoiceEdariSync(invoice) {
 }
 
 function queuePaymentEdariSync(payment, account) {
+  if (payment.edariSyncStatus === 'synced' && payment.edariJournalSeq) return null;
   enqueueEdariSync({
     kind: 'payment',
     refType: 'payment',

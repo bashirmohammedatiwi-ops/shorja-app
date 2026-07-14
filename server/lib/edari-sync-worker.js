@@ -99,8 +99,11 @@ async function runEdariSyncWorker({
     invoice: null,
     payment: null
   };
-  if (typeof canWriteEdari === 'function' && !canWriteEdari()) {
+  if (process.platform !== 'win32') {
     return { skipped: true, reason: 'not_windows' };
+  }
+  if (typeof canWriteEdari === 'function' && !canWriteEdari()) {
+    return { skipped: true, reason: 'edari_writes_disabled' };
   }
 
   const baseUrl = (serverUrl || getServerUrl(serverJsonPaths)).replace(/\/$/, '');

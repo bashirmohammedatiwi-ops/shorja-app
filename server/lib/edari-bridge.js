@@ -3,7 +3,8 @@ const fs = require('fs');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { getEdariConnection } = require('./edari-connection');
-const { runExecuteViaNxscript, isTrialExpiredError } = require('./edari-nxscript');
+const { runExecuteViaNxscript, isTrialExpiredError, runMaintenanceViaNxscript } = require('./edari-nxscript');
+const { canWriteEdariMaster } = require('./edari-safety');
 
 const execFileAsync = promisify(execFile);
 
@@ -32,7 +33,7 @@ function canQueryEdari() {
 }
 
 function canWriteEdari() {
-  return isWindows() && process.env.EDARI_WRITE_ENABLED !== '0';
+  return isWindows() && canWriteEdariMaster();
 }
 
 async function runQuery(sql, connOverrides = {}) {
@@ -65,6 +66,20 @@ async function runExecuteOdbc(sql, connOverrides = {}) {
     if (parsed) return parsed;
     return { ok: false, error: err.message || 'فشل تنفيذ Edari' };
   }
+}
+
+async function runMaintenanceExecute(sql) {
+  if (process.env.EDARI_MAINTENANCE !== '1') {
+    return { ok: false, error: 'وضع الصيانة معطّل — عيّن EDARI_MAINTENANCE=1' };
+  }
+  const upper = String(sql || '').trim().toUpperCase();
+  if (!upper.startsWith('DELETE')) {
+    return { ok: false, error: 'صيانة Edari: DELETE فقط' };
+  }
+  if (!isWindows()) {
+    return { ok: false, error: 'صيانة Edari على Windows فقط' };
+  }
+  return runMaintenanceViaNxscript(sql);
 }
 
 async function runExecute(sql, connOverrides = {}) {
@@ -116,5 +131,6 @@ module.exports = {
   canWriteEdari,
   runQuery,
   runExecute,
+  runMaintenanceExecute,
   rowObjects
 };

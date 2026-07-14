@@ -1,5 +1,6 @@
 const iconv = require('iconv-lite');
 const { runQuery, runExecute, rowObjects, canWriteEdari } = require('./edari-bridge');
+const { canWriteEdariAccounts } = require('./edari-safety');
 
 const PARENT_NUM = String(process.env.EDARI_SHORJA_PARENT_NUM || '12111').trim();
 const PARENT_NAME_HINT = String(process.env.EDARI_SHORJA_PARENT_NAME || 'زبائن محل الشورجه').trim();
@@ -111,6 +112,9 @@ async function nextChildNum(parent) {
 async function createEdariCustomerAccount({ name, phone = '', address = '', notes = '' }) {
   if (!canWriteEdari()) {
     return { ok: false, queued: true, error: 'كتابة Edari غير متاحة على هذا السيرفر' };
+  }
+  if (!canWriteEdariAccounts()) {
+    return { ok: false, queued: true, error: 'إنشاء حسابات Edari معطّل — الإداري الأصلي محمي (EDARI_WRITE_ACCOUNTS=0)' };
   }
 
   const parent = await loadParentAccount();

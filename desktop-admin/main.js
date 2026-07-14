@@ -16,6 +16,12 @@ function getEdariLibPath(name) {
   return path.join(__dirname, '..', 'server', 'lib', name);
 }
 
+function canWriteEdariMaster() {
+  const safetyPath = getEdariLibPath('edari-safety.js');
+  delete require.cache[require.resolve(safetyPath)];
+  return require(safetyPath).canWriteEdariMaster();
+}
+
 const { logSync } = require(getEdariLibPath('edari-sync-worker.js'));
 
 function applyEdariEnv() {
@@ -28,8 +34,11 @@ function applyEdariEnv() {
   ensureExecuteScriptDeployed();
   Object.assign(process.env, {
     EDARI_READER_ROOT: getEdariReaderRoot(),
-    EDARI_WRITE_ENABLED: '1',
-    EDARI_WRITE_VIA_NXSCRIPT: '1',
+    EDARI_WRITE_ENABLED: process.env.EDARI_WRITE_ENABLED || '0',
+    EDARI_WRITE_ACCOUNTS: process.env.EDARI_WRITE_ACCOUNTS || '0',
+    EDARI_WRITE_INVOICES: process.env.EDARI_WRITE_INVOICES || '0',
+    EDARI_WRITE_STOCK: process.env.EDARI_WRITE_STOCK || '0',
+    EDARI_WRITE_VIA_NXSCRIPT: process.env.EDARI_WRITE_VIA_NXSCRIPT || '1',
     ...connectionToEnv()
   });
 }
@@ -51,6 +60,9 @@ ipcMain.handle('lookup-edari-material', async (_e, code) => {
 let syncBusy = false;
 async function processEdariQueueLocal() {
   if (syncBusy) return { skipped: true, reason: 'busy' };
+  if (!canWriteEdariMaster()) {
+    return { skipped: true, reason: 'edari_writes_disabled' };
+  }
   syncBusy = true;
   try {
     applyEdariEnv();
@@ -74,6 +86,10 @@ ipcMain.handle('process-edari-sync', processEdariQueueLocal);
 let edariSyncTimer = null;
 function startEdariSyncLoop() {
   if (edariSyncTimer) return;
+  if (!canWriteEdariMaster()) {
+    logSync('مزامنة الكتابة إلى Edari معطّلة — القراءة فقط (حماية الإداري الأصلي)');
+    return;
+  }
   const tick = () => { processEdariQueueLocal().catch((err) => logSync('tick error', err.message)); };
   edariSyncTimer = setInterval(tick, SYNC_INTERVAL_MS);
   setTimeout(tick, 800);
@@ -98,7 +114,9 @@ function createWindow() {
     }
   });
 
-  win.on('focus', () => { processEdariQueueLocal().catch(() => {}); });
+  win.on('focus', () => {
+    if (canWriteEdariMaster()) processEdariQueueLocal().catch(() => {});
+  });
   win.loadURL(startUrl);
 }
 
