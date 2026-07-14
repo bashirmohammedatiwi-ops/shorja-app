@@ -83,6 +83,10 @@ async function pingNxAdmin() {
   return response.ok;
 }
 
+function sqlToHex(sqlText) {
+  return Buffer.from(String(sqlText || ''), 'latin1').toString('hex');
+}
+
 async function runExecuteViaNxscript(sql, connOverrides = {}) {
   const conn = getEdariConnection(connOverrides);
   const alias = String(conn.alias || '').trim();
@@ -100,7 +104,7 @@ async function runExecuteViaNxscript(sql, connOverrides = {}) {
     return { ok: false, error: `nxServer غير متاح (${getNexusAdminUrl()}): ${err.message}`, needsNxServer: true };
   }
 
-  const url = `${getNexusAdminUrl()}/${EXECUTE_SCRIPT}?alias=${encodeURIComponent(alias)}&sql=${encodeURIComponent(sqlText)}`;
+  const url = `${getNexusAdminUrl()}/${EXECUTE_SCRIPT}?alias=${encodeURIComponent(alias)}&sqlhex=${sqlToHex(sqlText)}`;
   let response;
   try {
     response = await fetch(url, { signal: AbortSignal.timeout(60000) });

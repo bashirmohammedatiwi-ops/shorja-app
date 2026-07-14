@@ -1,3 +1,4 @@
+const iconv = require('iconv-lite');
 const { runQuery, runExecute, rowObjects, canWriteEdari } = require('./edari-bridge');
 
 const PARENT_NUM = String(process.env.EDARI_SHORJA_PARENT_NUM || '12111').trim();
@@ -5,8 +6,19 @@ const PARENT_NAME_HINT = String(process.env.EDARI_SHORJA_PARENT_NAME || 'زبا�
 
 let cachedParent = null;
 
-function sqlEsc(s) {
+function sqlEscAscii(s) {
   return String(s ?? '').replace(/'/g, "''");
+}
+
+/** Edari/NexusDB on Arabic Windows stores Name1 as Windows-1256, not UTF-8. */
+function edariSqlLiteral(value) {
+  const bytes = iconv.encode(String(value ?? '').replace(/'/g, "''"), 'win1256');
+  let out = "'";
+  for (const byte of bytes) {
+    out += String.fromCharCode(byte);
+  }
+  out += "'";
+  return out;
 }
 
 function normalizeName(s) {
@@ -16,7 +28,7 @@ function normalizeName(s) {
 async function loadParentAccount() {
   if (cachedParent) return cachedParent;
   const r = await runQuery(
-    `SELECT Seq, Num, Name1, Master, SubCount FROM File11n WHERE Num = '${sqlEsc(PARENT_NUM)}'`
+    `SELECT Seq, Num, Name1, Master, SubCount FROM File11n WHERE Num = '${sqlEscAscii(PARENT_NUM)}'`
   );
   if (!r.ok) throw new Error(r.error || 'فشل الاتصال بإداري');
   const rows = rowObjects(r);
@@ -78,7 +90,7 @@ async function createEdariCustomerAccount({ name, phone = '', address = '', note
   const remarks = ['shorja-app', notes].filter(Boolean).join(' · ');
 
   const insertSql = `INSERT INTO File11n (Seq, Num, Name1, Master, SubCount, Bal, Tot1, Tot2, Dept, Address, Remarks)
-    VALUES (${seq}, '${sqlEsc(num)}', '${sqlEsc(name1)}', ${Number(parent.seq)}, 0, 0, 0, 0, 0, '${sqlEsc(addr)}', '${sqlEsc(remarks)}')`;
+    VALUES (${seq}, '${sqlEscAscii(num)}', ${edariSqlLiteral(name1)}, ${Number(parent.seq)}, 0, 0, 0, 0, 0, ${edariSqlLiteral(addr)}, ${edariSqlLiteral(remarks)})`;
 
   const ins = await runExecute(insertSql);
   if (!ins.ok) {
@@ -108,10 +120,17 @@ async function getEdariParentInfo() {
   }
 }
 
+async function fixEdariAccountName(seq, name1) {
+  const sql = `UPDATE File11n SET Name1 = ${edariSqlLiteral(name1)} WHERE Seq = ${Number(seq)}`;
+  return runExecute(sql);
+}
+
 module.exports = {
   PARENT_NUM,
   PARENT_NAME_HINT,
   loadParentAccount,
   createEdariCustomerAccount,
-  getEdariParentInfo
+  getEdariParentInfo,
+  fixEdariAccountName,
+  edariSqlLiteral
 };

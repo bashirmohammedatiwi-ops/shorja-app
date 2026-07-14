@@ -1,4 +1,21 @@
 <%
+function HexDecode(const s: string): string;
+var
+  i: integer;
+  hex: string;
+  b: integer;
+begin
+  Result := '';
+  i := 1;
+  while i + 1 <= Length(s) do
+  begin
+    hex := Copy(s, i, 2);
+    b := StrToInt('$' + hex);
+    Result := Result + Chr(b);
+    i := i + 2;
+  end;
+end;
+
 function UrlDecode(const s: string): string;
 var
   i: integer;
@@ -35,7 +52,10 @@ var
   affected: integer;
 begin
   aliasName := UrlDecode(Trim(Request('alias')));
-  sqlText := UrlDecode(Trim(Request('sql')));
+  if Trim(Request('sqlhex')) <> '' then
+    sqlText := HexDecode(Trim(Request('sqlhex')))
+  else
+    sqlText := UrlDecode(Trim(Request('sql')));
 
   if (aliasName = '') or (sqlText = '') then
   begin
