@@ -36,6 +36,10 @@
         "to": "edari/edari-accounts.js"
       },
       {
+        "from": "../server/lib/edari-invoices.js",
+        "to": "edari/edari-invoices.js"
+      },
+      {
         "from": "../server/lib/edari-bridge.js",
         "to": "edari/edari-bridge.js"
       },

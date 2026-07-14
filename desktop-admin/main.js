@@ -53,14 +53,11 @@ async function processEdariQueueLocal() {
   syncBusy = true;
   try {
     applyEdariEnv();
-    const accountsPath = getEdariLibPath('edari-accounts.js');
     const bridgePath = getEdariLibPath('edari-bridge.js');
-    delete require.cache[require.resolve(accountsPath)];
     delete require.cache[require.resolve(bridgePath)];
-    const { createEdariCustomerAccount } = require(accountsPath);
     const { canWriteEdari } = require(bridgePath);
     const { runEdariSyncWorker } = require('./edari-sync-worker');
-    const result = await runEdariSyncWorker({ createEdariCustomerAccount, canWriteEdari });
+    const result = await runEdariSyncWorker({ canWriteEdari });
     if (result.processed > 0) logSync('تطبيق الإدارة — تمت المعالجة', result);
     return result;
   } catch (err) {

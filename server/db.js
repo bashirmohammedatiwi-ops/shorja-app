@@ -303,6 +303,20 @@ function migrateEdariSync() {
     );
     CREATE INDEX IF NOT EXISTS idx_edari_sync_status ON edari_sync_queue(status);
   `);
+  const invoiceCols = [
+    'ALTER TABLE invoices ADD COLUMN edari_bill_seq TEXT',
+    'ALTER TABLE invoices ADD COLUMN edari_bill_num TEXT',
+    'ALTER TABLE invoices ADD COLUMN edari_sync_status TEXT DEFAULT \'none\'',
+    'ALTER TABLE invoices ADD COLUMN edari_sync_error TEXT'
+  ];
+  const paymentCols = [
+    'ALTER TABLE payments ADD COLUMN edari_journal_seq TEXT',
+    'ALTER TABLE payments ADD COLUMN edari_sync_status TEXT DEFAULT \'none\'',
+    'ALTER TABLE payments ADD COLUMN edari_sync_error TEXT'
+  ];
+  for (const sql of [...invoiceCols, ...paymentCols]) {
+    try { db.exec(sql); } catch { /* exists */ }
+  }
 }
 
 function migrateInvoicesKind() {

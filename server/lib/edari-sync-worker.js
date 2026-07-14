@@ -88,16 +88,19 @@ async function completeItem(serverUrl, extraPaths, itemId, body) {
 }
 
 async function runEdariSyncWorker({
+  handlers,
   createEdariCustomerAccount,
   canWriteEdari,
   serverJsonPaths = [],
   serverUrl = null
 } = {}) {
+  const map = handlers || {
+    account: createEdariCustomerAccount,
+    invoice: null,
+    payment: null
+  };
   if (typeof canWriteEdari === 'function' && !canWriteEdari()) {
     return { skipped: true, reason: 'not_windows' };
-  }
-  if (typeof createEdariCustomerAccount !== 'function') {
-    throw new Error('createEdariCustomerAccount مطلوب');
   }
 
   const baseUrl = (serverUrl || getServerUrl(serverJsonPaths)).replace(/\/$/, '');
@@ -107,24 +110,29 @@ async function runEdariSyncWorker({
   }
 
   const items = await fetchPending(baseUrl, serverJsonPaths, 50);
-  const accountItems = items.filter((i) => i.kind === 'account' && i.status !== 'done');
-  if (!accountItems.length) {
+  const workItems = items.filter((i) => i.status !== 'done');
+  if (!workItems.length) {
     return { processed: 0, results: [], serverUrl: baseUrl };
   }
 
-  logSync(`معالجة ${accountItems.length} حساب/حسابات`, { serverUrl: baseUrl });
+  logSync(`معالجة ${workItems.length} عنصر/عناصر`, { serverUrl: baseUrl });
   const results = [];
 
-  for (const item of accountItems) {
+  for (const item of workItems) {
+    const handler = map[item.kind];
+    if (!handler) {
+      results.push({ id: item.id, ok: false, error: `لا معالج لـ ${item.kind}` });
+      continue;
+    }
     try {
       const payload = JSON.parse(item.payload || '{}');
-      const created = await createEdariCustomerAccount(payload);
+      const created = await handler(payload);
       await completeItem(baseUrl, serverJsonPaths, item.id, created);
-      results.push({ id: item.id, ...created, reported: true });
+      results.push({ id: item.id, kind: item.kind, ...created, reported: true });
       if (created.ok) {
-        logSync(`تمت مزامنة الحساب #${item.id}`, { edariNum: created.edariNum, name: created.edariName });
+        logSync(`تمت مزامنة #${item.id} (${item.kind})`, created.edariNum || created.edariBillNum || created.edariSeq || '');
       } else {
-        logSync(`فشلت مزامنة الحساب #${item.id}`, created.error);
+        logSync(`فشلت مزامنة #${item.id} (${item.kind})`, created.error);
       }
     } catch (err) {
       try {
@@ -132,8 +140,8 @@ async function runEdariSyncWorker({
       } catch (reportErr) {
         logSync(`تعذر إبلاغ السيرفر عن فشل #${item.id}`, reportErr.message);
       }
-      results.push({ id: item.id, ok: false, error: err.message });
-      logSync(`خطأ في الحساب #${item.id}`, err.message);
+      results.push({ id: item.id, kind: item.kind, ok: false, error: err.message });
+      logSync(`خطأ في #${item.id} (${item.kind})`, err.message);
     }
   }
 

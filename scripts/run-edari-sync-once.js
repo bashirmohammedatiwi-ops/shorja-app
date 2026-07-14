@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-/**
- * معالج طابور مزامنة الإداري — تشغيل مرة واحدة (للمهمة المجدولة أو يدوياً).
- */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
 const path = require('path');
@@ -18,9 +15,14 @@ const serverJsonPaths = [
 (async () => {
   ensureExecuteScriptDeployed();
   const { createEdariCustomerAccount } = require('../server/lib/edari-accounts');
+  const { createEdariInvoice, createEdariPayment } = require('../server/lib/edari-invoices');
   const { canWriteEdari } = require('../server/lib/edari-bridge');
   const result = await runEdariSyncWorker({
-    createEdariCustomerAccount,
+    handlers: {
+      account: createEdariCustomerAccount,
+      invoice: createEdariInvoice,
+      payment: createEdariPayment
+    },
     canWriteEdari,
     serverJsonPaths
   });

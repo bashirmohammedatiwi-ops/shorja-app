@@ -25,6 +25,38 @@ function normalizeName(s) {
   return String(s || '').replace(/\s+/g, ' ').trim();
 }
 
+function normalizePhone(s) {
+  return normalizeName(s).replace(/[^\d+]/g, '');
+}
+
+function normalizeAddress(address, phone = '') {
+  const addr = normalizeName(address);
+  const ph = normalizePhone(phone);
+  if (!addr) return '';
+  if (ph && normalizePhone(addr) === ph) return '';
+  return addr;
+}
+
+/**
+ * Edari customer naming: اسم المحل - المنطقة - الهاتف (بدون بادئة «الزبون»).
+ */
+function buildEdariAccountName({ name, phone = '', address = '' }) {
+  const displayName = normalizeName(name).replace(/^الزبون\s+/i, '');
+  const ph = normalizePhone(phone);
+  const addr = normalizeName(address);
+  if (!displayName) return ph || addr;
+
+  const parts = [displayName];
+  if (addr && addr !== displayName) {
+    const shortLoc = addr.length > 45
+      ? (addr.split(' - ').filter(Boolean)[0] || addr.slice(0, 45))
+      : addr;
+    if (shortLoc && shortLoc !== displayName) parts.push(shortLoc);
+  }
+  if (ph) parts.push(ph);
+  return parts.join(' - ');
+}
+
 async function loadParentAccount() {
   if (cachedParent) return cachedParent;
   const r = await runQuery(
@@ -58,17 +90,19 @@ async function nextChildNum(parent) {
   const parentSeq = Number(parent.seq);
   const prefix = String(parent.num);
   const r = await runQuery(
-    `SELECT Num FROM File11n WHERE Master = ${parentSeq} ORDER BY Num DESC`
+    `SELECT Num FROM File11n WHERE Master = ${parentSeq}`
   );
   if (!r.ok) throw new Error(r.error || 'فشل جلب أرقام الحسابات الفرعية');
   const rows = rowObjects(r);
-  if (!rows.length) {
-    return `${prefix}${String(1).padStart(4, '0')}`;
+  let maxSuffix = 0;
+  for (const row of rows) {
+    const num = String(row.Num ?? row.num ?? '');
+    if (!num.startsWith(prefix)) continue;
+    const suffix = num.slice(prefix.length);
+    const n = Number(suffix.replace(/\D/g, '')) || 0;
+    if (n > maxSuffix) maxSuffix = n;
   }
-  const lastNum = String(rows[0].Num ?? rows[0].num ?? '');
-  const suffix = lastNum.startsWith(prefix) ? lastNum.slice(prefix.length) : '';
-  const n = Number(suffix.replace(/\D/g, '')) || rows.length;
-  return `${prefix}${String(n + 1).padStart(4, '0')}`;
+  return `${prefix}${maxSuffix + 1}`;
 }
 
 /**
@@ -85,12 +119,12 @@ async function createEdariCustomerAccount({ name, phone = '', address = '', note
   const displayName = normalizeName(name);
   if (!displayName) throw new Error('اسم الحساب مطلوب');
 
-  const name1 = displayName.startsWith('الزبون') ? displayName : `الزبون ${displayName}`;
-  const addr = [phone, address].filter(Boolean).join(' · ');
-  const remarks = ['shorja-app', notes].filter(Boolean).join(' · ');
+  const name1 = buildEdariAccountName({ name: displayName, phone, address });
+  const addr = normalizeAddress(address, phone);
+  const remarks = normalizeName(notes);
 
-  const insertSql = `INSERT INTO File11n (Seq, Num, Name1, Master, SubCount, Bal, Tot1, Tot2, Dept, Address, Remarks)
-    VALUES (${seq}, '${sqlEscAscii(num)}', ${edariSqlLiteral(name1)}, ${Number(parent.seq)}, 0, 0, 0, 0, 0, ${edariSqlLiteral(addr)}, ${edariSqlLiteral(remarks)})`;
+  const insertSql = `INSERT INTO File11n (Seq, Num, Name1, Master, SubCount, Bal, Tot1, Tot2, Dept, Cod, Dest, Address, Remarks)
+    VALUES (${seq}, '${sqlEscAscii(num)}', ${edariSqlLiteral(name1)}, ${Number(parent.seq)}, 0, 0, 0, 0, 0, 1, 4, ${edariSqlLiteral(addr)}, ${edariSqlLiteral(remarks)})`;
 
   const ins = await runExecute(insertSql);
   if (!ins.ok) {
@@ -125,6 +159,15 @@ async function fixEdariAccountName(seq, name1) {
   return runExecute(sql);
 }
 
+async function alignEdariAccountFields(seq, { name, phone = '', address = '', notes = '' } = {}) {
+  const name1 = buildEdariAccountName({ name, phone, address });
+  const addr = normalizeAddress(address, phone);
+  const remarks = normalizeName(notes);
+  const sql = `UPDATE File11n SET Name1 = ${edariSqlLiteral(name1)}, Address = ${edariSqlLiteral(addr)},
+    Remarks = ${edariSqlLiteral(remarks)}, Cod = 1, Dest = 4 WHERE Seq = ${Number(seq)}`;
+  return runExecute(sql);
+}
+
 module.exports = {
   PARENT_NUM,
   PARENT_NAME_HINT,
@@ -132,5 +175,8 @@ module.exports = {
   createEdariCustomerAccount,
   getEdariParentInfo,
   fixEdariAccountName,
-  edariSqlLiteral
+  alignEdariAccountFields,
+  buildEdariAccountName,
+  edariSqlLiteral,
+  sqlEscAscii
 };

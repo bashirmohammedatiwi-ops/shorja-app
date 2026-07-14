@@ -134,6 +134,8 @@ async function loadDashboard() {
   const pending = data.pendingSync || 0;
   const edari = data.edariSync || {};
   const edariPending = Number(edari.total || 0);
+  const invPending = Number(edari.invoicesPending || 0);
+  const payPending = Number(edari.paymentsPending || 0);
   const canSyncNow = !!window.edariDesktop?.processEdariSync;
   document.getElementById('kpiGrid').innerHTML = `
     <div class="kpi"><div class="lbl">فواتير اليوم</div><div class="val">${t.salesCount}</div></div>
@@ -143,7 +145,9 @@ async function loadDashboard() {
     <div class="kpi"><div class="lbl">منتجات</div><div class="val">${data.products.total}</div></div>
     <div class="kpi"><div class="lbl">إجمالي الديون</div><div class="val" dir="ltr">${fmt(data.accounts.totalDebt)}</div></div>
     <div class="kpi${pending ? ' warn' : ''}"><div class="lbl">فواتير بانتظار المزامنة</div><div class="val">${pending}</div></div>
-    <div class="kpi${edariPending ? ' warn' : ''}" id="edariSyncKpi"><div class="lbl">حسابات بانتظار الإداري</div><div class="val">${edariPending}</div></div>
+    <div class="kpi${edariPending ? ' warn' : ''}" id="edariSyncKpi"><div class="lbl">طابور مزامنة الإداري</div><div class="val">${edariPending}</div></div>
+    <div class="kpi${invPending ? ' warn' : ''}"><div class="lbl">فواتير بانتظار الإداري</div><div class="val">${invPending}</div></div>
+    <div class="kpi${payPending ? ' warn' : ''}"><div class="lbl">تسديدات بانتظار الإداري</div><div class="val">${payPending}</div></div>
     <div class="kpi"><div class="lbl">إصدار الأسعار</div><div class="val">v${data.priceVersion || 0}</div></div>
   `;
   const syncBar = document.getElementById('edariSyncBar');
@@ -151,7 +155,7 @@ async function loadDashboard() {
     if (edariPending > 0) {
       syncBar.hidden = false;
       syncBar.innerHTML = `
-        <span>${edariPending} حساب بانتظار الدخول إلى الإداري (Edari)</span>
+        <span>${edariPending} عنصر بانتظار الترحيل إلى الإداري (حسابات/فواتير/تسديدات)</span>
         ${canSyncNow ? '<button type="button" class="btn btn-sm" id="btnEdariSyncNow">مزامنة الآن</button>' : '<span style="color:var(--muted)">افتح تطبيق الإدارة على Windows</span>'}
       `;
       document.getElementById('btnEdariSyncNow')?.addEventListener('click', triggerEdariSyncNow);
@@ -185,11 +189,14 @@ async function triggerEdariSyncNow() {
     const btn = document.getElementById('btnEdariSyncNow');
     if (btn) btn.disabled = true;
     const result = await window.edariDesktop.processEdariSync();
-    if (result?.processed > 0) toast(`تمت مزامنة ${result.processed} حساب/حسابات`);
+    if (result?.processed > 0) toast(`تمت مزامنة ${result.processed} عنصر/عناصر`);
     else if (result?.skipped) toast('المزامنة قيد التشغيل أو غير متاحة');
-    else toast('لا توجد حسابات معلّقة');
+    else toast('لا توجد عناصر معلّقة');
     loadDashboard();
-    if (document.querySelector('.nav.active')?.dataset.view === 'accounts') loadAccounts();
+    const view = document.querySelector('.nav.active')?.dataset.view;
+    if (view === 'accounts') loadAccounts();
+    if (view === 'invoices') loadInvoices();
+    if (view === 'payments') loadPayments();
   } catch (err) {
     toast(err.message || 'فشلت المزامنة');
   } finally {
@@ -198,11 +205,12 @@ async function triggerEdariSyncNow() {
   }
 }
 
-function edariSyncLabel(status) {
-  if (status === 'synced') return '<span style="color:var(--ok)">متزامن</span>';
-  if (status === 'pending') return '<span style="color:var(--warn)">بانتظار الإداري</span>';
-  if (status === 'error') return '<span style="color:var(--danger)">خطأ</span>';
-  return '<span style="color:var(--muted)">—</span>';
+function edariSyncLabel(status, error = '') {
+  const title = error ? ` title="${esc(error)}"` : '';
+  if (status === 'synced') return `<span style="color:var(--ok)"${title}>متزامن</span>`;
+  if (status === 'pending') return `<span style="color:var(--warn)"${title}>بانتظار الإداري</span>`;
+  if (status === 'error') return `<span style="color:var(--danger)"${title}>خطأ</span>`;
+  return `<span style="color:var(--muted)"${title}>—</span>`;
 }
 
 async function loadInvoices() {
@@ -212,17 +220,18 @@ async function loadInvoices() {
   const data = await api(`/admin/invoices?from=${date}&to=${date}&q=${encodeURIComponent(q)}`);
   document.getElementById('invoiceTable').innerHTML = `
     <table>
-      <thead><tr><th>الرقم</th><th>النوع</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>مدفوع</th><th>متبقي</th></tr></thead>
+      <thead><tr><th>الرقم</th><th>النوع</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>مدفوع</th><th>متبقي</th><th>الإداري</th></tr></thead>
       <tbody>${(data.invoices||[]).map((i) => `
         <tr class="clickable-row" data-invoice-id="${i.id}">
           <td>${esc(i.invoiceNo)}</td>
-          <td>${i.kind === 'return' ? 'مرتجع' : 'بيع'}</td>
+          <td>${i.kind === 'return' ? 'مرتجع' : i.kind === 'issue' ? 'إخراج' : 'بيع'}</td>
           <td>${esc(i.customerName||'نقدي')}</td>
           <td>${esc(i.invoiceDate)}</td>
           <td dir="ltr">${fmt(i.total)}</td>
           <td dir="ltr">${fmt(i.paidAmount)}</td>
           <td dir="ltr">${fmt(i.dueAmount)}</td>
-        </tr>`).join('') || '<tr><td colspan="7">لا توجد فواتير</td></tr>'}
+          <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}${i.edariBillNum ? `<br><small dir="ltr">${esc(i.edariBillNum)}</small>` : ''}</td>
+        </tr>`).join('') || '<tr><td colspan="8">لا توجد فواتير</td></tr>'}
       </tbody>
     </table>`;
   document.getElementById('invoiceTable').querySelectorAll('[data-invoice-id]').forEach((row) => {
@@ -901,7 +910,7 @@ async function loadAccounts() {
           <td dir="ltr">${esc(a.phone)}</td>
           <td dir="ltr" style="color:var(--danger);font-weight:700">${fmt(a.balance)}</td>
           <td dir="ltr">${fmt(a.creditLimit)}</td>
-          <td>${edariSyncLabel(a.edariSyncStatus)}${a.edariNum ? `<br><small dir="ltr">${esc(a.edariNum)}</small>` : ''}</td>
+          <td>${edariSyncLabel(a.edariSyncStatus, a.edariSyncError)}${a.edariNum ? `<br><small dir="ltr">${esc(a.edariNum)}</small>` : ''}</td>
         </tr>`).join('') || '<tr><td colspan="6">لا توجد حسابات</td></tr>'}
       </tbody>
     </table>`;
@@ -922,14 +931,21 @@ async function openLedger(id) {
         <span>الرمز: <strong>${esc(a.code)}</strong></span>
         <span>الدين: <strong dir="ltr" style="color:var(--danger)">${fmt(a.balance)}</strong></span>
         <span>حد الائتمان: <strong dir="ltr">${fmt(a.creditLimit)}</strong></span>
+        <span>الإداري: <strong>${edariSyncLabel(a.edariSyncStatus, a.edariSyncError)}</strong>${a.edariNum ? ` <small dir="ltr">(${esc(a.edariNum)})</small>` : ''}</span>
       </div>
       <h3 style="font-size:0.95rem;margin:12px 0 8px">آخر التسديدات</h3>
       <div class="invoice-lines">
         <table>
-          <thead><tr><th>الرقم</th><th>المبلغ</th><th>التاريخ</th><th>ملاحظات</th></tr></thead>
+          <thead><tr><th>الرقم</th><th>المبلغ</th><th>التاريخ</th><th>الإداري</th><th>ملاحظات</th></tr></thead>
           <tbody>${pays.length ? pays.map((p) => `
-            <tr><td>${esc(p.paymentNo)}</td><td dir="ltr">${fmt(p.amount)}</td><td>${esc(p.paymentDate)}</td><td>${esc(p.notes)}</td></tr>
-          `).join('') : '<tr><td colspan="4">لا توجد تسديدات</td></tr>'}
+            <tr>
+              <td>${esc(p.paymentNo)}</td>
+              <td dir="ltr">${fmt(p.amount)}</td>
+              <td>${esc(p.paymentDate)}</td>
+              <td>${edariSyncLabel(p.edariSyncStatus, p.edariSyncError)}</td>
+              <td>${esc(p.notes)}</td>
+            </tr>
+          `).join('') : '<tr><td colspan="5">لا توجد تسديدات</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -988,15 +1004,16 @@ async function loadPayments() {
   const pays = await api('/admin/payments');
   document.getElementById('paymentsTable').innerHTML = `
     <table>
-      <thead><tr><th>الرقم</th><th>الحساب</th><th>المبلغ</th><th>التاريخ</th><th>ملاحظات</th></tr></thead>
+      <thead><tr><th>الرقم</th><th>الحساب</th><th>المبلغ</th><th>التاريخ</th><th>الإداري</th><th>ملاحظات</th></tr></thead>
       <tbody>${(pays.payments||[]).map((p) => `
         <tr>
           <td>${esc(p.paymentNo)}</td>
           <td>${esc(p.accountName)}</td>
           <td dir="ltr">${fmt(p.amount)}</td>
           <td>${esc(p.paymentDate)}</td>
+          <td>${edariSyncLabel(p.edariSyncStatus, p.edariSyncError)}</td>
           <td>${esc(p.notes)}</td>
-        </tr>`).join('') || '<tr><td colspan="5">لا توجد تسديدات</td></tr>'}
+        </tr>`).join('') || '<tr><td colspan="6">لا توجد تسديدات</td></tr>'}
       </tbody>
     </table>`;
 }

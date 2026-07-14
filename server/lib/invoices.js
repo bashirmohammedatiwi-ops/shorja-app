@@ -116,6 +116,10 @@ function mapInvoice(row, lines = []) {
     paymentMethod: row.payment_method,
     notes: row.notes || '',
     syncStatus: row.sync_status,
+    edariBillSeq: row.edari_bill_seq || '',
+    edariBillNum: row.edari_bill_num || '',
+    edariSyncStatus: row.edari_sync_status || 'none',
+    edariSyncError: row.edari_sync_error || '',
     invoiceDate: row.invoice_date,
     createdAt: row.created_at,
     lines: lines.map((l) => ({
@@ -305,9 +309,14 @@ function createInvoice(data, user) {
 
   const invoiceId = tx();
   const invoice = loadInvoice(invoiceId);
-  if (process.env.EDARI_SYNC_EVENTS !== '0') {
+  if (process.env.EDARI_SYNC_EVENTS !== '0' && invoice.kind !== 'issue') {
     const acc = invoice.accountId ? getAccount(invoice.accountId) : null;
-    queueInvoiceEdariSync({ ...invoice, edariSeq: acc?.edariSeq || '' });
+    const branch = db.prepare('SELECT name FROM branches WHERE id = ?').get(invoice.branchId);
+    queueInvoiceEdariSync({
+      ...invoice,
+      edariSeq: acc?.edariSeq || '',
+      branchName: branch?.name || ''
+    });
   }
   return invoice;
 }
@@ -488,7 +497,10 @@ function listPayments({ accountId, branchId, dateFrom, dateTo, limit = 50 } = {}
     method: r.method,
     notes: r.notes,
     paymentDate: r.payment_date,
-    createdAt: r.created_at
+    createdAt: r.created_at,
+    edariJournalSeq: r.edari_journal_seq || '',
+    edariSyncStatus: r.edari_sync_status || 'none',
+    edariSyncError: r.edari_sync_error || ''
   }));
 }
 
