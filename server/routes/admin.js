@@ -5,7 +5,7 @@ const { resolveEdariMaterial, cacheEdariMaterial, mapEdariToShorjaProduct } = re
 const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment } = require('../lib/invoices');
 const { listAccounts, createAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { getEdariParentInfo } = require('../lib/edari-accounts');
-const { listPendingSync, processEdariQueue, syncAccountToEdari } = require('../lib/edari-sync');
+const { listPendingSync, processEdariQueue, syncAccountToEdari, syncQueueStats } = require('../lib/edari-sync');
 const { canWriteEdari } = require('../lib/edari-bridge');
 const { publishPricePackage, listPackages, getLatestVersion } = require('../lib/prices');
 const { parseProductsCsv, invoicePrintHtml } = require('../lib/export');
@@ -20,6 +20,7 @@ router.get('/dashboard', (req, res) => {
   const accounts = accountStats();
   const branches = db.prepare('SELECT id, code, name, last_seen_at, price_version FROM branches').all();
   const pendingSync = db.prepare(`SELECT COUNT(*) AS c FROM invoices WHERE sync_status = 'pending'`).get().c;
+  const edariSync = syncQueueStats();
   res.json({
     ok: true,
     today,
@@ -27,6 +28,7 @@ router.get('/dashboard', (req, res) => {
     accounts,
     branches,
     pendingSync,
+    edariSync,
     priceVersion: getLatestVersion()
   });
 });

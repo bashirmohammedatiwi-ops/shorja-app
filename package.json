@@ -12,7 +12,9 @@
     "docker:logs": "docker compose logs -f",
     "build:admin": "cd desktop-admin && npm install && npm run build",
     "build:branch": "cd desktop-branch && npm install && npm run build",
-    "build:desktop": "npm run build:admin && npm run build:branch"
+    "build:desktop": "npm run build:admin && npm run build:branch",
+    "sync:edari": "node scripts/run-edari-sync-once.js",
+    "sync:edari:loop": "node scripts/run-edari-sync-loop.js"
   },
   "engines": {
     "node": ">=22.5.0"

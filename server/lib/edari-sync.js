@@ -1,11 +1,43 @@
 const db = require('../db');
 const { createEdariCustomerAccount } = require('./edari-accounts');
+const { canWriteEdari } = require('./edari-bridge');
 
 function enqueueEdariSync({ kind, refType, refId, payload }) {
-  db.prepare(`
+  const existing = db.prepare(`
+    SELECT id FROM edari_sync_queue
+    WHERE kind = ? AND ref_type = ? AND ref_id = ? AND status IN ('pending', 'error')
+    ORDER BY id DESC LIMIT 1
+  `).get(kind, refType || null, refId || null);
+
+  if (existing) {
+    db.prepare(`
+      UPDATE edari_sync_queue
+      SET payload = ?, status = 'pending', error = NULL, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(JSON.stringify(payload || {}), existing.id);
+    return existing.id;
+  }
+
+  const row = db.prepare(`
     INSERT INTO edari_sync_queue (kind, ref_type, ref_id, payload, status)
     VALUES (?, ?, ?, ?, 'pending')
-  `).run(kind, refType || null, refId || null, JSON.stringify(payload || {}));
+    RETURNING id
+  `).get(kind, refType || null, refId || null, JSON.stringify(payload || {}));
+  return Number(row.id);
+}
+
+function syncQueueStats() {
+  const pending = db.prepare(`SELECT COUNT(*) AS c FROM edari_sync_queue WHERE status = 'pending'`).get().c;
+  const error = db.prepare(`SELECT COUNT(*) AS c FROM edari_sync_queue WHERE status = 'error'`).get().c;
+  const accountsPending = db.prepare(`
+    SELECT COUNT(*) AS c FROM accounts WHERE edari_sync_status IN ('pending', 'error')
+  `).get().c;
+  return {
+    pending: Number(pending),
+    error: Number(error),
+    accountsPending: Number(accountsPending),
+    total: Number(pending) + Number(error)
+  };
 }
 
 function listPendingSync(limit = 50) {
@@ -94,6 +126,16 @@ async function syncAccountToEdari(account, data = {}) {
     notes: data.notes || account.notes
   };
 
+  if (!canWriteEdari()) {
+    enqueueEdariSync({ kind: 'account', refType: 'account', refId: account.id, payload });
+    db.prepare(`
+      UPDATE accounts SET edari_sync_status = 'pending', edari_sync_error = 'بانتظار جهاز الإدارة',
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(account.id);
+    return { synced: false, queued: true };
+  }
+
   try {
     const result = await createEdariCustomerAccount(payload);
     if (result.ok) {
@@ -168,6 +210,7 @@ module.exports = {
   enqueueEdariSync,
   listPendingSync,
   getSyncItem,
+  syncQueueStats,
   processEdariQueue,
   syncAccountToEdari,
   queueInvoiceEdariSync,

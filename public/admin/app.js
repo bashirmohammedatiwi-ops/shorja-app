@@ -132,6 +132,9 @@ async function loadDashboard() {
   const data = await api('/admin/dashboard');
   const t = data.today;
   const pending = data.pendingSync || 0;
+  const edari = data.edariSync || {};
+  const edariPending = Number(edari.total || 0);
+  const canSyncNow = !!window.edariDesktop?.processEdariSync;
   document.getElementById('kpiGrid').innerHTML = `
     <div class="kpi"><div class="lbl">فواتير اليوم</div><div class="val">${t.salesCount}</div></div>
     <div class="kpi"><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmt(t.salesAmount)}</div></div>
@@ -140,8 +143,23 @@ async function loadDashboard() {
     <div class="kpi"><div class="lbl">منتجات</div><div class="val">${data.products.total}</div></div>
     <div class="kpi"><div class="lbl">إجمالي الديون</div><div class="val" dir="ltr">${fmt(data.accounts.totalDebt)}</div></div>
     <div class="kpi${pending ? ' warn' : ''}"><div class="lbl">فواتير بانتظار المزامنة</div><div class="val">${pending}</div></div>
+    <div class="kpi${edariPending ? ' warn' : ''}" id="edariSyncKpi"><div class="lbl">حسابات بانتظار الإداري</div><div class="val">${edariPending}</div></div>
     <div class="kpi"><div class="lbl">إصدار الأسعار</div><div class="val">v${data.priceVersion || 0}</div></div>
   `;
+  const syncBar = document.getElementById('edariSyncBar');
+  if (syncBar) {
+    if (edariPending > 0) {
+      syncBar.hidden = false;
+      syncBar.innerHTML = `
+        <span>${edariPending} حساب بانتظار الدخول إلى الإداري (Edari)</span>
+        ${canSyncNow ? '<button type="button" class="btn btn-sm" id="btnEdariSyncNow">مزامنة الآن</button>' : '<span style="color:var(--muted)">افتح تطبيق الإدارة على Windows</span>'}
+      `;
+      document.getElementById('btnEdariSyncNow')?.addEventListener('click', triggerEdariSyncNow);
+    } else {
+      syncBar.hidden = true;
+      syncBar.innerHTML = '';
+    }
+  }
   document.getElementById('branchesList').innerHTML = (data.branches || []).map((b) => {
     const online = branchOnline(b.last_seen_at);
     return `
@@ -156,6 +174,35 @@ async function loadDashboard() {
       </span>
     </div>`;
   }).join('') || '<p style="color:var(--muted)">لا توجد فروع</p>';
+}
+
+async function triggerEdariSyncNow() {
+  if (!window.edariDesktop?.processEdariSync) {
+    toast('افتح تطبيق الإدارة على Windows للمزامنة');
+    return;
+  }
+  try {
+    const btn = document.getElementById('btnEdariSyncNow');
+    if (btn) btn.disabled = true;
+    const result = await window.edariDesktop.processEdariSync();
+    if (result?.processed > 0) toast(`تمت مزامنة ${result.processed} حساب/حسابات`);
+    else if (result?.skipped) toast('المزامنة قيد التشغيل أو غير متاحة');
+    else toast('لا توجد حسابات معلّقة');
+    loadDashboard();
+    if (document.querySelector('.nav.active')?.dataset.view === 'accounts') loadAccounts();
+  } catch (err) {
+    toast(err.message || 'فشلت المزامنة');
+  } finally {
+    const btn = document.getElementById('btnEdariSyncNow');
+    if (btn) btn.disabled = false;
+  }
+}
+
+function edariSyncLabel(status) {
+  if (status === 'synced') return '<span style="color:var(--ok)">متزامن</span>';
+  if (status === 'pending') return '<span style="color:var(--warn)">بانتظار الإداري</span>';
+  if (status === 'error') return '<span style="color:var(--danger)">خطأ</span>';
+  return '<span style="color:var(--muted)">—</span>';
 }
 
 async function loadInvoices() {
@@ -846,7 +893,7 @@ async function loadAccounts() {
   const data = await api(`/admin/accounts?q=${encodeURIComponent(q)}`);
   document.getElementById('accountTable').innerHTML = `
     <table>
-      <thead><tr><th>الرمز</th><th>الاسم</th><th>الهاتف</th><th>الرصيد / الدين</th><th>حد الائتمان</th></tr></thead>
+      <thead><tr><th>الرمز</th><th>الاسم</th><th>الهاتف</th><th>الرصيد / الدين</th><th>حد الائتمان</th><th>الإداري</th></tr></thead>
       <tbody>${(data.accounts||[]).map((a) => `
         <tr class="clickable-row" data-account-id="${a.id}">
           <td>${esc(a.code)}</td>
@@ -854,7 +901,8 @@ async function loadAccounts() {
           <td dir="ltr">${esc(a.phone)}</td>
           <td dir="ltr" style="color:var(--danger);font-weight:700">${fmt(a.balance)}</td>
           <td dir="ltr">${fmt(a.creditLimit)}</td>
-        </tr>`).join('') || '<tr><td colspan="5">لا توجد حسابات</td></tr>'}
+          <td>${edariSyncLabel(a.edariSyncStatus)}${a.edariNum ? `<br><small dir="ltr">${esc(a.edariNum)}</small>` : ''}</td>
+        </tr>`).join('') || '<tr><td colspan="6">لا توجد حسابات</td></tr>'}
       </tbody>
     </table>`;
   document.getElementById('accountTable').querySelectorAll('[data-account-id]').forEach((row) => {
@@ -1022,6 +1070,11 @@ async function initSession() {
     document.getElementById('app').classList.remove('hidden');
     setPageTitle('dashboard');
     loadDashboard();
+    if (!window.__edariDashTimer) {
+      window.__edariDashTimer = setInterval(() => {
+        if (document.querySelector('.nav.active')?.dataset.view === 'dashboard') loadDashboard();
+      }, 15000);
+    }
   } catch {
     localStorage.removeItem(KEY);
     token = null;

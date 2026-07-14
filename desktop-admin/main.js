@@ -2,6 +2,9 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { getServerUrl } = require('./server-config');
+const { logSync } = require('../server/lib/edari-sync-worker');
+
+const SYNC_INTERVAL_MS = Math.max(5000, Number(process.env.EDARI_SYNC_INTERVAL_MS || 10000));
 
 function getEdariReaderRoot() {
   if (process.env.EDARI_READER_ROOT) return process.env.EDARI_READER_ROOT;
@@ -18,9 +21,14 @@ function applyEdariEnv() {
   const connPath = getEdariLibPath('edari-connection.js');
   delete require.cache[require.resolve(connPath)];
   const { connectionToEnv } = require(connPath);
+  const nxPath = getEdariLibPath('edari-nxscript.js');
+  delete require.cache[require.resolve(nxPath)];
+  const { ensureExecuteScriptDeployed } = require(nxPath);
+  ensureExecuteScriptDeployed();
   Object.assign(process.env, {
     EDARI_READER_ROOT: getEdariReaderRoot(),
     EDARI_WRITE_ENABLED: '1',
+    EDARI_WRITE_VIA_NXSCRIPT: '1',
     ...connectionToEnv()
   });
 }
@@ -39,7 +47,10 @@ ipcMain.handle('lookup-edari-material', async (_e, code) => {
   }
 });
 
+let syncBusy = false;
 async function processEdariQueueLocal() {
+  if (syncBusy) return { skipped: true, reason: 'busy' };
+  syncBusy = true;
   try {
     applyEdariEnv();
     const accountsPath = getEdariLibPath('edari-accounts.js');
@@ -49,9 +60,14 @@ async function processEdariQueueLocal() {
     const { createEdariCustomerAccount } = require(accountsPath);
     const { canWriteEdari } = require(bridgePath);
     const { runEdariSyncWorker } = require('./edari-sync-worker');
-    return await runEdariSyncWorker({ createEdariCustomerAccount, canWriteEdari });
+    const result = await runEdariSyncWorker({ createEdariCustomerAccount, canWriteEdari });
+    if (result.processed > 0) logSync('تطبيق الإدارة — تمت المعالجة', result);
+    return result;
   } catch (err) {
+    logSync('تطبيق الإدارة — خطأ', err.message);
     return { ok: false, error: err.message };
+  } finally {
+    syncBusy = false;
   }
 }
 
@@ -60,9 +76,10 @@ ipcMain.handle('process-edari-sync', processEdariQueueLocal);
 let edariSyncTimer = null;
 function startEdariSyncLoop() {
   if (edariSyncTimer) return;
-  const tick = () => { processEdariQueueLocal().catch(() => {}); };
-  edariSyncTimer = setInterval(tick, 60_000);
-  setTimeout(tick, 8_000);
+  const tick = () => { processEdariQueueLocal().catch((err) => logSync('tick error', err.message)); };
+  edariSyncTimer = setInterval(tick, SYNC_INTERVAL_MS);
+  setTimeout(tick, 800);
+  logSync(`بدء مزامنة الإداري كل ${SYNC_INTERVAL_MS / 1000} ثانية`);
 }
 
 function createWindow() {
@@ -83,6 +100,7 @@ function createWindow() {
     }
   });
 
+  win.on('focus', () => { processEdariQueueLocal().catch(() => {}); });
   win.loadURL(startUrl);
 }
 

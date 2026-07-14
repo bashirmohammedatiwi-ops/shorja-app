@@ -63,7 +63,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -78,5 +80,8 @@
   "devDependencies": {
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "iconv-lite": "^0.6.3"
   }
 }
