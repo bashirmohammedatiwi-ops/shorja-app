@@ -3,7 +3,12 @@ const path = require('path');
 const { getEdariConnection } = require('./edari-connection');
 
 const EXECUTE_SCRIPT = 'edari-execute.nxscript';
-const BUNDLED_SCRIPT = path.join(__dirname, '..', 'scripts', EXECUTE_SCRIPT);
+
+function resolveBundledScript() {
+  const sibling = path.join(__dirname, EXECUTE_SCRIPT);
+  if (fs.existsSync(sibling)) return sibling;
+  return path.join(__dirname, '..', 'scripts', EXECUTE_SCRIPT);
+}
 
 function getNexusAdminUrl() {
   return (process.env.NEXUS_ADMIN_URL || 'http://127.0.0.1:10088').replace(/\/$/, '');
@@ -30,9 +35,10 @@ function ensureExecuteScriptDeployed() {
   const adminRoot = getEdariNxRoot();
   if (!adminRoot) return false;
   const target = path.join(adminRoot, EXECUTE_SCRIPT);
-  if (!fs.existsSync(BUNDLED_SCRIPT)) return false;
+  const bundledPath = resolveBundledScript();
+  if (!fs.existsSync(bundledPath)) return false;
   try {
-    const bundled = fs.readFileSync(BUNDLED_SCRIPT, 'utf8');
+    const bundled = fs.readFileSync(bundledPath, 'utf8');
     if (!fs.existsSync(target) || fs.readFileSync(target, 'utf8') !== bundled) {
       fs.writeFileSync(target, bundled, 'utf8');
     }
