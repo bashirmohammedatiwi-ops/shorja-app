@@ -1,10 +1,16 @@
 const path = require('path');
+const fs = require('fs');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { getEdariConnection } = require('./edari-connection');
 
 const execFileAsync = promisify(execFile);
-const EXECUTE_PS = path.join(__dirname, '..', 'scripts', 'edari-execute.ps1');
+
+function resolveExecutePs() {
+  const sibling = path.join(__dirname, 'edari-execute.ps1');
+  if (fs.existsSync(sibling)) return sibling;
+  return path.join(__dirname, '..', 'scripts', 'edari-execute.ps1');
+}
 
 const edariRoot = process.env.EDARI_READER_ROOT
   || path.join(__dirname, '..', '..', '..', 'db', 'edari-reader');
@@ -52,7 +58,7 @@ async function runExecute(sql, connOverrides = {}) {
   try {
     const out = await execFileAsync(
       'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', EXECUTE_PS, payload],
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', resolveExecutePs(), payload],
       { maxBuffer: 10 * 1024 * 1024, windowsHide: true, encoding: 'utf8' }
     );
     const result = JSON.parse(out.stdout.trim());

@@ -19,6 +19,7 @@
       "main.js",
       "preload.js",
       "server-config.js",
+      "edari-sync-worker.js",
       "server.json.example"
     ],
     "extraResources": [
@@ -29,11 +30,23 @@
       {
         "from": "../server/lib/edari-lookup.js",
         "to": "edari/edari-lookup.js"
+      },
+      {
+        "from": "../server/lib/edari-accounts.js",
+        "to": "edari/edari-accounts.js"
+      },
+      {
+        "from": "../server/lib/edari-bridge.js",
+        "to": "edari/edari-bridge.js"
+      },
+      {
+        "from": "../server/scripts/edari-execute.ps1",
+        "to": "edari/edari-execute.ps1"
       }
     ],
     "extraFiles": [
       {
-        "from": "server.json.example",
+        "from": "server.json",
         "to": "server.json"
       }
     ],
