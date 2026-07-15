@@ -323,7 +323,10 @@ async function runEdariSyncTransfer({ kinds = null, itemIds = null } = {}) {
     const ok = result?.okCount ?? result?.processed ?? 0;
     const fail = result?.failCount ?? 0;
     if (ok > 0) toast(`تم ترحيل ${ok} عنصر/عناصر${fail ? ` — فشل ${fail}` : ''}`);
-    else if (fail > 0) toast(`فشل ترحيل ${fail} عنصر/عناصر`);
+    else if (fail > 0) {
+      const errMsg = (result?.results || []).find((r) => r && r.ok === false)?.error;
+      toast(errMsg ? `فشل الترحيل: ${errMsg}` : `فشل ترحيل ${fail} عنصر/عناصر`);
+    }
     else toast('لا توجد عناصر للترحيل');
     edariSyncSelected.clear();
     await loadEdariSync();

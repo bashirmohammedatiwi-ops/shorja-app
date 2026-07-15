@@ -32,8 +32,6 @@ function getEdariLibPath(name) {
 function loadPackagedHandlers() {
   const accountsPath = getEdariLibPath('edari-accounts.js');
   const invoicesPath = getEdariLibPath('edari-invoices.js');
-  delete require.cache[require.resolve(accountsPath)];
-  delete require.cache[require.resolve(invoicesPath)];
   return {
     account: require(accountsPath).createEdariCustomerAccount,
     invoice: require(invoicesPath).createEdariInvoice,
@@ -61,8 +59,6 @@ function loadHandlers() {
 function loadSafetyAndPostWrite() {
   const safetyPath = getEdariLibPath('edari-safety.js');
   const postPath = getEdariLibPath('edari-post-write.js');
-  delete require.cache[require.resolve(safetyPath)];
-  delete require.cache[require.resolve(postPath)];
   return {
     ...require(safetyPath),
     prepareEdariWriteSession: require(postPath).prepareEdariWriteSession,
@@ -72,11 +68,10 @@ function loadSafetyAndPostWrite() {
 }
 
 async function runEdariSyncWorkerDesktop(options = {}) {
-  const handlers = loadHandlers();
-  const bridgePath = getEdariLibPath('edari-bridge.js');
-  delete require.cache[require.resolve(bridgePath)];
-  const { canWriteEdari } = require(bridgePath);
   const safety = loadSafetyAndPostWrite();
+  const bridgePath = getEdariLibPath('edari-bridge.js');
+  const { canWriteEdari } = require(bridgePath);
+  const handlers = loadHandlers();
 
   return runEdariSyncWorker({
     handlers,

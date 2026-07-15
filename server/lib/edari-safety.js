@@ -3,7 +3,61 @@
  * الافتراضي: قراءة فقط. الكتابة مسموحة فقط أثناء جلسة مزامنة يدوية أو EDARI_WRITE_ENABLED=1.
  */
 
-let manualSyncSession = null;
+const SESSION_STORE_KEY = '__shorjaEdariManualSyncSession';
+
+function sessionStore() {
+  if (!global[SESSION_STORE_KEY]) {
+    global[SESSION_STORE_KEY] = { manualSyncSession: null };
+  }
+  return global[SESSION_STORE_KEY];
+}
+
+function getManualSyncSession() {
+  return sessionStore().manualSyncSession;
+}
+
+function beginManualEdariSyncSession({ accounts = false, invoices = false, payments = false } = {}) {
+  sessionStore().manualSyncSession = {
+    accounts: !!accounts,
+    invoices: !!invoices,
+    payments: !!payments,
+    startedAt: Date.now()
+  };
+  return sessionStore().manualSyncSession;
+}
+
+function endManualEdariSyncSession() {
+  sessionStore().manualSyncSession = null;
+}
+
+function canWriteEdariMaster() {
+  if (sessionStore().manualSyncSession) return true;
+  return isEnabled('EDARI_WRITE_ENABLED', false);
+}
+
+function canWriteEdariAccounts() {
+  const session = sessionStore().manualSyncSession;
+  if (session?.accounts) return true;
+  return canWriteEdariMaster() && isEnabled('EDARI_WRITE_ACCOUNTS', false);
+}
+
+function canWriteEdariInvoices() {
+  const session = sessionStore().manualSyncSession;
+  if (session?.invoices) return true;
+  return canWriteEdariMaster() && isEnabled('EDARI_WRITE_INVOICES', false);
+}
+
+function canWriteEdariPayments() {
+  const session = sessionStore().manualSyncSession;
+  if (session?.payments) return true;
+  return canWriteEdariMaster() && isEnabled('EDARI_WRITE_INVOICES', false);
+}
+
+function canWriteEdariStock() {
+  const session = sessionStore().manualSyncSession;
+  if (session?.invoices) return isEnabled('EDARI_WRITE_STOCK', false);
+  return canWriteEdariInvoices() && isEnabled('EDARI_WRITE_STOCK', false);
+}
 
 function isEnabled(flag, defaultOn = false) {
   const v = process.env[flag];
@@ -13,49 +67,6 @@ function isEnabled(flag, defaultOn = false) {
 
 function isManualSyncOnlyMode() {
   return isEnabled('EDARI_MANUAL_SYNC_ONLY', true);
-}
-
-function getManualSyncSession() {
-  return manualSyncSession;
-}
-
-function beginManualEdariSyncSession({ accounts = false, invoices = false, payments = false } = {}) {
-  manualSyncSession = {
-    accounts: !!accounts,
-    invoices: !!invoices,
-    payments: !!payments,
-    startedAt: Date.now()
-  };
-  return manualSyncSession;
-}
-
-function endManualEdariSyncSession() {
-  manualSyncSession = null;
-}
-
-function canWriteEdariMaster() {
-  if (manualSyncSession) return true;
-  return isEnabled('EDARI_WRITE_ENABLED', false);
-}
-
-function canWriteEdariAccounts() {
-  if (manualSyncSession?.accounts) return true;
-  return canWriteEdariMaster() && isEnabled('EDARI_WRITE_ACCOUNTS', false);
-}
-
-function canWriteEdariInvoices() {
-  if (manualSyncSession?.invoices) return true;
-  return canWriteEdariMaster() && isEnabled('EDARI_WRITE_INVOICES', false);
-}
-
-function canWriteEdariPayments() {
-  if (manualSyncSession?.payments) return true;
-  return canWriteEdariMaster() && isEnabled('EDARI_WRITE_INVOICES', false);
-}
-
-function canWriteEdariStock() {
-  if (manualSyncSession?.invoices) return isEnabled('EDARI_WRITE_STOCK', false);
-  return canWriteEdariInvoices() && isEnabled('EDARI_WRITE_STOCK', false);
 }
 
 function shorjaBillNumFloor() {
