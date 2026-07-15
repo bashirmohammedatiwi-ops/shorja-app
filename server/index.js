@@ -9,6 +9,7 @@ const authRoutes = require('./routes/auth');
 const branchRoutes = require('./routes/branch');
 const adminRoutes = require('./routes/admin');
 const syncRoutes = require('./routes/sync');
+const { getDelegateConfig, probeDelegateIntegration } = require('./lib/warehouse-prep');
 
 const app = express();
 const PORT = Number(process.env.PORT || 5007);
@@ -17,12 +18,22 @@ const HOST = process.env.HOST || '0.0.0.0';
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '20mb' }));
 
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', async (_req, res) => {
+  const delegate = getDelegateConfig();
+  let delegatePrep = {
+    configured: !!(delegate.base && delegate.key),
+    portalUrl: delegate.base || null
+  };
+  if (delegatePrep.configured) {
+    const probe = await probeDelegateIntegration();
+    delegatePrep = { ...delegatePrep, ...probe };
+  }
   res.json({
     ok: true,
     service: 'shorja-sales-hub',
     port: PORT,
-    time: new Date().toISOString()
+    time: new Date().toISOString(),
+    delegatePrep
   });
 });
 

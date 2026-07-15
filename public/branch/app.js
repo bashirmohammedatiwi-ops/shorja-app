@@ -1767,6 +1767,9 @@ async function submitSale() {
         ? (data.invoice.prepOrderNo ? ` · تجهيز ${data.invoice.prepOrderNo}` : ' · طلب تجهيز')
         : '';
       toast(`✓ تم البيع — ${data.invoice.invoiceNo}${prepNote}`);
+      if (data.invoice.prepMode === 'warehouse' && data.invoice.prepStatus && data.invoice.prepStatus !== 'submitted') {
+        toast(`تحذير: لم يصل طلب التجهيز لموظف المخزن — ${data.invoice.prepError || data.invoice.prepStatus}`, 'warn');
+      }
       state.lastInvoiceId = data.invoice.id;
       localStorage.setItem(LAST_INV_KEY, String(data.invoice.id));
       document.getElementById('checkoutModal').close();

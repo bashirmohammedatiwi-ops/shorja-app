@@ -26,6 +26,10 @@ ensure_env EDARI_SHORJA_PARENT_NAME "زبائن محل الشورجه"
 ensure_env EDARI_SYNC_ACCOUNTS 1
 ensure_env EDARI_SYNC_EVENTS 1
 
+echo "التحقق من ربط تجهيز المخزن (delegate-portal)..."
+ensure_env DELEGATE_PORTAL_URL "http://187.124.23.65:5005"
+ensure_env DELEGATE_INTEGRATION_KEY "edari-sync-local-key-2025"
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker غير مثبت. ثبّته أولاً."
   exit 1

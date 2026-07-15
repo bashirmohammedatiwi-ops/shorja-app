@@ -1,6 +1,6 @@
 {
   "name": "shorja-branch-desktop",
-  "version": "1.0.0",
+  "version": "1.0.14",
   "description": "شورجة — نقطة البيع (سطح المكتب)",
   "main": "main.js",
   "author": "Shorja",
@@ -13,7 +13,7 @@
     "appId": "com.shorja.branch",
     "productName": "Shorja Branch POS",
     "directories": {
-      "output": "dist"
+      "output": "dist-v114"
     },
     "files": [
       "main.js",
