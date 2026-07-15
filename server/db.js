@@ -361,6 +361,8 @@ function migrateInvoicesKind() {
 }
 
 function seedDemoProducts() {
+  const skipMeta = db.prepare("SELECT value FROM sync_meta WHERE key = 'skip_demo_products'").get();
+  if (skipMeta?.value === '1' || process.env.SKIP_DEMO_PRODUCTS === '1') return;
   const count = db.prepare('SELECT COUNT(*) AS c FROM products').get().c;
   if (count > 0) return;
   const products = [

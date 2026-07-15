@@ -8,6 +8,7 @@ const { getEdariParentInfo } = require('../lib/edari-accounts');
 const { listPendingSync, listPendingSyncEnriched, processEdariQueue, syncAccountToEdari, syncQueueStats } = require('../lib/edari-sync');
 const { isManualSyncOnlyMode } = require('../lib/edari-safety');
 const { canWriteEdari } = require('../lib/edari-bridge');
+const { resetBusinessData, snapshotCounts } = require('../lib/reset-business-data');
 const { publishPricePackage, listPackages, getLatestVersion } = require('../lib/prices');
 const { parseProductsCsv, invoicePrintHtml } = require('../lib/export');
 const db = require('../db');
@@ -345,6 +346,27 @@ router.get('/branches', (_req, res) => {
     priceVersion: b.price_version
   }));
   res.json({ ok: true, branches });
+});
+
+router.get('/system/reset/preview', (_req, res) => {
+  res.json({ ok: true, counts: snapshotCounts() });
+});
+
+router.post('/system/reset', (req, res) => {
+  try {
+    const confirm = String(req.body?.confirm || '').trim();
+    if (confirm !== 'RESET') {
+      return res.status(400).json({
+        ok: false,
+        error: 'أرسل confirm: "RESET" لتأكيد مسح بيانات العمل'
+      });
+    }
+    const includeProducts = req.body?.includeProducts !== false;
+    const result = resetBusinessData({ includeProducts });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 module.exports = router;

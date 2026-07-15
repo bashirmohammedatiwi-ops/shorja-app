@@ -3,6 +3,7 @@ const { authSyncKey } = require('../lib/auth');
 const { createInvoice } = require('../lib/invoices');
 const { checkPriceUpdate } = require('../lib/prices');
 const { listPendingSyncForRemote, completeEdariSyncFromRemote } = require('../lib/edari-sync');
+const { resetBusinessData, snapshotCounts } = require('../lib/reset-business-data');
 const db = require('../db');
 
 const router = express.Router();
@@ -56,6 +57,27 @@ router.post('/edari/queue/:id/complete', authSyncKey, (req, res) => {
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }
+});
+
+router.post('/reset', authSyncKey, (req, res) => {
+  try {
+    const confirm = String(req.body?.confirm || '').trim();
+    if (confirm !== 'RESET') {
+      return res.status(400).json({
+        ok: false,
+        error: 'أرسل confirm: "RESET" لتأكيد مسح بيانات العمل'
+      });
+    }
+    const includeProducts = req.body?.includeProducts !== false;
+    const result = resetBusinessData({ includeProducts });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.get('/reset/preview', authSyncKey, (_req, res) => {
+  res.json({ ok: true, counts: snapshotCounts() });
 });
 
 module.exports = router;
