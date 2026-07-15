@@ -43,6 +43,7 @@ const state = {
   customer: null,
   discount: 0,
   checkoutMethod: 'cash',
+  prepFromWarehouse: false,
   invoiceType: 'sale',
   returnParent: null,
   priceVersion: 0,
@@ -1740,7 +1741,8 @@ async function submitSale() {
       discount: state.discount,
       paymentMethod, paidAmount, accountId,
       customerName: state.customer?.name || '',
-      notes: document.getElementById('checkoutNotes').value || ''
+      notes: document.getElementById('checkoutNotes').value || '',
+      prepFromWarehouse: !!document.getElementById('prepFromWarehouse')?.checked
     };
 
     const clearCart = () => {
@@ -1750,6 +1752,8 @@ async function submitSale() {
       document.getElementById('discountInput').value = '0';
       document.getElementById('customerLabel').textContent = 'نقدي';
       document.getElementById('checkoutNotes').value = '';
+      const prepBox = document.getElementById('prepFromWarehouse');
+      if (prepBox) prepBox.checked = false;
       document.getElementById('lastScanPreview')?.classList.add('hidden');
       newPosSession();
       renderCart();
@@ -1759,7 +1763,10 @@ async function submitSale() {
     try {
       const data = await api('/branch/invoices', { method: 'POST', body: JSON.stringify(payload) });
       if (!data.invoice?.id) throw new Error('لم يُرجع السيرفر رقم الفاتورة');
-      toast(`✓ تم البيع — ${data.invoice.invoiceNo}`);
+      const prepNote = data.invoice.prepMode === 'warehouse'
+        ? (data.invoice.prepOrderNo ? ` · تجهيز ${data.invoice.prepOrderNo}` : ' · طلب تجهيز')
+        : '';
+      toast(`✓ تم البيع — ${data.invoice.invoiceNo}${prepNote}`);
       state.lastInvoiceId = data.invoice.id;
       localStorage.setItem(LAST_INV_KEY, String(data.invoice.id));
       document.getElementById('checkoutModal').close();

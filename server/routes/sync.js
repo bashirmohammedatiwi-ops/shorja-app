@@ -12,7 +12,7 @@ router.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'shorja-hub', time: new Date().toISOString() });
 });
 
-router.post('/invoices/batch', authSyncKey, (req, res) => {
+router.post('/invoices/batch', authSyncKey, async (req, res) => {
   try {
     const invoices = Array.isArray(req.body?.invoices) ? req.body.invoices : [];
     const results = [];
@@ -21,7 +21,7 @@ router.post('/invoices/batch', authSyncKey, (req, res) => {
         id: inv.cashierId || 0,
         branchId: inv.branchId
       };
-      const saved = createInvoice({ ...inv, syncStatus: 'synced' }, user);
+      const saved = await createInvoice({ ...inv, syncStatus: 'synced' }, user);
       results.push({ localId: inv.localId, id: saved.id, invoiceNo: saved.invoiceNo, ok: true });
     }
     res.json({ ok: true, results });

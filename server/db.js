@@ -317,6 +317,16 @@ function migrateEdariSync() {
   for (const sql of [...invoiceCols, ...paymentCols]) {
     try { db.exec(sql); } catch { /* exists */ }
   }
+  const prepCols = [
+    'ALTER TABLE invoices ADD COLUMN prep_mode TEXT DEFAULT \'branch\'',
+    'ALTER TABLE invoices ADD COLUMN prep_order_id INTEGER',
+    'ALTER TABLE invoices ADD COLUMN prep_order_no TEXT',
+    'ALTER TABLE invoices ADD COLUMN prep_status TEXT',
+    'ALTER TABLE invoices ADD COLUMN prep_error TEXT'
+  ];
+  for (const sql of prepCols) {
+    try { db.exec(sql); } catch { /* exists */ }
+  }
 }
 
 function migrateInvoicesKind() {

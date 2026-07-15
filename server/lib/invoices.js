@@ -3,6 +3,7 @@ const { updateBalance, getAccount } = require('./accounts');
 const { adjustStock, getByBarcode } = require('./products');
 const { getBranchSettings } = require('./settings');
 const { queueInvoiceEdariSync, queuePaymentEdariSync } = require('./edari-sync');
+const { submitWarehousePrepOrder } = require('./warehouse-prep');
 
 function nextInvoiceNo(branchId) {
   const prefix = `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
@@ -120,6 +121,11 @@ function mapInvoice(row, lines = []) {
     edariBillNum: row.edari_bill_num || '',
     edariSyncStatus: row.edari_sync_status || 'none',
     edariSyncError: row.edari_sync_error || '',
+    prepMode: row.prep_mode || 'branch',
+    prepOrderId: row.prep_order_id != null ? Number(row.prep_order_id) : null,
+    prepOrderNo: row.prep_order_no || '',
+    prepStatus: row.prep_status || '',
+    prepError: row.prep_error || '',
     invoiceDate: row.invoice_date,
     createdAt: row.created_at,
     lines: lines.map((l) => ({
@@ -148,7 +154,7 @@ function loadInvoice(id) {
   return mapInvoice(row, lines);
 }
 
-function createInvoice(data, user) {
+async function createInvoice(data, user) {
   const branchId = data.branchId || user.branchId;
   if (!branchId) throw new Error('الفرع غير محدد');
 
@@ -157,6 +163,9 @@ function createInvoice(data, user) {
 
   const kind = ['return', 'issue'].includes(data.kind) ? data.kind : 'sale';
   const sign = kind === 'return' ? -1 : 1;
+  const prepMode = kind === 'sale' && (data.prepMode === 'warehouse' || data.prepFromWarehouse)
+    ? 'warehouse'
+    : 'branch';
 
   let subtotal = 0;
   const normalized = lines.map((l) => {
@@ -205,18 +214,21 @@ function createInvoice(data, user) {
   const settings = getBranchSettings(branchId);
 
   if (kind === 'sale' || kind === 'issue') {
-    for (const l of normalized) {
-      if (!l.barcode) continue;
-      const product = getByBarcode(l.barcode);
-      if (!product) throw new Error(`المنتج غير موجود: ${l.name}`);
-      const stock = Number(product.stockQty || 0);
-      if (settings.blockZeroStock && stock <= 0) {
-        throw new Error(`${l.name}: غير متوفر في المخزون`);
-      }
-      if (settings.blockOverStock && stock > 0) {
-        const pieces = l.qty + (l.giftQty || 0);
-        if (pieces > stock) {
-          throw new Error(`${l.name}: المخزون المتاح ${stock} قطعة فقط`);
+    const skipBranchStock = kind === 'sale' && prepMode === 'warehouse';
+    if (!skipBranchStock) {
+      for (const l of normalized) {
+        if (!l.barcode) continue;
+        const product = getByBarcode(l.barcode);
+        if (!product) throw new Error(`المنتج غير موجود: ${l.name}`);
+        const stock = Number(product.stockQty || 0);
+        if (settings.blockZeroStock && stock <= 0) {
+          throw new Error(`${l.name}: غير متوفر في المخزون`);
+        }
+        if (settings.blockOverStock && stock > 0) {
+          const pieces = l.qty + (l.giftQty || 0);
+          if (pieces > stock) {
+            throw new Error(`${l.name}: المخزون المتاح ${stock} قطعة فقط`);
+          }
         }
       }
     }
@@ -248,14 +260,15 @@ function createInvoice(data, user) {
       INSERT INTO invoices
         (local_id, invoice_no, branch_id, cashier_id, account_id, customer_name, kind,
          parent_invoice_id, status, subtotal, discount, total, paid_amount, due_amount,
-         payment_method, notes, sync_status, invoice_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         payment_method, notes, sync_status, invoice_date, prep_mode)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING id
     `).get(
       localId, invoiceNo, branchId, user.id, data.accountId || null, customerName, kind,
       data.parentInvoiceId || null, subtotal, discount, total, paidAmount, dueAmount,
       paymentMethod, data.notes || '', data.syncStatus || 'synced',
-      data.invoiceDate || new Date().toISOString().slice(0, 10)
+      data.invoiceDate || new Date().toISOString().slice(0, 10),
+      prepMode
     );
     const invoiceId = Number(row.id);
     const insertLine = db.prepare(`
@@ -271,7 +284,9 @@ function createInvoice(data, user) {
         l.qty, l.unitPrice, l.lineDiscount, l.lineTotal, origPrice, edited, l.giftQty || 0
       );
       if (l.barcode && (kind === 'sale' || kind === 'issue')) {
-        adjustStock(l.barcode, -(l.qty + (l.giftQty || 0)));
+        if (!(kind === 'sale' && prepMode === 'warehouse')) {
+          adjustStock(l.barcode, -(l.qty + (l.giftQty || 0)));
+        }
       } else if (l.barcode && kind === 'return') {
         adjustStock(l.barcode, l.qty + (l.giftQty || 0));
       }
@@ -308,7 +323,33 @@ function createInvoice(data, user) {
   });
 
   const invoiceId = tx();
-  const invoice = loadInvoice(invoiceId);
+  let invoice = loadInvoice(invoiceId);
+
+  if (prepMode === 'warehouse') {
+    const branch = db.prepare('SELECT name FROM branches WHERE id = ?').get(invoice.branchId);
+    const acc = invoice.accountId ? getAccount(invoice.accountId) : null;
+    const prep = await submitWarehousePrepOrder(invoice, {
+      branchName: branch?.name || '',
+      edariSeq: acc?.edariSeq || ''
+    });
+    if (prep.ok) {
+      db.prepare(`
+        UPDATE invoices
+        SET prep_order_id = ?, prep_order_no = ?, prep_status = 'submitted', prep_error = NULL
+        WHERE id = ?
+      `).run(prep.prepOrderId || null, prep.prepOrderNo || '', invoiceId);
+    } else if (!prep.skipped) {
+      db.prepare(`
+        UPDATE invoices SET prep_status = 'error', prep_error = ? WHERE id = ?
+      `).run(prep.error || 'فشل إرسال طلب التجهيز', invoiceId);
+    } else {
+      db.prepare(`
+        UPDATE invoices SET prep_status = 'skipped', prep_error = ? WHERE id = ?
+      `).run(prep.error || 'تجهيز المخزن غير مفعّل', invoiceId);
+    }
+    invoice = loadInvoice(invoiceId);
+  }
+
   if (process.env.EDARI_SYNC_EVENTS !== '0' && invoice.kind !== 'issue') {
     const acc = invoice.accountId ? getAccount(invoice.accountId) : null;
     const branch = db.prepare('SELECT name FROM branches WHERE id = ?').get(invoice.branchId);
@@ -321,7 +362,7 @@ function createInvoice(data, user) {
   return invoice;
 }
 
-function createReturn(parentId, data, user) {
+async function createReturn(parentId, data, user) {
   const parent = loadInvoice(Number(parentId));
   if (!parent) throw new Error('الفاتورة الأصلية غير موجودة');
   if (parent.kind === 'return') throw new Error('لا يمكن إرجاع فاتورة مرتجع');
@@ -356,7 +397,7 @@ function createReturn(parentId, data, user) {
     });
   }
 
-  return createInvoice({
+  return await createInvoice({
     kind: 'return',
     invoiceNo: nextReturnNo(),
     parentInvoiceId: parent.id,

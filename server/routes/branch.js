@@ -97,9 +97,9 @@ router.get('/accounts/:id/ledger', (req, res) => {
   });
 });
 
-router.post('/invoices', (req, res) => {
+router.post('/invoices', async (req, res) => {
   try {
-    const invoice = createInvoice(req.body || {}, req.user);
+    const invoice = await createInvoice(req.body || {}, req.user);
     res.json({ ok: true, invoice });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
@@ -144,9 +144,9 @@ router.get('/invoices/:id/print', (req, res) => {
   res.send(invoicePrintHtml(invoice, branch?.name || '', { thermal, footer: settings.receiptFooter, debtInfo }));
 });
 
-router.post('/invoices/:id/return', (req, res) => {
+router.post('/invoices/:id/return', async (req, res) => {
   try {
-    const invoice = createReturn(Number(req.params.id), req.body || {}, req.user);
+    const invoice = await createReturn(Number(req.params.id), req.body || {}, req.user);
     res.json({ ok: true, invoice });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });

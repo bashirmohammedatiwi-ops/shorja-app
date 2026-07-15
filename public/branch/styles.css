@@ -2299,6 +2299,19 @@ kbd {
 .checkout-amount strong { font-size: 1.4rem; color: var(--primary-dark); }
 
 .pay-grid { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 14px; }
+.prep-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #ecfdf5;
+  border: 1px solid #86efac;
+  font-weight: 700;
+  color: #166534;
+}
+.prep-option input { width: 18px; height: 18px; }
 
 .pay-card {
   display: flex; align-items: center; gap: 12px;
