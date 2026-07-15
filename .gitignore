@@ -5,7 +5,7 @@ data/
 desktop-admin/dist/
 desktop-admin/dist-build/
 desktop-admin/dist-release/
-desktop-admin/dist-new/
+desktop-admin/dist-v101/
 desktop-admin/node_modules/
 desktop-branch/dist/
 desktop-branch/dist-new/

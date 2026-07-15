@@ -1,6 +1,6 @@
 {
   "name": "shorja-admin-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "شورجة — الإدارة (سطح المكتب)",
   "main": "main.js",
   "author": "Shorja",
@@ -13,13 +13,14 @@
     "appId": "com.shorja.admin",
     "productName": "Shorja Admin",
     "directories": {
-      "output": "dist-release"
+      "output": "dist-v101"
     },
     "files": [
       "main.js",
       "preload.js",
       "server-config.js",
       "edari-sync-worker.js",
+      "edari-module-paths.js",
       "server.json.example"
     ],
     "extraResources": [
@@ -78,6 +79,14 @@
       {
         "from": "../server/scripts/edari-execute.ps1",
         "to": "edari/edari-execute.ps1"
+      },
+      {
+        "from": "node_modules/iconv-lite",
+        "to": "edari/node_modules/iconv-lite"
+      },
+      {
+        "from": "node_modules/safer-buffer",
+        "to": "edari/node_modules/safer-buffer"
       }
     ],
     "extraFiles": [

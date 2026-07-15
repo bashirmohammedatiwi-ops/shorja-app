@@ -2,6 +2,9 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { getServerUrl } = require('./server-config');
+const { registerEdariModulePaths } = require('./edari-module-paths');
+
+registerEdariModulePaths(app);
 
 function getEdariReaderRoot() {
   if (process.env.EDARI_READER_ROOT) return process.env.EDARI_READER_ROOT;

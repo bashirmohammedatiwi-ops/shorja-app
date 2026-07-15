@@ -1,5 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const { registerEdariModulePaths } = require('./edari-module-paths');
+
+registerEdariModulePaths(require('electron').app);
 
 function getCoreSyncWorkerPath() {
   const { app } = require('electron');
