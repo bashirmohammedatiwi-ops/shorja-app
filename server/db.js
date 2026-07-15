@@ -389,6 +389,8 @@ function seedDemoProducts() {
 }
 
 function seedDemoAccounts() {
+  const skipMeta = db.prepare("SELECT value FROM sync_meta WHERE key = 'skip_demo_accounts'").get();
+  if (skipMeta?.value === '1' || process.env.SKIP_DEMO_ACCOUNTS === '1') return;
   const count = db.prepare('SELECT COUNT(*) AS c FROM accounts').get().c;
   if (count > 0) return;
   const accounts = [

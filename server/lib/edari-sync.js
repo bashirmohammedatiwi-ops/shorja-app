@@ -85,15 +85,45 @@ function hydrateQueuePayload(item) {
 
   if (item.kind === 'invoice' && item.ref_type === 'invoice') {
     const inv = db.prepare(`
-      SELECT i.account_id, i.customer_name, a.edari_seq, a.edari_sync_status, a.name AS account_name
+      SELECT i.account_id, i.customer_name, i.subtotal, i.total, i.discount,
+             i.paid_amount, i.due_amount, i.invoice_date, i.notes, i.kind,
+             a.edari_seq, a.edari_sync_status, a.name AS account_name,
+             b.name AS branch_name
       FROM invoices i
       LEFT JOIN accounts a ON a.id = i.account_id
+      LEFT JOIN branches b ON b.id = i.branch_id
       WHERE i.id = ?
     `).get(item.ref_id);
     if (inv?.account_id) payload.accountId = inv.account_id;
     if (inv?.edari_seq) payload.edariSeq = String(inv.edari_seq);
     payload.customerName = payload.customerName || inv?.customer_name || inv?.account_name || '';
+    payload.branchName = payload.branchName || inv?.branch_name || '';
     payload.accountEdariSyncStatus = inv?.edari_sync_status || '';
+    if (inv) {
+      payload.subtotal = inv.subtotal ?? payload.subtotal;
+      payload.total = inv.total ?? payload.total;
+      payload.discount = inv.discount ?? payload.discount;
+      payload.paidAmount = inv.paid_amount ?? payload.paidAmount;
+      payload.dueAmount = inv.due_amount ?? payload.dueAmount;
+      payload.invoiceDate = inv.invoice_date || payload.invoiceDate;
+      payload.notes = inv.notes ?? payload.notes;
+      payload.kind = inv.kind || payload.kind;
+    }
+    const lineRows = db.prepare(`
+      SELECT barcode, name, qty, gift_qty, unit_price, line_discount, line_total
+      FROM invoice_lines WHERE invoice_id = ? ORDER BY id
+    `).all(item.ref_id);
+    if (lineRows.length) {
+      payload.lines = lineRows.map((l) => ({
+        barcode: l.barcode,
+        name: l.name,
+        qty: l.qty,
+        giftQty: l.gift_qty,
+        unitPrice: l.unit_price,
+        lineDiscount: l.line_discount,
+        lineTotal: l.line_total
+      }));
+    }
   }
 
   if (item.kind === 'payment' && item.ref_type === 'payment') {
