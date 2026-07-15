@@ -143,6 +143,9 @@ async function runEdariSyncWorker({
     if (i.status === 'done') return false;
     if (idSet && !idSet.has(Number(i.id))) return false;
     return true;
+  }).sort((a, b) => {
+    const order = { account: 0, invoice: 1, payment: 2 };
+    return (order[a.kind] ?? 9) - (order[b.kind] ?? 9) || Number(a.id) - Number(b.id);
   });
 
   if (!workItems.length) {

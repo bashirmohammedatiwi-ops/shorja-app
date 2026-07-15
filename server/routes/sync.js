@@ -2,7 +2,7 @@ const express = require('express');
 const { authSyncKey } = require('../lib/auth');
 const { createInvoice } = require('../lib/invoices');
 const { checkPriceUpdate } = require('../lib/prices');
-const { listPendingSync, completeEdariSyncFromRemote } = require('../lib/edari-sync');
+const { listPendingSyncForRemote, completeEdariSyncFromRemote } = require('../lib/edari-sync');
 const db = require('../db');
 
 const router = express.Router();
@@ -46,7 +46,7 @@ router.get('/edari/queue', authSyncKey, (req, res) => {
   const kinds = req.query.kinds
     ? String(req.query.kinds).split(',').map((k) => k.trim()).filter(Boolean)
     : null;
-  res.json({ ok: true, items: listPendingSync(limit, { kinds }) });
+  res.json({ ok: true, items: listPendingSyncForRemote(limit, { kinds }) });
 });
 
 router.post('/edari/queue/:id/complete', authSyncKey, (req, res) => {

@@ -119,9 +119,10 @@ async function resolveCustomerSeq(payload) {
   const direct = Number(payload.edariSeq || 0);
   if (direct > 0) return direct;
 
-  const isCashSale = payload.kind !== 'return'
-    && Number(payload.dueAmount || 0) <= 0
-    && Number(payload.paidAmount || 0) > 0;
+  const isCashSale = payload.kind !== 'return' && (
+    (Number(payload.dueAmount || 0) <= 0 && Number(payload.paidAmount || 0) > 0)
+    || (!payload.accountId && Number(payload.paidAmount || 0) > 0)
+  );
 
   if (isCashSale) {
     const walkIn = await resolveWalkInCustomerSeq();
@@ -238,7 +239,17 @@ async function createEdariInvoice(payload) {
   const kind = payload.kind === 'return' ? 'return' : 'sale';
   const customerSeq = await resolveCustomerSeq(payload);
   if (!customerSeq) {
-    return { ok: false, error: 'الحساب غير مربوط بإداري — أنشئ/زامِن الحساب أو عيّن EDARI_WALKIN_CUSTOMER_SEQ للمبيعات النقدية' };
+    const name = String(payload.customerName || '').trim();
+    if (payload.accountId) {
+      return {
+        ok: false,
+        error: `حساب العميل «${name || payload.accountId}» غير مربوط بإداري — رحّل الحساب أولاً من تبويب مزامنة الإداري`
+      };
+    }
+    return {
+      ok: false,
+      error: 'الحساب غير مربوط بإداري — للمبيعات النقدية عيّن EDARI_WALKIN_CUSTOMER_SEQ أو اربط حساب نقدي'
+    };
   }
 
   return withEdariRetry('createEdariInvoice', async () => {

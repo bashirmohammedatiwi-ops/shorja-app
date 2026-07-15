@@ -79,10 +79,47 @@ function listPendingSync(limit = 50, { kinds = null } = {}) {
   `).all(limit);
 }
 
+function hydrateQueuePayload(item) {
+  let payload;
+  try { payload = JSON.parse(item.payload || '{}'); } catch { payload = {}; }
+
+  if (item.kind === 'invoice' && item.ref_type === 'invoice') {
+    const inv = db.prepare(`
+      SELECT i.account_id, i.customer_name, a.edari_seq, a.edari_sync_status, a.name AS account_name
+      FROM invoices i
+      LEFT JOIN accounts a ON a.id = i.account_id
+      WHERE i.id = ?
+    `).get(item.ref_id);
+    if (inv?.account_id) payload.accountId = inv.account_id;
+    if (inv?.edari_seq) payload.edariSeq = String(inv.edari_seq);
+    payload.customerName = payload.customerName || inv?.customer_name || inv?.account_name || '';
+    payload.accountEdariSyncStatus = inv?.edari_sync_status || '';
+  }
+
+  if (item.kind === 'payment' && item.ref_type === 'payment') {
+    const pay = db.prepare(`
+      SELECT p.account_id, a.edari_seq, a.edari_sync_status, a.name AS account_name
+      FROM payments p
+      LEFT JOIN accounts a ON a.id = p.account_id
+      WHERE p.id = ?
+    `).get(item.ref_id);
+    if (pay?.account_id) payload.accountId = pay.account_id;
+    if (pay?.edari_seq) payload.edariSeq = String(pay.edari_seq);
+    payload.accountEdariSyncStatus = pay?.edari_sync_status || '';
+    payload.customerName = payload.customerName || pay?.account_name || '';
+  }
+
+  return payload;
+}
+
+function listPendingSyncForRemote(limit = 50, options = {}) {
+  return listPendingSync(limit, options).map((item) => ({
+    ...item,
+    payload: hydrateQueuePayload(item)
+  }));
+}
 function enrichQueueItem(item) {
-  const payload = (() => {
-    try { return JSON.parse(item.payload || '{}'); } catch { return {}; }
-  })();
+  const payload = hydrateQueuePayload(item);
   let title = '';
   let subtitle = '';
   let amount = null;
@@ -99,6 +136,11 @@ function enrichQueueItem(item) {
     subtitle = inv?.customer_name || payload.customerName || '';
     amount = inv?.total ?? payload.total;
     refLabel = inv?.kind === 'return' ? 'مرتجع' : (inv?.kind === 'issue' ? 'إخراج مخزون' : 'بيع');
+    if (payload.accountId && !payload.edariSeq) {
+      refLabel = 'يحتاج ترحيل حساب العميل أولاً';
+    } else if (payload.edariSeq) {
+      refLabel += ` · إداري: ${payload.edariSeq}`;
+    }
   } else if (item.kind === 'payment' && item.ref_type === 'payment') {
     const pay = db.prepare(`
       SELECT p.payment_no, p.amount, p.notes, a.name AS account_name
@@ -109,6 +151,9 @@ function enrichQueueItem(item) {
     subtitle = pay?.account_name || '';
     amount = pay?.amount ?? payload.amount;
     refLabel = 'قيد تسديد';
+    if (payload.accountId && !payload.edariSeq) {
+      refLabel = 'يحتاج ترحيل حساب العميل أولاً';
+    }
   } else {
     title = `${item.kind} #${item.ref_id}`;
   }
@@ -432,6 +477,8 @@ function queuePaymentEdariSync(payment, account) {
 module.exports = {
   enqueueEdariSync,
   listPendingSync,
+  listPendingSyncForRemote,
+  hydrateQueuePayload,
   listPendingSyncEnriched,
   enrichQueueItem,
   getSyncItem,
