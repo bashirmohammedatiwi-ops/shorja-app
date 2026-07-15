@@ -13,7 +13,7 @@
     "appId": "com.shorja.admin",
     "productName": "Shorja Admin",
     "directories": {
-      "output": "dist-build"
+      "output": "dist-release"
     },
     "files": [
       "main.js",
