@@ -3,7 +3,8 @@
  */
 const { runQuery, rowObjects } = require('./edari-bridge');
 const { runAccountMaintViaNxscript, runTreeRepairViaNxscript } = require('./edari-nxscript');
-const { PARENT_NUM } = require('./edari-accounts');
+
+const PARENT_NUM = String(process.env.EDARI_SHORJA_PARENT_NUM || '12111').trim();
 
 const AUTOINC_TABLES = ['File11n', 'File12n', 'File13n', 'file14n', 'File15n'];
 
