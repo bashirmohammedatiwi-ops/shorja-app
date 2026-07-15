@@ -45,6 +45,7 @@
         <button type="button" class="nav" data-view="accounts">الحسابات</button>
         <button type="button" class="nav" data-view="payments">التسديدات</button>
         <button type="button" class="nav" data-view="journal">القيود</button>
+        <button type="button" class="nav nav-edari" data-view="edariSync">مزامنة الإداري</button>
       </nav>
       <button type="button" class="btn btn-ghost logout" id="btnLogout">خروج</button>
     </aside>
@@ -218,6 +219,33 @@
           <button type="button" class="btn btn-secondary" id="btnAdj">تسجيل قيد</button>
         </div>
         <div class="table-wrap" id="journalTable"></div>
+      </section>
+
+      <section id="viewEdariSync" class="view hidden">
+        <div class="edari-sync-panel">
+          <div class="edari-sync-alert" id="edariSyncAlert">
+            <strong>أثناء الترحيل:</strong> يمكن إبقاء برنامج الإداري (nprogwin) وEdariNX مفتوحين.
+            تجنّب فقط إضافة حسابات أو حفظ فواتير في الإداري في نفس اللحظة — النظام يضبط العدادات وشجرة 12111 تلقائياً قبل وبعد الترحيل.
+            الترحيل يدوي فقط — لن يُكتب شيء في قاعدة الإداري إلا عند الضغط على أحد أزرار الترحيل.
+          </div>
+          <div class="edari-sync-stats" id="edariSyncStats"></div>
+          <div class="toolbar edari-sync-toolbar">
+            <select id="edariSyncKindFilter">
+              <option value="">كل الأنواع</option>
+              <option value="account">حسابات فقط</option>
+              <option value="invoice">فواتير فقط</option>
+              <option value="payment">تسديدات وقيود</option>
+            </select>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnEdariSyncRefresh">تحديث</button>
+            <span class="edari-sync-spacer"></span>
+            <button type="button" class="btn btn-sm" id="btnEdariSyncAccounts" disabled>ترحيل الحسابات</button>
+            <button type="button" class="btn btn-sm" id="btnEdariSyncInvoices" disabled>ترحيل الفواتير</button>
+            <button type="button" class="btn btn-sm" id="btnEdariSyncPayments" disabled>ترحيل التسديدات</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnEdariSyncSelected" disabled>ترحيل المحدد</button>
+          </div>
+          <div class="table-wrap" id="edariSyncTable"></div>
+          <p class="edari-sync-hint" id="edariSyncHint"></p>
+        </div>
       </section>
     </main>
   </div>

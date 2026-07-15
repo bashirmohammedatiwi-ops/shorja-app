@@ -25,8 +25,13 @@ const PAGE_TITLES = {
   prices: ['إدارة الأسعار', 'حدد المنتجات بالباركود ثم ارفعها للفروع'],
   accounts: ['حسابات العملاء', 'الديون وحدود الائتمان'],
   payments: ['التسديدات', 'تسجيل دفعات العملاء'],
-  journal: ['سجل القيود', 'الحركات والتسويات اليدوية']
+  journal: ['سجل القيود', 'الحركات والتسويات اليدوية'],
+  edariSync: ['مزامنة الإداري', 'مراجعة الطابور وترحيل انتقائي — حسابات ثم فواتير ثم تسديدات']
 };
+
+const EDARI_KIND_LABELS = { account: 'حساب', invoice: 'فاتورة', payment: 'تسديد' };
+let edariSyncItems = [];
+let edariSyncSelected = new Set();
 
 function debounce(fn, ms = 220) {
   let t;
@@ -122,7 +127,8 @@ document.querySelectorAll('.nav').forEach((btn) => {
       prices: loadPrices,
       accounts: loadAccounts,
       payments: loadPayments,
-      journal: loadJournal
+      journal: loadJournal,
+      edariSync: loadEdariSync
     };
     loaders[btn.dataset.view]?.();
   });
@@ -136,7 +142,6 @@ async function loadDashboard() {
   const edariPending = Number(edari.total || 0);
   const invPending = Number(edari.invoicesPending || 0);
   const payPending = Number(edari.paymentsPending || 0);
-  const canSyncNow = !!window.edariDesktop?.processEdariSync;
   document.getElementById('kpiGrid').innerHTML = `
     <div class="kpi"><div class="lbl">فواتير اليوم</div><div class="val">${t.salesCount}</div></div>
     <div class="kpi"><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmt(t.salesAmount)}</div></div>
@@ -155,10 +160,10 @@ async function loadDashboard() {
     if (edariPending > 0) {
       syncBar.hidden = false;
       syncBar.innerHTML = `
-        <span>${edariPending} عنصر بانتظار الترحيل إلى الإداري (حسابات/فواتير/تسديدات)</span>
-        ${canSyncNow ? '<button type="button" class="btn btn-sm" id="btnEdariSyncNow">مزامنة الآن</button>' : '<span style="color:var(--muted)">افتح تطبيق الإدارة على Windows</span>'}
+        <span>${edariPending} عنصر بانتظار الترحيل إلى الإداري (حسابات / فواتير / تسديدات)</span>
+        <button type="button" class="btn btn-sm" id="btnEdariSyncReview">مراجعة وترحيل</button>
       `;
-      document.getElementById('btnEdariSyncNow')?.addEventListener('click', triggerEdariSyncNow);
+      document.getElementById('btnEdariSyncReview')?.addEventListener('click', () => openEdariSyncView());
     } else {
       syncBar.hidden = true;
       syncBar.innerHTML = '';
@@ -180,29 +185,192 @@ async function loadDashboard() {
   }).join('') || '<p style="color:var(--muted)">لا توجد فروع</p>';
 }
 
-async function triggerEdariSyncNow() {
-  if (!window.edariDesktop?.processEdariSync) {
-    toast('افتح تطبيق الإدارة على Windows للمزامنة');
+function openEdariSyncView() {
+  const btn = document.querySelector('.nav[data-view="edariSync"]');
+  if (btn) btn.click();
+  else loadEdariSync();
+}
+
+function edariKindBadge(kind) {
+  const lbl = EDARI_KIND_LABELS[kind] || kind;
+  const cls = kind === 'account' ? 'kind-account' : kind === 'invoice' ? 'kind-invoice' : 'kind-payment';
+  return `<span class="edari-kind-badge ${cls}">${esc(lbl)}</span>`;
+}
+
+function updateEdariSyncToolbar() {
+  const desktop = !!window.edariDesktop?.processEdariSync;
+  const hint = document.getElementById('edariSyncHint');
+  if (hint) {
+    hint.textContent = desktop
+      ? 'الترحيل يتم من هذا الجهاز عبر اتصال EdariNX المحلي.'
+      : 'افتح تطبيق الإدارة على Windows لتمكين الترحيل إلى قاعدة الإداري.';
+  }
+  const selected = [...edariSyncSelected];
+  const hasKind = (k) => edariSyncItems.some((i) => i.kind === k);
+  const selectedOf = (k) => selected.filter((id) => edariSyncItems.find((i) => i.id === id && i.kind === k)).length;
+  const setBtn = (id, enabled) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !desktop || !enabled;
+  };
+  setBtn('btnEdariSyncSelected', selected.length > 0);
+  setBtn('btnEdariSyncAccounts', hasKind('account') && (selected.length === 0 || selectedOf('account') > 0));
+  setBtn('btnEdariSyncInvoices', hasKind('invoice') && (selected.length === 0 || selectedOf('invoice') > 0));
+  setBtn('btnEdariSyncPayments', hasKind('payment') && (selected.length === 0 || selectedOf('payment') > 0));
+}
+
+function renderEdariSyncTable() {
+  const wrap = document.getElementById('edariSyncTable');
+  if (!wrap) return;
+  if (!edariSyncItems.length) {
+    wrap.innerHTML = '<p style="color:var(--muted);padding:16px">لا توجد عناصر معلّقة في الطابور.</p>';
+    updateEdariSyncToolbar();
     return;
   }
+  wrap.innerHTML = `
+    <table class="edari-sync-table">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="edariSyncSelectAll" title="تحديد الكل"></th>
+          <th>النوع</th>
+          <th>العنوان</th>
+          <th>التفاصيل</th>
+          <th>المبلغ</th>
+          <th>الحالة</th>
+          <th>المحاولات</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${edariSyncItems.map((item) => `
+          <tr class="${item.status === 'error' ? 'row-error' : ''}">
+            <td><input type="checkbox" class="edari-sync-check" data-id="${item.id}" ${edariSyncSelected.has(item.id) ? 'checked' : ''}></td>
+            <td>${edariKindBadge(item.kind)}</td>
+            <td><strong>${esc(item.title)}</strong><div class="sub">${esc(item.refLabel)}</div></td>
+            <td>${esc(item.subtitle)}</td>
+            <td dir="ltr">${item.amount != null ? fmt(item.amount) : '—'}</td>
+            <td>${edariSyncLabel(item.status, item.error)}</td>
+            <td>${item.attempts || 0}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+  const allCb = document.getElementById('edariSyncSelectAll');
+  const checks = wrap.querySelectorAll('.edari-sync-check');
+  allCb?.addEventListener('change', () => {
+    if (allCb.checked) edariSyncItems.forEach((i) => edariSyncSelected.add(i.id));
+    else edariSyncSelected.clear();
+    checks.forEach((c) => { c.checked = allCb.checked; });
+    updateEdariSyncToolbar();
+  });
+  checks.forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const id = Number(cb.dataset.id);
+      if (cb.checked) edariSyncSelected.add(id);
+      else edariSyncSelected.delete(id);
+      if (allCb) allCb.checked = checks.length > 0 && [...checks].every((c) => c.checked);
+      updateEdariSyncToolbar();
+    });
+  });
+  updateEdariSyncToolbar();
+}
+
+async function loadEdariSync() {
+  const kind = document.getElementById('edariSyncKindFilter')?.value || '';
+  const q = kind ? `?kinds=${encodeURIComponent(kind)}` : '';
+  const data = await api(`/admin/edari/sync-queue${q}`);
+  const stats = data.stats || {};
+  const byKind = stats.queueByKind || {};
+  edariSyncItems = data.items || [];
+  edariSyncSelected = new Set([...edariSyncSelected].filter((id) => edariSyncItems.some((i) => i.id === id)));
+  const statsEl = document.getElementById('edariSyncStats');
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <div class="edari-stat"><span class="lbl">معلّق</span><span class="val">${stats.pending || 0}</span></div>
+      <div class="edari-stat warn"><span class="lbl">أخطاء</span><span class="val">${stats.error || 0}</span></div>
+      <div class="edari-stat"><span class="lbl">حسابات</span><span class="val">${byKind.account || 0}</span></div>
+      <div class="edari-stat"><span class="lbl">فواتير</span><span class="val">${byKind.invoice || 0}</span></div>
+      <div class="edari-stat"><span class="lbl">تسديدات</span><span class="val">${byKind.payment || 0}</span></div>
+    `;
+  }
+  const alert = document.getElementById('edariSyncAlert');
+  const canTransfer = !!window.edariDesktop?.processEdariSync;
+  if (alert) {
+    alert.classList.toggle('ok', canTransfer);
+    alert.classList.toggle('warn', !canTransfer);
+  }
+  renderEdariSyncTable();
+}
+
+async function runEdariSyncTransfer({ kinds = null, itemIds = null } = {}) {
+  if (!window.edariDesktop?.processEdariSync) {
+    toast('افتح تطبيق الإدارة على Windows للترحيل');
+    return;
+  }
+  const ids = itemIds && itemIds.length ? itemIds : (edariSyncSelected.size ? [...edariSyncSelected] : null);
+  const btns = ['btnEdariSyncSelected', 'btnEdariSyncAccounts', 'btnEdariSyncInvoices', 'btnEdariSyncPayments', 'btnEdariSyncRefresh'];
+  btns.forEach((id) => { const b = document.getElementById(id); if (b) b.disabled = true; });
   try {
-    const btn = document.getElementById('btnEdariSyncNow');
-    if (btn) btn.disabled = true;
-    const result = await window.edariDesktop.processEdariSync();
-    if (result?.processed > 0) toast(`تمت مزامنة ${result.processed} عنصر/عناصر`);
-    else if (result?.skipped) toast('المزامنة قيد التشغيل أو غير متاحة');
-    else toast('لا توجد عناصر معلّقة');
+    const result = await window.edariDesktop.processEdariSync({
+      kinds: kinds || null,
+      itemIds: ids,
+      limit: 100
+    });
+    if (result?.skipped) {
+      const reasons = { busy: 'المزامنة قيد التشغيل', missing_sync_key: 'مفتاح المزامنة غير مضبوط', not_windows: 'يتطلب Windows' };
+      toast(reasons[result.reason] || 'تعذر الترحيل');
+      return;
+    }
+    if (result?.error) throw new Error(result.error);
+    const ok = result?.okCount ?? result?.processed ?? 0;
+    const fail = result?.failCount ?? 0;
+    if (ok > 0) toast(`تم ترحيل ${ok} عنصر/عناصر${fail ? ` — فشل ${fail}` : ''}`);
+    else if (fail > 0) toast(`فشل ترحيل ${fail} عنصر/عناصر`);
+    else toast('لا توجد عناصر للترحيل');
+    edariSyncSelected.clear();
+    await loadEdariSync();
     loadDashboard();
     const view = document.querySelector('.nav.active')?.dataset.view;
     if (view === 'accounts') loadAccounts();
     if (view === 'invoices') loadInvoices();
     if (view === 'payments') loadPayments();
   } catch (err) {
-    toast(err.message || 'فشلت المزامنة');
+    toast(err.message || 'فشل الترحيل');
   } finally {
-    const btn = document.getElementById('btnEdariSyncNow');
-    if (btn) btn.disabled = false;
+    updateEdariSyncToolbar();
+    const refresh = document.getElementById('btnEdariSyncRefresh');
+    if (refresh) refresh.disabled = false;
   }
+}
+
+document.getElementById('edariSyncKindFilter')?.addEventListener('change', () => {
+  edariSyncSelected.clear();
+  loadEdariSync();
+});
+document.getElementById('btnEdariSyncRefresh')?.addEventListener('click', () => loadEdariSync());
+document.getElementById('btnEdariSyncSelected')?.addEventListener('click', () => {
+  if (!edariSyncSelected.size) return toast('حدد عناصر من الجدول');
+  runEdariSyncTransfer({ itemIds: [...edariSyncSelected] });
+});
+document.getElementById('btnEdariSyncAccounts')?.addEventListener('click', () => {
+  const ids = edariSyncSelected.size
+    ? [...edariSyncSelected].filter((id) => edariSyncItems.find((i) => i.id === id && i.kind === 'account'))
+    : null;
+  runEdariSyncTransfer({ kinds: ['account'], itemIds: ids });
+});
+document.getElementById('btnEdariSyncInvoices')?.addEventListener('click', () => {
+  const ids = edariSyncSelected.size
+    ? [...edariSyncSelected].filter((id) => edariSyncItems.find((i) => i.id === id && i.kind === 'invoice'))
+    : null;
+  runEdariSyncTransfer({ kinds: ['invoice'], itemIds: ids });
+});
+document.getElementById('btnEdariSyncPayments')?.addEventListener('click', () => {
+  const ids = edariSyncSelected.size
+    ? [...edariSyncSelected].filter((id) => edariSyncItems.find((i) => i.id === id && i.kind === 'payment'))
+    : null;
+  runEdariSyncTransfer({ kinds: ['payment'], itemIds: ids });
+});
+
+async function triggerEdariSyncNow() {
+  openEdariSyncView();
 }
 
 function edariSyncLabel(status, error = '') {
@@ -1089,7 +1257,9 @@ async function initSession() {
     loadDashboard();
     if (!window.__edariDashTimer) {
       window.__edariDashTimer = setInterval(() => {
-        if (document.querySelector('.nav.active')?.dataset.view === 'dashboard') loadDashboard();
+        const view = document.querySelector('.nav.active')?.dataset.view;
+        if (view === 'dashboard') loadDashboard();
+        if (view === 'edariSync') loadEdariSync();
       }, 15000);
     }
   } catch {

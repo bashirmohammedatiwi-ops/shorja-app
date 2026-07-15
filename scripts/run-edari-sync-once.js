@@ -9,6 +9,7 @@ process.env.EDARI_WRITE_ENABLED = process.env.EDARI_WRITE_ENABLED || '0';
 process.env.EDARI_WRITE_INVOICES = process.env.EDARI_WRITE_INVOICES || '0';
 process.env.EDARI_WRITE_ACCOUNTS = process.env.EDARI_WRITE_ACCOUNTS || '0';
 process.env.EDARI_WRITE_VIA_NXSCRIPT = process.env.EDARI_WRITE_VIA_NXSCRIPT || '1';
+process.env.EDARI_MANUAL_SYNC_ONLY = process.env.EDARI_MANUAL_SYNC_ONLY || '1';
 
 const serverJsonPaths = [
   path.join(__dirname, '..', 'desktop-admin', 'server.json')
@@ -19,6 +20,8 @@ const serverJsonPaths = [
   const { createEdariCustomerAccount } = require('../server/lib/edari-accounts');
   const { createEdariInvoice, createEdariPayment } = require('../server/lib/edari-invoices');
   const { canWriteEdari } = require('../server/lib/edari-bridge');
+  const safety = require('../server/lib/edari-safety');
+  const { finalizeEdariWriteSession, prepareEdariWriteSession, tablesForSessionKinds } = require('../server/lib/edari-post-write');
   const result = await runEdariSyncWorker({
     handlers: {
       account: createEdariCustomerAccount,
@@ -26,6 +29,11 @@ const serverJsonPaths = [
       payment: createEdariPayment
     },
     canWriteEdari,
+    beginManualEdariSyncSession: safety.beginManualEdariSyncSession,
+    endManualEdariSyncSession: safety.endManualEdariSyncSession,
+    prepareEdariWriteSession,
+    finalizeEdariWriteSession,
+    tablesForSessionKinds,
     serverJsonPaths
   });
   if (result.skipped) {

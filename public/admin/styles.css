@@ -502,6 +502,69 @@ body {
 
 .edari-sync-bar[hidden] { display: none !important; }
 
+.edari-sync-panel { display: flex; flex-direction: column; gap: 14px; }
+
+.edari-sync-alert {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  color: #92400e;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.edari-sync-alert.ok {
+  background: rgba(22, 163, 74, 0.08);
+  border-color: rgba(22, 163, 74, 0.25);
+  color: #166534;
+}
+.edari-sync-alert.warn {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.2);
+  color: var(--danger);
+}
+
+.edari-sync-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.edari-stat {
+  min-width: 100px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.edari-stat .lbl { display: block; font-size: 0.75rem; color: var(--muted); font-weight: 600; }
+.edari-stat .val { font-size: 1.25rem; font-weight: 800; color: var(--primary-dark); }
+.edari-stat.warn .val { color: var(--danger); }
+
+.edari-sync-toolbar { align-items: center; }
+.edari-sync-spacer { flex: 1; min-width: 8px; }
+
+.edari-sync-table .sub { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+.edari-sync-table tr.row-error { background: rgba(220, 38, 38, 0.04); }
+
+.edari-kind-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.edari-kind-badge.kind-account { background: #dbeafe; color: #1d4ed8; }
+.edari-kind-badge.kind-invoice { background: #dcfce7; color: #15803d; }
+.edari-kind-badge.kind-payment { background: #fef3c7; color: #b45309; }
+
+.edari-sync-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.nav-edari { border-right: 2px solid rgba(220, 38, 38, 0.25); }
+
 /* Toolbar */
 .toolbar {
   display: flex;

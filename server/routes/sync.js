@@ -43,7 +43,10 @@ router.post('/heartbeat/:branchId', authSyncKey, (req, res) => {
 
 router.get('/edari/queue', authSyncKey, (req, res) => {
   const limit = Math.min(200, Number(req.query.limit) || 50);
-  res.json({ ok: true, items: listPendingSync(limit) });
+  const kinds = req.query.kinds
+    ? String(req.query.kinds).split(',').map((k) => k.trim()).filter(Boolean)
+    : null;
+  res.json({ ok: true, items: listPendingSync(limit, { kinds }) });
 });
 
 router.post('/edari/queue/:id/complete', authSyncKey, (req, res) => {

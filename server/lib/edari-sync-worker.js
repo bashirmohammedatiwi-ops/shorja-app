@@ -7,7 +7,7 @@ function resolveServerJsonPaths(extraPaths = []) {
   const paths = [...extraPaths];
   if (process.env.SHORJA_SERVER_JSON) paths.push(process.env.SHORJA_SERVER_JSON);
   paths.push(path.join(process.cwd(), 'server.json'));
-  paths.push(path.join(__dirname, '..', '..', 'desktop-admin', 'server.json'));
+  paths.push(path.join(__dirname, '..', 'desktop-admin', 'server.json'));
   if (process.execPath) {
     paths.push(path.join(path.dirname(process.execPath), 'server.json'));
   }
@@ -61,8 +61,10 @@ function logSync(message, detail) {
   }
 }
 
-async function fetchPending(serverUrl, extraPaths, limit = 50) {
-  const res = await fetch(`${serverUrl}/api/sync/edari/queue?limit=${limit}`, {
+async function fetchPending(serverUrl, extraPaths, limit = 100, kinds = null) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (Array.isArray(kinds) && kinds.length) params.set('kinds', kinds.join(','));
+  const res = await fetch(`${serverUrl}/api/sync/edari/queue?${params.toString()}`, {
     headers: getAuthHeaders(extraPaths),
     signal: AbortSignal.timeout(20000)
   });
@@ -87,12 +89,32 @@ async function completeItem(serverUrl, extraPaths, itemId, body) {
   return data;
 }
 
+function normalizeKinds(kinds) {
+  if (!Array.isArray(kinds) || !kinds.length) return null;
+  return kinds.map((k) => String(k).trim()).filter(Boolean);
+}
+
+function parsePayload(item) {
+  if (typeof item.payload === 'string') {
+    try { return JSON.parse(item.payload || '{}'); } catch { return {}; }
+  }
+  return item.payload || {};
+}
+
 async function runEdariSyncWorker({
   handlers,
   createEdariCustomerAccount,
   canWriteEdari,
+  beginManualEdariSyncSession,
+  endManualEdariSyncSession,
+  finalizeEdariWriteSession,
+  prepareEdariWriteSession,
+  tablesForSessionKinds,
   serverJsonPaths = [],
-  serverUrl = null
+  serverUrl = null,
+  kinds = null,
+  itemIds = null,
+  limit = 50
 } = {}) {
   const map = handlers || {
     account: createEdariCustomerAccount,
@@ -102,53 +124,102 @@ async function runEdariSyncWorker({
   if (process.platform !== 'win32') {
     return { skipped: true, reason: 'not_windows' };
   }
-  if (typeof canWriteEdari === 'function' && !canWriteEdari()) {
+  if (!beginManualEdariSyncSession && typeof canWriteEdari === 'function' && !canWriteEdari()) {
     return { skipped: true, reason: 'edari_writes_disabled' };
   }
 
+  const kindFilter = normalizeKinds(kinds);
   const baseUrl = (serverUrl || getServerUrl(serverJsonPaths)).replace(/\/$/, '');
   const syncKey = getSyncKey(serverJsonPaths);
   if (!syncKey) {
     return { skipped: true, reason: 'missing_sync_key' };
   }
 
-  const items = await fetchPending(baseUrl, serverJsonPaths, 50);
-  const workItems = items.filter((i) => i.status !== 'done');
+  const items = await fetchPending(baseUrl, serverJsonPaths, limit, kindFilter);
+  const idSet = Array.isArray(itemIds) && itemIds.length
+    ? new Set(itemIds.map(Number))
+    : null;
+  const workItems = items.filter((i) => {
+    if (i.status === 'done') return false;
+    if (idSet && !idSet.has(Number(i.id))) return false;
+    return true;
+  });
+
   if (!workItems.length) {
-    return { processed: 0, results: [], serverUrl: baseUrl };
+    return { processed: 0, okCount: 0, failCount: 0, results: [], serverUrl: baseUrl };
   }
 
-  logSync(`معالجة ${workItems.length} عنصر/عناصر`, { serverUrl: baseUrl });
+  const sessionKinds = kindFilter || [...new Set(workItems.map((i) => i.kind))];
+  const sessionOpts = {
+    accounts: sessionKinds.includes('account'),
+    invoices: sessionKinds.includes('invoice'),
+    payments: sessionKinds.includes('payment')
+  };
+
+  if (beginManualEdariSyncSession) beginManualEdariSyncSession(sessionOpts);
+
+  const sessionTables = tablesForSessionKinds
+    ? tablesForSessionKinds(sessionOpts)
+    : (() => {
+      const tables = [];
+      if (sessionOpts.accounts) tables.push('File11n');
+      if (sessionOpts.invoices) tables.push('File15n', 'file14n', 'File12n', 'File13n');
+      if (sessionOpts.payments) tables.push('File12n');
+      return [...new Set(tables)];
+    })();
+
+  logSync(`معالجة يدوية ${workItems.length} عنصر/عناصر`, { serverUrl: baseUrl, kinds: sessionKinds });
   const results = [];
 
-  for (const item of workItems) {
-    const handler = map[item.kind];
-    if (!handler) {
-      results.push({ id: item.id, ok: false, error: `لا معالج لـ ${item.kind}` });
-      continue;
+  try {
+    const prep = prepareEdariWriteSession || finalizeEdariWriteSession;
+    if (prep && sessionTables.length) {
+      await prep({
+        tables: sessionTables,
+        rebuildShorjaParent: sessionOpts.accounts
+      });
+      logSync('تهيئة آمنة قبل الترحيل (AUTOINC + Sub)', { tables: sessionTables });
     }
-    try {
-      const payload = JSON.parse(item.payload || '{}');
-      const created = await handler(payload);
-      await completeItem(baseUrl, serverJsonPaths, item.id, created);
-      results.push({ id: item.id, kind: item.kind, ...created, reported: true });
-      if (created.ok) {
-        logSync(`تمت مزامنة #${item.id} (${item.kind})`, created.edariNum || created.edariBillNum || created.edariSeq || '');
-      } else {
-        logSync(`فشلت مزامنة #${item.id} (${item.kind})`, created.error);
+
+    for (const item of workItems) {
+      const handler = map[item.kind];
+      if (!handler) {
+        results.push({ id: item.id, ok: false, error: `لا معالج لـ ${item.kind}` });
+        continue;
       }
-    } catch (err) {
       try {
-        await completeItem(baseUrl, serverJsonPaths, item.id, { ok: false, error: err.message });
-      } catch (reportErr) {
-        logSync(`تعذر إبلاغ السيرفر عن فشل #${item.id}`, reportErr.message);
+        const created = await handler(parsePayload(item));
+        await completeItem(baseUrl, serverJsonPaths, item.id, created);
+        results.push({ id: item.id, kind: item.kind, ...created, reported: true });
+        if (created.ok) {
+          logSync(`تمت مزامنة #${item.id} (${item.kind})`, created.edariNum || created.edariBillNum || created.edariSeq || '');
+        } else {
+          logSync(`فشلت مزامنة #${item.id} (${item.kind})`, created.error);
+        }
+      } catch (err) {
+        try {
+          await completeItem(baseUrl, serverJsonPaths, item.id, { ok: false, error: err.message });
+        } catch (reportErr) {
+          logSync(`تعذر إبلاغ السيرفر عن فشل #${item.id}`, reportErr.message);
+        }
+        results.push({ id: item.id, kind: item.kind, ok: false, error: err.message });
+        logSync(`خطأ في #${item.id} (${item.kind})`, err.message);
       }
-      results.push({ id: item.id, kind: item.kind, ok: false, error: err.message });
-      logSync(`خطأ في #${item.id} (${item.kind})`, err.message);
     }
+
+    if (finalizeEdariWriteSession && sessionTables.length) {
+      await finalizeEdariWriteSession({
+        tables: sessionTables,
+        rebuildShorjaParent: sessionOpts.accounts
+      });
+      logSync('إنهاء آمن بعد الترحيل (AUTOINC + Sub)');
+    }
+  } finally {
+    if (endManualEdariSyncSession) endManualEdariSyncSession();
   }
 
-  return { processed: results.length, results, serverUrl: baseUrl };
+  const okCount = results.filter((r) => r.ok).length;
+  return { processed: results.length, okCount, failCount: results.length - okCount, results, serverUrl: baseUrl };
 }
 
 module.exports = {

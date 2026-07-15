@@ -5,7 +5,8 @@ const { resolveEdariMaterial, cacheEdariMaterial, mapEdariToShorjaProduct } = re
 const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment } = require('../lib/invoices');
 const { listAccounts, createAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { getEdariParentInfo } = require('../lib/edari-accounts');
-const { listPendingSync, processEdariQueue, syncAccountToEdari, syncQueueStats } = require('../lib/edari-sync');
+const { listPendingSync, listPendingSyncEnriched, processEdariQueue, syncAccountToEdari, syncQueueStats } = require('../lib/edari-sync');
+const { isManualSyncOnlyMode } = require('../lib/edari-safety');
 const { canWriteEdari } = require('../lib/edari-bridge');
 const { publishPricePackage, listPackages, getLatestVersion } = require('../lib/prices');
 const { parseProductsCsv, invoicePrintHtml } = require('../lib/export');
@@ -243,15 +244,26 @@ router.get('/edari/parent', async (_req, res) => {
 });
 
 router.get('/edari/sync-queue', (req, res) => {
-  const limit = Math.min(200, Number(req.query.limit) || 50);
-  res.json({ ok: true, items: listPendingSync(limit), canWrite: canWriteEdari() });
+  const limit = Math.min(200, Number(req.query.limit) || 100);
+  const kinds = req.query.kinds
+    ? String(req.query.kinds).split(',').map((k) => k.trim()).filter(Boolean)
+    : null;
+  res.json({
+    ok: true,
+    stats: syncQueueStats(),
+    items: listPendingSyncEnriched(limit, { kinds }),
+    manualSyncOnly: isManualSyncOnlyMode(),
+    canWrite: canWriteEdari()
+  });
 });
 
 router.post('/edari/sync-queue/process', async (req, res) => {
   try {
     const limit = Math.min(100, Number(req.body?.limit) || 20);
-    const results = await processEdariQueue(limit);
-    res.json({ ok: true, results, canWrite: canWriteEdari() });
+    const kinds = Array.isArray(req.body?.kinds) ? req.body.kinds : null;
+    const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : null;
+    const out = await processEdariQueue(limit, { kinds, itemIds });
+    res.json({ ok: true, ...out, canWrite: canWriteEdari() });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }

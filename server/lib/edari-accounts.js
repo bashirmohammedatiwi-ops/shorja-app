@@ -1,11 +1,18 @@
 const iconv = require('iconv-lite');
 const { runQuery, runExecute, rowObjects, canWriteEdari } = require('./edari-bridge');
 const { canWriteEdariAccounts } = require('./edari-safety');
+const { syncAutoIncTables, rebuildShorjaParentTree, withEdariRetry } = require('./edari-post-write');
 
 const PARENT_NUM = String(process.env.EDARI_SHORJA_PARENT_NUM || '12111').trim();
 const PARENT_NAME_HINT = String(process.env.EDARI_SHORJA_PARENT_NAME || 'زبائن محل الشورجه').trim();
+/** نطاق أرقام حسابات الشورجة — منفصل عن أرقام الإداري اليدوية تحت نفس الأب */
+const SHORJA_CHILD_SUFFIX_FLOOR = Number(process.env.EDARI_SHORJA_CHILD_SUFFIX_FLOOR || 9001);
 
 let cachedParent = null;
+
+function clearParentCache() {
+  cachedParent = null;
+}
 
 function sqlEscAscii(s) {
   return String(s ?? '').replace(/'/g, "''");
@@ -80,6 +87,7 @@ async function loadParentAccount() {
 }
 
 async function nextAccountSeq() {
+  await syncAutoIncTables(['File11n']);
   const r = await runQuery('SELECT MAX(Seq) AS maxSeq FROM File11n');
   if (!r.ok) throw new Error(r.error || 'فشل جلب Seq');
   const rows = rowObjects(r);
@@ -95,15 +103,38 @@ async function nextChildNum(parent) {
   );
   if (!r.ok) throw new Error(r.error || 'فشل جلب أرقام الحسابات الفرعية');
   const rows = rowObjects(r);
-  let maxSuffix = 0;
+  let maxSuffix = SHORJA_CHILD_SUFFIX_FLOOR - 1;
   for (const row of rows) {
     const num = String(row.Num ?? row.num ?? '');
     if (!num.startsWith(prefix)) continue;
     const suffix = num.slice(prefix.length);
     const n = Number(suffix.replace(/\D/g, '')) || 0;
-    if (n > maxSuffix) maxSuffix = n;
+    if (n >= SHORJA_CHILD_SUFFIX_FLOOR && n > maxSuffix) maxSuffix = n;
   }
   return `${prefix}${maxSuffix + 1}`;
+}
+
+function bumpChildNum(num, parentPrefix) {
+  const prefix = String(parentPrefix);
+  const suffix = Number(String(num).slice(prefix.length).replace(/\D/g, '') || SHORJA_CHILD_SUFFIX_FLOOR);
+  return `${prefix}${suffix + 1}`;
+}
+
+async function accountNumExists(num) {
+  const r = await runQuery(
+    `SELECT Seq FROM File11n WHERE Num = '${sqlEscAscii(num)}'`
+  );
+  if (!r.ok) throw new Error(r.error || 'فشل التحقق من رقم الحساب');
+  return rowObjects(r).length > 0;
+}
+
+async function reserveChildNum(parent) {
+  let num = await nextChildNum(parent);
+  for (let i = 0; i < 20; i++) {
+    if (!(await accountNumExists(num))) return num;
+    num = bumpChildNum(num, parent.num);
+  }
+  throw new Error('تعذر حجز رقم حساب فرعي فريد');
 }
 
 /**
@@ -117,9 +148,6 @@ async function createEdariCustomerAccount({ name, phone = '', address = '', note
     return { ok: false, queued: true, error: 'إنشاء حسابات Edari معطّل — الإداري الأصلي محمي (EDARI_WRITE_ACCOUNTS=0)' };
   }
 
-  const parent = await loadParentAccount();
-  const seq = await nextAccountSeq();
-  const num = await nextChildNum(parent);
   const displayName = normalizeName(name);
   if (!displayName) throw new Error('اسم الحساب مطلوب');
 
@@ -127,26 +155,50 @@ async function createEdariCustomerAccount({ name, phone = '', address = '', note
   const addr = normalizeAddress(address, phone);
   const remarks = normalizeName(notes);
 
-  const insertSql = `INSERT INTO File11n (Seq, Num, Name1, Master, SubCount, Bal, Tot1, Tot2, Dept, Cod, Dest, Address, Remarks)
-    VALUES (${seq}, '${sqlEscAscii(num)}', ${edariSqlLiteral(name1)}, ${Number(parent.seq)}, 0, 0, 0, 0, 0, 1, 4, ${edariSqlLiteral(addr)}, ${edariSqlLiteral(remarks)})`;
+  return withEdariRetry('createEdariCustomerAccount', async () => {
+    clearParentCache();
+    const parent = await loadParentAccount();
+    const num = await reserveChildNum(parent);
 
-  const ins = await runExecute(insertSql);
-  if (!ins.ok) {
-    return { ok: false, error: ins.error || 'فشل إنشاء الحساب في إداري' };
-  }
+    await syncAutoIncTables(['File11n']);
 
-  await runExecute(`UPDATE File11n SET SubCount = SubCount + 1 WHERE Seq = ${Number(parent.seq)}`);
+    const insertSql = `INSERT INTO File11n (Num, Name1, Master, SubCount, Bal, Tot1, Tot2, Dept, Cod, Dest, Address, Remarks)
+      VALUES ('${sqlEscAscii(num)}', ${edariSqlLiteral(name1)}, ${Number(parent.seq)}, 0, 0, 0, 0, 0, 1, 4, ${edariSqlLiteral(addr)}, ${edariSqlLiteral(remarks)})`;
 
-  cachedParent = { ...parent, subCount: parent.subCount + 1 };
+    const ins = await runExecute(insertSql);
+    if (!ins.ok) {
+      return { ok: false, error: ins.error || 'فشل إنشاء الحساب في إداري' };
+    }
 
-  return {
-    ok: true,
-    edariSeq: String(seq),
-    edariNum: num,
-    edariName: name1,
-    parentSeq: parent.seq,
-    parentNum: parent.num
-  };
+    const seqRes = await runQuery(
+      `SELECT Seq, Num, Name1 FROM File11n WHERE Num = '${sqlEscAscii(num)}' AND Master = ${Number(parent.seq)}`
+    );
+    if (!seqRes.ok) {
+      return { ok: false, error: seqRes.error || 'فشل قراءة الحساب الجديد' };
+    }
+    const created = rowObjects(seqRes)[0];
+    if (!created) {
+      return { ok: false, error: 'لم يُعثر على الحساب بعد الإنشاء' };
+    }
+    const seq = Number(created.Seq ?? created.seq);
+
+    const subFix = await rebuildShorjaParentTree();
+    if (!subFix.ok) {
+      return { ok: false, error: subFix.error || 'فشل تحديث شجرة الأب في إداري' };
+    }
+
+    await syncAutoIncTables(['File11n']);
+    clearParentCache();
+
+    return {
+      ok: true,
+      edariSeq: String(seq),
+      edariNum: num,
+      edariName: name1,
+      parentSeq: parent.seq,
+      parentNum: parent.num
+    };
+  });
 }
 
 async function getEdariParentInfo() {
@@ -175,6 +227,7 @@ async function alignEdariAccountFields(seq, { name, phone = '', address = '', no
 module.exports = {
   PARENT_NUM,
   PARENT_NAME_HINT,
+  clearParentCache,
   loadParentAccount,
   createEdariCustomerAccount,
   getEdariParentInfo,

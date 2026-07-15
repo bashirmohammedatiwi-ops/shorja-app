@@ -54,7 +54,11 @@ function syncQueueStats() {
   };
 }
 
-function listPendingSync(limit = 50) {
+function listPendingSync(limit = 50, { kinds = null } = {}) {
+  const kindList = Array.isArray(kinds) && kinds.length
+    ? kinds.map((k) => `'${String(k).replace(/'/g, "''")}'`).join(', ')
+    : null;
+  const kindFilter = kindList ? `AND q.kind IN (${kindList})` : '';
   return db.prepare(`
     SELECT q.* FROM edari_sync_queue q
     LEFT JOIN invoices i ON q.kind = 'invoice' AND q.ref_type = 'invoice' AND i.id = q.ref_id
@@ -70,8 +74,64 @@ function listPendingSync(limit = 50) {
         AND COALESCE(p.edari_sync_status, '') = 'synced'
         AND COALESCE(p.edari_journal_seq, '') != ''
       )
+      ${kindFilter}
     ORDER BY q.id ASC LIMIT ?
   `).all(limit);
+}
+
+function enrichQueueItem(item) {
+  const payload = (() => {
+    try { return JSON.parse(item.payload || '{}'); } catch { return {}; }
+  })();
+  let title = '';
+  let subtitle = '';
+  let amount = null;
+  let refLabel = '';
+
+  if (item.kind === 'account' && item.ref_type === 'account') {
+    const acc = db.prepare('SELECT name, phone, edari_num FROM accounts WHERE id = ?').get(item.ref_id);
+    title = acc?.name || payload.name || `حساب #${item.ref_id}`;
+    subtitle = acc?.phone || payload.phone || '';
+    refLabel = acc?.edari_num ? `إداري: ${acc.edari_num}` : 'غير مربوط';
+  } else if (item.kind === 'invoice' && item.ref_type === 'invoice') {
+    const inv = db.prepare('SELECT invoice_no, customer_name, total, kind FROM invoices WHERE id = ?').get(item.ref_id);
+    title = inv?.invoice_no || payload.invoiceNo || `فاتورة #${item.ref_id}`;
+    subtitle = inv?.customer_name || payload.customerName || '';
+    amount = inv?.total ?? payload.total;
+    refLabel = inv?.kind === 'return' ? 'مرتجع' : (inv?.kind === 'issue' ? 'إخراج مخزون' : 'بيع');
+  } else if (item.kind === 'payment' && item.ref_type === 'payment') {
+    const pay = db.prepare(`
+      SELECT p.payment_no, p.amount, p.notes, a.name AS account_name
+      FROM payments p LEFT JOIN accounts a ON a.id = p.account_id
+      WHERE p.id = ?
+    `).get(item.ref_id);
+    title = pay?.payment_no || payload.paymentNo || `تسديد #${item.ref_id}`;
+    subtitle = pay?.account_name || '';
+    amount = pay?.amount ?? payload.amount;
+    refLabel = 'قيد تسديد';
+  } else {
+    title = `${item.kind} #${item.ref_id}`;
+  }
+
+  return {
+    id: item.id,
+    kind: item.kind,
+    refType: item.ref_type,
+    refId: item.ref_id,
+    status: item.status,
+    error: item.error || '',
+    attempts: item.attempts,
+    updatedAt: item.updated_at,
+    title,
+    subtitle,
+    amount,
+    refLabel,
+    payload
+  };
+}
+
+function listPendingSyncEnriched(limit = 100, options = {}) {
+  return listPendingSync(limit, options).map(enrichQueueItem);
 }
 
 function markSyncItem(id, status, error = '') {
@@ -226,20 +286,31 @@ async function processPaymentSyncItem(item) {
   return { ok: true, ...result };
 }
 
-async function processEdariQueue(limit = 20) {
+async function processEdariQueue(limit = 20, { kinds = null, itemIds = null } = {}) {
   if (!canWriteEdari()) {
     return [{ ok: false, skipped: true, reason: 'edari_writes_disabled' }];
   }
-  const items = listPendingSync(limit);
+  let items = listPendingSync(limit, { kinds });
+  if (Array.isArray(itemIds) && itemIds.length) {
+    const idSet = new Set(itemIds.map(Number));
+    items = items.filter((item) => idSet.has(Number(item.id)));
+  }
   const results = [];
+  let wroteAccounts = false;
+  let wroteInvoices = false;
+  let wrotePayments = false;
+
   for (const item of items) {
     try {
       if (item.kind === 'account') {
         results.push({ id: item.id, ...(await processAccountSyncItem(item)) });
+        wroteAccounts = true;
       } else if (item.kind === 'invoice') {
         results.push({ id: item.id, ...(await processInvoiceSyncItem(item)) });
+        wroteInvoices = true;
       } else if (item.kind === 'payment') {
         results.push({ id: item.id, ...(await processPaymentSyncItem(item)) });
+        wrotePayments = true;
       } else {
         markSyncItem(item.id, 'error', `نوع غير مدعوم: ${item.kind}`);
         results.push({ id: item.id, ok: false, error: item.kind });
@@ -249,7 +320,8 @@ async function processEdariQueue(limit = 20) {
       results.push({ id: item.id, ok: false, error: err.message });
     }
   }
-  return results;
+
+  return { results, wroteAccounts, wroteInvoices, wrotePayments };
 }
 
 async function syncAccountToEdari(account, data = {}) {
@@ -360,6 +432,8 @@ function queuePaymentEdariSync(payment, account) {
 module.exports = {
   enqueueEdariSync,
   listPendingSync,
+  listPendingSyncEnriched,
+  enrichQueueItem,
   getSyncItem,
   syncQueueStats,
   processEdariQueue,

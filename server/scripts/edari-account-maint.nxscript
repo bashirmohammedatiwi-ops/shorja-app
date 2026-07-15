@@ -1,0 +1,101 @@
+<%
+function UrlDecode(const s: string): string;
+var
+  i: integer;
+  hex: string;
+begin
+  Result := '';
+  i := 1;
+  while i <= Length(s) do
+  begin
+    if s[i] = '+' then
+    begin
+      Result := Result + ' ';
+      Inc(i);
+    end
+    else if (s[i] = '%') and (i + 2 <= Length(s)) then
+    begin
+      hex := Copy(s, i + 1, 2);
+      Result := Result + Chr(StrToInt('$' + hex));
+      i := i + 3;
+    end
+    else
+    begin
+      Result := Result + s[i];
+      Inc(i);
+    end;
+  end;
+end;
+
+var
+  aSession: TnxSession;
+  adb: TnxDatabase;
+  aTable: TnxTable;
+  aliasName, maintKey, tableName: string;
+  seqVal, autoIncVal: integer;
+begin
+  aliasName := UrlDecode(Trim(Request('alias')));
+  maintKey := UrlDecode(Trim(Request('key')));
+  tableName := UrlDecode(Trim(Request('table')));
+  seqVal := StrToIntDef(UrlDecode(Trim(Request('seq'))), 0);
+  autoIncVal := StrToIntDef(UrlDecode(Trim(Request('autoinc'))), -1);
+
+  if (aliasName = '') or (tableName = '') then
+  begin
+    Output.Write('{"ok":false,"error":"alias and table required"}');
+    Exit;
+  end;
+
+  if maintKey <> 'shorja-maintenance' then
+  begin
+    Output.Write('{"ok":false,"error":"maintenance key required"}');
+    Exit;
+  end;
+
+  if (seqVal <= 0) and (autoIncVal < 0) then
+  begin
+    Output.Write('{"ok":false,"error":"seq or autoinc required"}');
+    Exit;
+  end;
+
+  if (tableName <> 'File11n') and (tableName <> 'File12n') and (tableName <> 'File13n')
+     and (tableName <> 'File14n') and (tableName <> 'File15n') and (tableName <> 'file14n') then
+  begin
+    Output.Write('{"ok":false,"error":"table not allowed"}');
+    Exit;
+  end;
+
+  aSession := TnxSession.Create(nil);
+  adb := TnxDatabase.Create(nil);
+  aTable := TnxTable.Create(nil);
+  try
+    aSession.ServerEngine := ServerEngine;
+    aSession.Active := true;
+    adb.AliasName := aliasName;
+    adb.Session := aSession;
+    adb.Open;
+    aTable.Database := adb;
+    aTable.TableName := tableName;
+    aTable.Open;
+
+    if autoIncVal >= 0 then
+    begin
+      aTable.SetAutoIncValue(autoIncVal);
+      Output.Write('{"ok":true,"table":"'+tableName+'","autoinc":'+IntToStr(autoIncVal)+',"viaResetAutoInc":true}');
+      Exit;
+    end;
+
+    if not aTable.Locate('Seq', seqVal, []) then
+    begin
+      Output.Write('{"ok":false,"error":"Seq not found"}');
+      Exit;
+    end;
+    aTable.Delete;
+    Output.Write('{"ok":true,"table":"'+tableName+'","deletedSeq":'+IntToStr(seqVal)+',"viaAccountMaint":true}');
+  finally
+    aTable.Free;
+    adb.Free;
+    aSession.Free;
+  end;
+end.
+%>

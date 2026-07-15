@@ -29,21 +29,16 @@ function getEdariLibPath(name) {
 function loadPackagedHandlers() {
   const accountsPath = getEdariLibPath('edari-accounts.js');
   const invoicesPath = getEdariLibPath('edari-invoices.js');
-  const lookupPath = getEdariLibPath('edari-lookup.js');
   delete require.cache[require.resolve(accountsPath)];
   delete require.cache[require.resolve(invoicesPath)];
-  delete require.cache[require.resolve(lookupPath)];
   return {
     account: require(accountsPath).createEdariCustomerAccount,
     invoice: require(invoicesPath).createEdariInvoice,
     payment: require(invoicesPath).createEdariPayment
   };
 }
-const SYNC_HANDLERS = {
-  account: null,
-  invoice: null,
-  payment: null
-};
+
+const SYNC_HANDLERS = { account: null, invoice: null, payment: null };
 
 function loadHandlers() {
   if (!SYNC_HANDLERS.account) {
@@ -60,12 +55,38 @@ function loadHandlers() {
   return SYNC_HANDLERS;
 }
 
-async function runEdariSyncWorkerDesktop({ canWriteEdari }) {
+function loadSafetyAndPostWrite() {
+  const safetyPath = getEdariLibPath('edari-safety.js');
+  const postPath = getEdariLibPath('edari-post-write.js');
+  delete require.cache[require.resolve(safetyPath)];
+  delete require.cache[require.resolve(postPath)];
+  return {
+    ...require(safetyPath),
+    prepareEdariWriteSession: require(postPath).prepareEdariWriteSession,
+    finalizeEdariWriteSession: require(postPath).finalizeEdariWriteSession,
+    tablesForSessionKinds: require(postPath).tablesForSessionKinds
+  };
+}
+
+async function runEdariSyncWorkerDesktop(options = {}) {
   const handlers = loadHandlers();
+  const bridgePath = getEdariLibPath('edari-bridge.js');
+  delete require.cache[require.resolve(bridgePath)];
+  const { canWriteEdari } = require(bridgePath);
+  const safety = loadSafetyAndPostWrite();
+
   return runEdariSyncWorker({
     handlers,
     canWriteEdari,
-    serverJsonPaths: getServerJsonPaths()
+    beginManualEdariSyncSession: safety.beginManualEdariSyncSession,
+    endManualEdariSyncSession: safety.endManualEdariSyncSession,
+    prepareEdariWriteSession: safety.prepareEdariWriteSession,
+    finalizeEdariWriteSession: safety.finalizeEdariWriteSession,
+    tablesForSessionKinds: safety.tablesForSessionKinds,
+    serverJsonPaths: getServerJsonPaths(),
+    kinds: options.kinds || null,
+    itemIds: options.itemIds || null,
+    limit: options.limit || 100
   });
 }
 

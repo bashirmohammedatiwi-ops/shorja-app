@@ -48,6 +48,10 @@
         "to": "edari/edari-safety.js"
       },
       {
+        "from": "../server/lib/edari-post-write.js",
+        "to": "edari/edari-post-write.js"
+      },
+      {
         "from": "../server/lib/edari-sync-worker.js",
         "to": "edari/edari-sync-worker.js"
       },
@@ -62,6 +66,14 @@
       {
         "from": "../server/scripts/edari-maintenance.nxscript",
         "to": "edari/edari-maintenance.nxscript"
+      },
+      {
+        "from": "../server/scripts/edari-account-maint.nxscript",
+        "to": "edari/edari-account-maint.nxscript"
+      },
+      {
+        "from": "../server/scripts/edari-tree-repair.nxscript",
+        "to": "edari/edari-tree-repair.nxscript"
       },
       {
         "from": "../server/scripts/edari-execute.ps1",
