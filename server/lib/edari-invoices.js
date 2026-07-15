@@ -163,6 +163,12 @@ async function adjustMaterialStock(matSeq, qtyDelta) {
   return runExecute(sql);
 }
 
+async function maxJournalSeq() {
+  const r = await runQuery('SELECT MAX(Seq) AS maxSeq FROM File12n');
+  if (!r.ok) throw new Error(r.error || 'فشل قراءة Seq من File12n');
+  return Number(rowObjects(r)[0]?.maxSeq ?? rowObjects(r)[0]?.MAXSEQ ?? 0);
+}
+
 async function insertJournalEntry({
   acc, dateStr, amount, isDebit, exp1, billNum = 0, billSeq = 0, billKind = 0
 }) {
@@ -172,22 +178,38 @@ async function insertJournalEntry({
   return runExecute(sql);
 }
 
-async function lookupJournalSeq({ acc, amount, isDebit, billNum = 0, billSeq = 0, exp1 = '' }) {
-  const expFilter = exp1
-    ? ` AND Exp1 = ${edariSqlLiteral(exp1)}`
-    : '';
-  const r = await runQuery(`
-    SELECT TOP 1 Seq FROM File12n
-    WHERE Acc = ${Number(acc)} AND Am = ${roundAmount(amount)}
-      AND Dept = ${isDebit ? 'True' : 'False'}
-      AND BillNum = ${Number(billNum || 0)} AND BillSeq = ${Number(billSeq || 0)}
-      ${expFilter}
-    ORDER BY Seq DESC
-  `);
-  if (!r.ok) throw new Error(r.error || 'فشل قراءة قيد اليومية');
-  const row = rowObjects(r)[0];
-  if (!row) throw new Error('لم يُعثر على قيد اليومية بعد الإدراج');
-  return Number(row.Seq ?? row.seq);
+async function lookupJournalSeq({ acc, amount, isDebit, billNum = 0, billSeq = 0 }) {
+  const deptLit = isDebit ? 'True' : 'False';
+  const attempts = [
+    `SELECT TOP 1 Seq FROM File12n WHERE BillSeq = ${Number(billSeq || 0)} AND Acc = ${Number(acc)} AND Am = ${roundAmount(amount)} AND Dept = ${deptLit} ORDER BY Seq DESC`,
+    `SELECT TOP 1 Seq FROM File12n WHERE BillSeq = ${Number(billSeq || 0)} AND Acc = ${Number(acc)} AND Am = ${roundAmount(amount)} ORDER BY Seq DESC`,
+    `SELECT TOP 1 Seq FROM File12n WHERE BillSeq = ${Number(billSeq || 0)} AND Acc = ${Number(acc)} ORDER BY Seq DESC`,
+    `SELECT TOP 1 Seq FROM File12n WHERE Acc = ${Number(acc)} AND Am = ${roundAmount(amount)} AND Dept = ${deptLit} ORDER BY Seq DESC`
+  ];
+  for (const sql of attempts) {
+    const r = await runQuery(sql);
+    if (!r.ok) throw new Error(r.error || 'فشل قراءة قيد اليومية');
+    const row = rowObjects(r)[0];
+    if (row) return Number(row.Seq ?? row.seq);
+  }
+  return 0;
+}
+
+async function insertJournalEntryWithSeq(args) {
+  const before = await maxJournalSeq();
+  const ins = await insertJournalEntry(args);
+  if (!ins.ok) return ins;
+  const after = await maxJournalSeq();
+  if (after > before) return { ok: true, seq: after };
+  const seq = await lookupJournalSeq({
+    acc: args.acc,
+    amount: args.amount,
+    isDebit: args.isDebit,
+    billNum: args.billNum,
+    billSeq: args.billSeq
+  });
+  if (seq > 0) return { ok: true, seq };
+  return { ok: false, error: 'لم يُعثر على قيد اليومية بعد الإدراج' };
 }
 
 async function postJournalPair({
@@ -196,23 +218,17 @@ async function postJournalPair({
   const am = roundAmount(amount);
   if (am <= 0) return { ok: true, skipped: true };
   await syncAutoIncTables(['File12n']);
-  const d1 = await insertJournalEntry({
+  const d1 = await insertJournalEntryWithSeq({
     acc: debitAcc, dateStr, amount: am, isDebit: true,
     exp1, billNum, billSeq, billKind
   });
   if (!d1.ok) return d1;
-  const debitSeq = await lookupJournalSeq({
-    acc: debitAcc, amount: am, isDebit: true, billNum, billSeq, exp1
-  });
-  const d2 = await insertJournalEntry({
+  const d2 = await insertJournalEntryWithSeq({
     acc: creditAcc, dateStr, amount: am, isDebit: false,
     exp1, billNum, billSeq, billKind
   });
   if (!d2.ok) return d2;
-  const creditSeq = await lookupJournalSeq({
-    acc: creditAcc, amount: am, isDebit: false, billNum, billSeq, exp1
-  });
-  return { ok: true, journalSeqStart: debitSeq, journalSeqEnd: creditSeq };
+  return { ok: true, journalSeqStart: d1.seq, journalSeqEnd: d2.seq };
 }
 
 function invoiceAmounts(payload) {
