@@ -21,6 +21,7 @@ const CATEGORY_ICONS = {
 const PAGE_TITLES = {
   dashboard: ['لوحة اليوم', 'ملخص مبيعات الفروع والحسابات'],
   invoices: ['فواتير المبيعات', 'سجل المبيعات والمرتجعات'],
+  delegates: ['المندوبين', 'فواتير التجهيز الجاهزة للترحيل إلى الإداري'],
   products: ['المنتجات', 'استعراض وإدارة مخزون المنتجات'],
   prices: ['إدارة الأسعار', 'حدد المنتجات بالباركود ثم ارفعها للفروع'],
   accounts: ['حسابات العملاء', 'الديون وحدود الائتمان'],
@@ -123,6 +124,7 @@ document.querySelectorAll('.nav').forEach((btn) => {
     const loaders = {
       dashboard: loadDashboard,
       invoices: loadInvoices,
+      delegates: loadDelegates,
       products: loadProducts,
       prices: loadPrices,
       accounts: loadAccounts,
@@ -379,6 +381,7 @@ async function triggerEdariSyncNow() {
 function edariSyncLabel(status, error = '') {
   const title = error ? ` title="${esc(error)}"` : '';
   if (status === 'synced') return `<span style="color:var(--ok)"${title}>متزامن</span>`;
+  if (status === 'hold') return `<span style="color:var(--warn)"${title}>بانتظار التجهيز</span>`;
   if (status === 'pending') return `<span style="color:var(--warn)"${title}>بانتظار الإداري</span>`;
   if (status === 'error') return `<span style="color:var(--danger)"${title}>خطأ</span>`;
   return `<span style="color:var(--muted)"${title}>—</span>`;
@@ -412,6 +415,60 @@ async function loadInvoices() {
 
 document.getElementById('invDate')?.addEventListener('change', loadInvoices);
 document.getElementById('invSearch')?.addEventListener('input', debounce(loadInvoices, 250));
+
+async function loadDelegates() {
+  const date = document.getElementById('delegateDate')?.value || '';
+  const q = document.getElementById('delegateSearch')?.value || '';
+  const params = new URLSearchParams();
+  if (date) { params.set('from', date); params.set('to', date); }
+  if (q) params.set('q', q);
+  const data = await api(`/admin/delegate-invoices?${params.toString()}`);
+  const stats = data.stats || {};
+  const statsEl = document.getElementById('delegateStats');
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <div class="kpi"><div class="lbl">جاهزة للترحيل</div><div class="val">${stats.total || 0}</div></div>
+      <div class="kpi warn"><div class="lbl">بانتظار الإداري</div><div class="val">${stats.pending || 0}</div></div>
+      <div class="kpi"><div class="lbl">مرحّلة</div><div class="val">${stats.synced || 0}</div></div>`;
+  }
+  const rows = data.invoices || [];
+  document.getElementById('delegateTable').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>المصدر</th><th>رقم الفاتورة</th><th>طلب التجهيز</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>الإداري</th><th></th>
+      </tr></thead>
+      <tbody>${rows.map((i) => `
+        <tr>
+          <td>${esc(i.sourceLabel || (i.prepMode === 'warehouse' ? 'شورجة' : 'مندوب'))}</td>
+          <td><button type="button" class="linkish" data-invoice-id="${i.id}">${esc(i.invoiceNo)}</button></td>
+          <td dir="ltr">${esc(i.prepOrderNo || '—')}</td>
+          <td>${esc(i.customerName || 'نقدي')}</td>
+          <td>${esc(i.invoiceDate)}</td>
+          <td dir="ltr">${fmt(i.total)}</td>
+          <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}${i.edariBillNum ? `<br><small dir="ltr">${esc(i.edariBillNum)}</small>` : ''}</td>
+          <td>${i.edariSyncStatus === 'synced' && i.edariBillSeq
+            ? '<span style="color:var(--ok)">✓</span>'
+            : `<button type="button" class="btn btn-secondary btn-sm" data-queue-edari="${i.id}">ترحيل للإداري</button>`}
+          </td>
+        </tr>`).join('') || '<tr><td colspan="8">لا توجد فواتير مجهّزة بانتظار العرض</td></tr>'}
+      </tbody>
+    </table>`;
+  document.getElementById('delegateTable').querySelectorAll('[data-invoice-id]').forEach((btn) => {
+    btn.addEventListener('click', () => openInvoice(Number(btn.dataset.invoiceId)));
+  });
+  document.getElementById('delegateTable').querySelectorAll('[data-queue-edari]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api(`/admin/delegate-invoices/${btn.dataset.queueEdari}/queue-edari`, { method: 'POST' });
+        toast('أُضيفت الفاتورة لطابور الإداري — راجع «مزامنة الإداري» للترحيل');
+        loadDelegates();
+      } catch (err) { toast(err.message); }
+    });
+  });
+}
+
+document.getElementById('delegateDate')?.addEventListener('change', loadDelegates);
+document.getElementById('delegateSearch')?.addEventListener('input', debounce(loadDelegates, 250));
 
 async function openInvoice(id) {
   try {

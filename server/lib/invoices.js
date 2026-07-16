@@ -350,7 +350,7 @@ async function createInvoice(data, user) {
     invoice = loadInvoice(invoiceId);
   }
 
-  if (process.env.EDARI_SYNC_EVENTS !== '0' && invoice.kind !== 'issue') {
+  if (process.env.EDARI_SYNC_EVENTS !== '0' && invoice.kind !== 'issue' && invoice.prepMode !== 'warehouse') {
     const acc = invoice.accountId ? getAccount(invoice.accountId) : null;
     const branch = db.prepare('SELECT name FROM branches WHERE id = ?').get(invoice.branchId);
     queueInvoiceEdariSync({
@@ -358,6 +358,13 @@ async function createInvoice(data, user) {
       edariSeq: acc?.edariSeq || '',
       branchName: branch?.name || ''
     });
+  } else if (invoice.prepMode === 'warehouse') {
+    db.prepare(`
+      UPDATE invoices
+      SET edari_sync_status = 'hold', edari_sync_error = 'بانتظار تجهيز المخزن'
+      WHERE id = ?
+    `).run(invoice.id);
+    invoice = loadInvoice(invoiceId);
   }
   return invoice;
 }

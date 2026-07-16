@@ -219,6 +219,13 @@ function initSchema() {
   const branchId = Number(branchRow.id);
   db.prepare('UPDATE branches SET name = ? WHERE id = ?').run(branchName, branchId);
 
+  const delegateCode = 'DELEGATE';
+  if (!db.prepare('SELECT id FROM branches WHERE code = ?').get(delegateCode)) {
+    db.prepare('INSERT INTO branches (code, name) VALUES (?, ?)').run(delegateCode, 'المندوبين');
+  } else {
+    db.prepare('UPDATE branches SET name = ? WHERE code = ?').run('المندوبين', delegateCode);
+  }
+
   const adminUser = process.env.ADMIN_USER || 'admin';
   const adminPass = process.env.ADMIN_PASS || 'admin123';
   if (!db.prepare('SELECT id FROM users WHERE username = ?').get(adminUser)) {

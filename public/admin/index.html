@@ -40,6 +40,7 @@
       <nav>
         <button type="button" class="nav active" data-view="dashboard">لوحة اليوم</button>
         <button type="button" class="nav" data-view="invoices">الفواتير</button>
+        <button type="button" class="nav" data-view="delegates">المندوبين</button>
         <button type="button" class="nav" data-view="products">المنتجات</button>
         <button type="button" class="nav" data-view="prices">الأسعار</button>
         <button type="button" class="nav" data-view="accounts">الحسابات</button>
@@ -75,6 +76,23 @@
           </div>
           <div class="section-panel-body no-pad">
             <div class="table-wrap" id="invoiceTable"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="viewDelegates" class="view hidden">
+        <div class="delegate-hero" id="delegateStats"></div>
+        <div class="section-panel">
+          <div class="section-panel-toolbar">
+            <div class="search-box">
+              <span class="search-ico" aria-hidden="true">⌕</span>
+              <input type="search" id="delegateSearch" placeholder="بحث برقم الطلب، الفاتورة، العميل...">
+            </div>
+            <input type="date" id="delegateDate" class="field-date">
+          </div>
+          <p class="hint delegate-hint">فواتير وصلت بعد ضغط موظف التجهيز على «تم التجهيز» — يمكن ترحيلها إلى الإداري على حساب الزبون في الشجرة.</p>
+          <div class="section-panel-body no-pad">
+            <div class="table-wrap" id="delegateTable"></div>
           </div>
         </div>
       </section>

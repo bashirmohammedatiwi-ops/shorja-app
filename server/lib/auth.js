@@ -39,6 +39,17 @@ function authSyncKey(req, res, next) {
   next();
 }
 
+/** مفتاح تكامل بوابة المندوبين (DELEGATE_INTEGRATION_KEY = SYNC_API_KEY في delegate-portal). */
+function authDelegateIntegration(req, res, next) {
+  const key = req.headers['x-sync-key'] || req.body?.syncKey || '';
+  const integrationKey = String(process.env.DELEGATE_INTEGRATION_KEY || '').trim();
+  const syncKey = String(process.env.SYNC_KEY || '').trim();
+  if (integrationKey && key === integrationKey) return next();
+  if (syncKey && key === syncKey) return next();
+  if (!integrationKey && !syncKey) return next();
+  return res.status(403).json({ ok: false, error: 'مفتاح التكامل غير صحيح' });
+}
+
 function login(username, password) {
   const user = db.prepare(`
     SELECT u.*, b.code AS branch_code, b.name AS branch_name
@@ -94,6 +105,7 @@ module.exports = {
   verifyToken,
   authRequired,
   authSyncKey,
+  authDelegateIntegration,
   login,
   getMe
 };

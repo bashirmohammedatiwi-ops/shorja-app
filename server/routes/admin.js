@@ -6,6 +6,7 @@ const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, li
 const { listAccounts, createAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { getEdariParentInfo } = require('../lib/edari-accounts');
 const { listPendingSync, listPendingSyncEnriched, processEdariQueue, syncAccountToEdari, syncQueueStats } = require('../lib/edari-sync');
+const { listDelegateInvoices, delegateInvoiceStats, queueInvoiceForEdari } = require('../lib/delegate-processed');
 const { isManualSyncOnlyMode } = require('../lib/edari-safety');
 const { canWriteEdari } = require('../lib/edari-bridge');
 const { resetBusinessData, snapshotCounts } = require('../lib/reset-business-data');
@@ -221,6 +222,36 @@ router.get('/invoices/:id/print', (req, res) => {
   const debtInfo = resolveInvoiceDebtInfo(invoice);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(invoicePrintHtml(invoice, branch?.name || '', { thermal, debtInfo }));
+});
+
+router.get('/delegate-invoices', (req, res) => {
+  res.json({
+    ok: true,
+    stats: delegateInvoiceStats(),
+    ...listDelegateInvoices({
+      q: req.query.q,
+      dateFrom: req.query.from,
+      dateTo: req.query.to,
+      limit: Number(req.query.limit) || 100
+    })
+  });
+});
+
+router.post('/delegate-invoices/:id/queue-edari', (req, res) => {
+  try {
+    const invoice = loadInvoice(Number(req.params.id));
+    if (!invoice) return res.status(404).json({ ok: false, error: 'الفاتورة غير موجودة' });
+    if (invoice.prepStatus !== 'processing') {
+      return res.status(400).json({ ok: false, error: 'الفاتورة ليست في حالة تجهيز مكتمل' });
+    }
+    if (invoice.edariSyncStatus === 'synced' && invoice.edariBillSeq) {
+      return res.json({ ok: true, invoice, message: 'الفاتورة مرحّلة مسبقاً' });
+    }
+    queueInvoiceForEdari(invoice.id);
+    res.json({ ok: true, invoice: loadInvoice(invoice.id) });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
 });
 
 router.get('/accounts', (req, res) => {

@@ -1,6 +1,7 @@
 const express = require('express');
-const { authSyncKey } = require('../lib/auth');
+const { authSyncKey, authDelegateIntegration } = require('../lib/auth');
 const { createInvoice } = require('../lib/invoices');
+const { handleDelegateProcessedOrder } = require('../lib/delegate-processed');
 const { checkPriceUpdate } = require('../lib/prices');
 const { listPendingSyncForRemote, completeEdariSyncFromRemote } = require('../lib/edari-sync');
 const { resetBusinessData, snapshotCounts } = require('../lib/reset-business-data');
@@ -10,6 +11,15 @@ const router = express.Router();
 
 router.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'shorja-hub', time: new Date().toISOString() });
+});
+
+router.post('/delegate/processed', authDelegateIntegration, async (req, res) => {
+  try {
+    const result = await handleDelegateProcessedOrder(req.body || {});
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
 });
 
 router.post('/invoices/batch', authSyncKey, async (req, res) => {
