@@ -20,6 +20,7 @@ const CATEGORY_ICONS = {
 
 const PAGE_TITLES = {
   dashboard: ['لوحة اليوم', 'ملخص مبيعات الفروع والحسابات'],
+  reports: ['التقارير', 'تحليل المبيعات والمنتجات الأكثر مبيعاً'],
   invoices: ['فواتير المبيعات', 'سجل المبيعات والمرتجعات'],
   delegates: ['المندوبين', 'فواتير التجهيز الجاهزة للترحيل إلى الإداري'],
   products: ['المنتجات', 'استعراض وإدارة مخزون المنتجات'],
@@ -122,15 +123,16 @@ document.querySelectorAll('.nav').forEach((btn) => {
     document.getElementById(`view${view.charAt(0).toUpperCase() + view.slice(1)}`).classList.remove('hidden');
     setPageTitle(view);
     const loaders = {
-      dashboard: loadDashboard,
-      invoices: loadInvoices,
-      delegates: loadDelegates,
+      dashboard: () => (window.loadDashboard || loadDashboard)(),
+      reports: () => (window.loadReports || (() => {}))(),
+      invoices: () => (window.loadInvoices || loadInvoices)(),
+      delegates: () => (window.loadDelegates || loadDelegates)(),
       products: loadProducts,
       prices: loadPrices,
-      accounts: loadAccounts,
+      accounts: () => (window.loadAccounts || loadAccounts)(),
       payments: loadPayments,
       journal: loadJournal,
-      edariSync: loadEdariSync
+      edariSync: () => (window.loadEdariSync || loadEdariSync)()
     };
     loaders[btn.dataset.view]?.();
   });

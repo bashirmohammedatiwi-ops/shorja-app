@@ -7,7 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="premium.css?v=1">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -19,26 +20,37 @@
       </div>
       <form id="loginForm">
         <label>اسم المستخدم</label>
-        <input type="text" id="loginUser" value="admin" autocomplete="username" required>
+        <input type="text" id="loginUser" autocomplete="username" required placeholder="اسم المستخدم">
         <label>كلمة المرور</label>
-        <input type="password" id="loginPass" value="admin123" autocomplete="current-password" required>
+        <input type="password" id="loginPass" autocomplete="current-password" required placeholder="••••••••">
         <button type="submit" class="btn btn-primary">دخول إلى الإدارة</button>
         <p class="err hidden" id="loginError"></p>
       </form>
+      <div class="login-features">
+        <p>لوحة موحّدة للفروع والمندوبين والإداري</p>
+        <p>تقارير مبيعات · ترحيل Edari · إدارة الأسعار</p>
+        <p>يعمل مع تطبيق Windows للترحيل المباشر</p>
+      </div>
     </div>
   </div>
 
   <div id="app" class="app hidden">
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <aside class="sidebar">
       <div class="logo-wrap">
         <div class="logo-mark sm">د</div>
         <div>
           <strong>ديما الحياة</strong>
-          <small>لوحة الإدارة</small>
+          <small>لوحة الإدارة المركزية</small>
         </div>
+      </div>
+      <div class="sidebar-user">
+        <strong id="sidebarUserName">مدير النظام</strong>
+        <small>مركز التحكم والمزامنة</small>
       </div>
       <nav>
         <button type="button" class="nav active" data-view="dashboard">لوحة اليوم</button>
+        <button type="button" class="nav" data-view="reports">التقارير</button>
         <button type="button" class="nav" data-view="invoices">الفواتير</button>
         <button type="button" class="nav" data-view="delegates">المندوبين</button>
         <button type="button" class="nav" data-view="products">المنتجات</button>
@@ -56,13 +68,61 @@
           <h1 id="pageTitle">لوحة اليوم</h1>
           <p id="pageSubtitle">ملخص مبيعات الفروع والحسابات</p>
         </div>
+        <div class="page-top-actions">
+          <span class="clock-pill" id="headerClock">—</span>
+          <span class="status-pill ok" id="serverStatus">● السيرفر</span>
+          <span class="status-pill warn" id="desktopBadge">التطبيق</span>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnGlobalRefresh" title="تحديث">↻ تحديث</button>
+        </div>
       </header>
 
       <section id="viewDashboard" class="view">
+        <div class="quick-actions" id="quickActions">
+          <button type="button" class="quick-action primary" data-goto="reports">📈 تقرير المبيعات</button>
+          <button type="button" class="quick-action" data-goto="invoices">🧾 الفواتير</button>
+          <button type="button" class="quick-action delegate" data-goto="delegates">🚚 المندوبين</button>
+          <button type="button" class="quick-action" data-goto="edariSync">🔄 مزامنة الإداري</button>
+          <button type="button" class="quick-action" data-goto="prices">💰 رفع الأسعار</button>
+        </div>
+        <div id="dashboardAlerts"></div>
         <div id="edariSyncBar" class="edari-sync-bar" hidden></div>
         <div class="kpi-grid" id="kpiGrid"></div>
-        <h2>حالة الفروع</h2>
-        <div id="branchesList"></div>
+        <div class="dashboard-grid">
+          <div class="panel-card">
+            <div class="panel-card-head"><h2>حالة الفروع</h2></div>
+            <div class="panel-card-body" id="branchesList"></div>
+          </div>
+          <div class="panel-card">
+            <div class="panel-card-head"><h2>اختصارات</h2></div>
+            <div class="panel-card-body">
+              <p class="hint" style="margin-bottom:12px">استخدم الشريط الجانبي أو الأزرار أعلاه للوصول السريع. الترحيل إلى الإداري يتم من تطبيق Windows أو من قسم المندوبين.</p>
+              <button type="button" class="btn btn-primary btn-sm" data-goto="delegates">فواتير المندوبين</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="accounts">حسابات العملاء</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="viewReports" class="view hidden">
+        <div class="section-panel">
+          <div class="toolbar-row">
+            <label>من <input type="date" id="reportFrom" class="field-date"></label>
+            <label>إلى <input type="date" id="reportTo" class="field-date"></label>
+            <select id="reportBranch" class="field"><option value="">كل الفروع</option></select>
+            <button type="button" class="btn btn-primary btn-sm" id="btnRunReport">عرض التقرير</button>
+          </div>
+          <div class="kpi-grid premium-kpis" id="reportKpis"></div>
+          <div class="dashboard-grid" style="margin-top:18px">
+            <div class="panel-card">
+              <div class="panel-card-head"><h2>المبيعات حسب طريقة الدفع</h2></div>
+              <div class="panel-card-body"><div class="report-bars" id="reportPaymentBars"></div></div>
+            </div>
+            <div class="panel-card">
+              <div class="panel-card-head"><h2>أكثر المنتجات مبيعاً</h2></div>
+              <div class="panel-card-body" id="reportTopProducts"></div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section id="viewInvoices" class="view hidden">
@@ -73,6 +133,10 @@
               <input type="search" id="invSearch" placeholder="بحث برقم الفاتورة أو العميل...">
             </div>
             <input type="date" id="invDate" class="field-date">
+            <input type="date" id="invFrom" class="field-date" title="من تاريخ">
+            <input type="date" id="invTo" class="field-date" title="إلى تاريخ">
+            <select id="invBranch" class="field"><option value="">كل الفروع</option></select>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnExportInvoices">تصدير CSV</button>
           </div>
           <div class="section-panel-body no-pad">
             <div class="table-wrap" id="invoiceTable"></div>
@@ -89,6 +153,12 @@
               <input type="search" id="delegateSearch" placeholder="بحث برقم الطلب، الفاتورة، العميل...">
             </div>
             <input type="date" id="delegateDate" class="field-date">
+            <div class="toolbar-row" id="delegateFilters" style="margin:0">
+              <button type="button" class="filter-chip active" data-delegate-filter="">الكل</button>
+              <button type="button" class="filter-chip" data-delegate-filter="pending">بانتظار الإداري</button>
+              <button type="button" class="filter-chip" data-delegate-filter="synced">مرحّلة</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btnQueueAllDelegates">ترحيل الكل للإداري</button>
+            </div>
           </div>
           <p class="hint delegate-hint">فواتير وصلت بعد ضغط موظف التجهيز على «تم التجهيز» — يمكن ترحيلها إلى الإداري على حساب الزبون في الشجرة.</p>
           <div class="section-panel-body no-pad">
@@ -211,11 +281,19 @@
       </section>
 
       <section id="viewAccounts" class="view hidden">
-        <div class="toolbar">
-          <input type="search" id="accSearch" placeholder="بحث بالاسم أو الرقم...">
-          <button type="button" class="btn btn-secondary" id="btnNewAccount">+ حساب جديد</button>
+        <div class="section-panel">
+          <div class="section-panel-toolbar">
+            <div class="search-box">
+              <span class="search-ico" aria-hidden="true">⌕</span>
+              <input type="search" id="accSearch" placeholder="بحث بالاسم أو الرقم...">
+            </div>
+            <button type="button" class="filter-chip" id="btnAccDebtOnly">المدينون فقط</button>
+            <button type="button" class="btn btn-secondary" id="btnNewAccount">+ حساب جديد</button>
+          </div>
+          <div class="section-panel-body no-pad">
+            <div class="table-wrap" id="accountTable"></div>
+          </div>
         </div>
-        <div class="table-wrap" id="accountTable"></div>
       </section>
 
       <section id="viewPayments" class="view hidden">
@@ -241,6 +319,7 @@
 
       <section id="viewEdariSync" class="view hidden">
         <div class="edari-sync-panel">
+          <div class="edari-parent-card" id="edariParentPanel"></div>
           <div class="edari-sync-alert" id="edariSyncAlert">
             <strong>أثناء الترحيل:</strong> يمكن إبقاء برنامج الإداري (nprogwin) وEdariNX مفتوحين.
             تجنّب فقط إضافة حسابات أو حفظ فواتير في الإداري في نفس اللحظة — النظام يضبط العدادات وشجرة 12111 تلقائياً قبل وبعد الترحيل.
@@ -357,6 +436,8 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=12"></script>
+  <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
+  <script src="app.js?v=13"></script>
+  <script src="premium.js?v=1"></script>
 </body>
 </html>

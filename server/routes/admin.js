@@ -2,7 +2,7 @@ const express = require('express');
 const { authRequired } = require('../lib/auth');
 const { listProducts, upsertProduct, bulkUpsert, stats, getByBarcode, getProduct, deactivateProduct } = require('../lib/products');
 const { resolveEdariMaterial, cacheEdariMaterial, mapEdariToShorjaProduct } = require('../lib/edari-materials');
-const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment } = require('../lib/invoices');
+const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment, salesReport } = require('../lib/invoices');
 const { listAccounts, createAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { getEdariParentInfo } = require('../lib/edari-accounts');
 const { listPendingSync, listPendingSyncEnriched, processEdariQueue, syncAccountToEdari, syncQueueStats } = require('../lib/edari-sync');
@@ -24,6 +24,10 @@ router.get('/dashboard', (req, res) => {
   const branches = db.prepare('SELECT id, code, name, last_seen_at, price_version FROM branches').all();
   const pendingSync = db.prepare(`SELECT COUNT(*) AS c FROM invoices WHERE sync_status = 'pending'`).get().c;
   const edariSync = syncQueueStats();
+  const delegatePrep = delegateInvoiceStats();
+  const lowStock = db.prepare(`
+    SELECT COUNT(*) AS c FROM products WHERE is_active = 1 AND stock_qty <= 5
+  `).get().c;
   res.json({
     ok: true,
     today,
@@ -32,7 +36,20 @@ router.get('/dashboard', (req, res) => {
     branches,
     pendingSync,
     edariSync,
+    delegatePrep,
+    lowStock: Number(lowStock),
     priceVersion: getLatestVersion()
+  });
+});
+
+router.get('/reports/sales', (req, res) => {
+  res.json({
+    ok: true,
+    report: salesReport({
+      branchId: req.query.branchId ? Number(req.query.branchId) : null,
+      dateFrom: req.query.from,
+      dateTo: req.query.to
+    })
   });
 });
 
