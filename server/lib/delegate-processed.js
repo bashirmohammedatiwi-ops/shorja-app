@@ -51,6 +51,7 @@ function normalizeLines(lines = []) {
     .map((line) => {
       const qty = Math.max(0, Number(line.quant ?? line.qty ?? 0));
       const giftQty = Math.max(0, Math.round(Number(line.bonus ?? line.giftQty ?? 0)));
+      const testerQty = Math.max(0, Math.round(Number(line.tester ?? 0)));
       const unitPrice = Number(line.unitPrice || 0);
       const lineTotal = Number(line.lineTotal ?? (qty * unitPrice));
       const name = String(line.matName || line.name || '').trim();
@@ -59,12 +60,13 @@ function normalizeLines(lines = []) {
         name,
         qty,
         giftQty,
+        testerQty,
         unitPrice,
         lineDiscount: 0,
         lineTotal: Math.round(lineTotal)
       };
     })
-    .filter((l) => l.name && (l.qty > 0 || l.giftQty > 0));
+    .filter((l) => l.name && (l.qty > 0 || l.giftQty > 0 || l.testerQty > 0));
 }
 
 function queueInvoiceForEdari(invoiceId) {
