@@ -263,7 +263,7 @@ function renderEdariSyncTable() {
             <td><strong>${esc(item.title)}</strong><div class="sub">${esc(item.refLabel)}</div></td>
             <td>${esc(item.subtitle)}</td>
             <td dir="ltr">${item.amount != null ? fmt(item.amount) : '—'}</td>
-            <td>${edariSyncLabel(item.status, item.error)}</td>
+            <td>${edariSyncLabel(item.status, item.error)}${item.error ? `<div class="sync-err-msg">${esc(item.error)}</div>` : ''}</td>
             <td>${item.attempts || 0}</td>
           </tr>
         `).join('')}
@@ -325,6 +325,12 @@ async function runEdariSyncTransfer({ kinds = null, itemIds = null } = {}) {
   const btns = ['btnEdariSyncSelected', 'btnEdariSyncAccounts', 'btnEdariSyncInvoices', 'btnEdariSyncPayments', 'btnEdariSyncRefresh'];
   btns.forEach((id) => { const b = document.getElementById(id); if (b) b.disabled = true; });
   try {
+    if (ids?.length || kinds?.length) {
+      await api('/admin/edari/sync-queue/retry', {
+        method: 'POST',
+        body: JSON.stringify({ itemIds: ids, kinds: kinds || null })
+      });
+    }
     const result = await window.edariDesktop.processEdariSync({
       kinds: kinds || null,
       itemIds: ids,
@@ -397,7 +403,7 @@ function edariSyncLabel(status, error = '') {
   if (status === 'synced') return `<span style="color:var(--ok)"${title}>متزامن</span>`;
   if (status === 'hold') return `<span style="color:var(--warn)"${title}>بانتظار التجهيز</span>`;
   if (status === 'pending') return `<span style="color:var(--warn)"${title}>بانتظار الإداري</span>`;
-  if (status === 'error') return `<span style="color:var(--danger)"${title}>خطأ</span>`;
+  if (status === 'error') return `<span class="sync-status-error"${title}>خطأ</span>`;
   return `<span style="color:var(--muted)"${title}>—</span>`;
 }
 

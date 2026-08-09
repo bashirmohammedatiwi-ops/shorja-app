@@ -1,4 +1,5 @@
 const { runQuery, runExecute, rowObjects, canWriteEdari } = require('./edari-bridge');
+const db = require('../db');
 const { edariSqlLiteral, sqlEscAscii, loadParentAccount } = require('./edari-accounts');
 const { lookupEdariMaterial } = require('./edari-lookup');
 const {
@@ -673,9 +674,13 @@ async function createEdariPayment(payload) {
     return { ok: false, queued: true, error: 'كتابة قيود Edari معطّلة — استخدم المزامنة اليدوية من تطبيق الإدارة' };
   }
 
-  const customerSeq = Number(payload.edariSeq || 0);
+  let customerSeq = Number(payload.edariSeq || 0);
+  if (!customerSeq && payload.accountId) {
+    const acc = db.prepare('SELECT edari_seq FROM accounts WHERE id = ?').get(Number(payload.accountId));
+    customerSeq = Number(acc?.edari_seq || 0);
+  }
   if (!customerSeq) {
-    return { ok: false, error: 'الحساب غير مربوط بإداري' };
+    return { ok: false, error: 'الحساب غير مربوط بإداري — رحّل حساب العميل أولاً' };
   }
 
   const amount = roundAmount(payload.amount);
@@ -685,6 +690,7 @@ async function createEdariPayment(payload) {
   const exp1 = `تسديد${payload.paymentNo ? ` ${payload.paymentNo}` : ''}${payload.notes ? ` — ${payload.notes}` : ''}`;
 
   const result = await withEdariRetry('createEdariPayment', async () => {
+    const bondNum = await nextJournalBondNum();
     const j = await postJournalPair({
       debitAcc: CASH_ACCOUNT_SEQ,
       creditAcc: customerSeq,
@@ -693,11 +699,13 @@ async function createEdariPayment(payload) {
       exp1,
       billNum: 0,
       billSeq: 0,
-      billKind: 0
+      billKind: 0,
+      bondNum,
+      refBillNum: String(payload.paymentNo || '')
     });
     if (!j.ok) return { ok: false, error: j.error || 'فشل قيد التسديد في إداري' };
     await syncAutoIncTables(['File12n']);
-    return { ok: true, edariJournalSeq: String(j.journalSeqStart || '') };
+    return { ok: true, edariJournalSeq: String(j.journalSeqStart || ''), edariBondNum: String(j.bondNum || bondNum) };
   });
   return result;
 }

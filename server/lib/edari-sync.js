@@ -181,8 +181,10 @@ function enrichQueueItem(item) {
     subtitle = pay?.account_name || '';
     amount = pay?.amount ?? payload.amount;
     refLabel = 'قيد تسديد';
-    if (payload.accountId && !payload.edariSeq) {
-      refLabel = 'يحتاج ترحيل حساب العميل أولاً';
+    if (!payload.edariSeq) {
+      refLabel = payload.accountId ? 'يحتاج ترحيل حساب العميل أولاً' : 'الحساب غير مربوط بإداري';
+    } else {
+      refLabel += ` · إداري: ${payload.edariSeq}`;
     }
   } else {
     title = `${item.kind} #${item.ref_id}`;
@@ -212,9 +214,40 @@ function listPendingSyncEnriched(limit = 100, options = {}) {
 function markSyncItem(id, status, error = '') {
   db.prepare(`
     UPDATE edari_sync_queue
-    SET status = ?, error = ?, attempts = attempts + 1, updated_at = datetime('now')
+    SET status = ?, error = ?, attempts = attempts + ${status === 'error' ? 1 : 0}, updated_at = datetime('now')
     WHERE id = ?
   `).run(status, error || null, id);
+}
+
+function resetSyncItemsForRetry({ itemIds = null, kinds = null } = {}) {
+  let changed = 0;
+  if (Array.isArray(itemIds) && itemIds.length) {
+    const ids = itemIds.map(Number).filter(Boolean);
+    if (!ids.length) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    changed = db.prepare(`
+      UPDATE edari_sync_queue
+      SET status = 'pending', error = NULL, updated_at = datetime('now')
+      WHERE status = 'error' AND id IN (${placeholders})
+    `).run(...ids).changes;
+  } else if (Array.isArray(kinds) && kinds.length) {
+    const placeholders = kinds.map(() => '?').join(',');
+    changed = db.prepare(`
+      UPDATE edari_sync_queue
+      SET status = 'pending', error = NULL, updated_at = datetime('now')
+      WHERE status = 'error' AND kind IN (${placeholders})
+    `).run(...kinds).changes;
+  }
+  if (changed > 0) {
+    db.prepare(`
+      UPDATE payments SET edari_sync_status = 'pending', edari_sync_error = 'بانتظار الإداري'
+      WHERE edari_sync_status = 'error' AND id IN (
+        SELECT ref_id FROM edari_sync_queue
+        WHERE kind = 'payment' AND ref_type = 'payment' AND status = 'pending'
+      )
+    `).run();
+  }
+  return changed;
 }
 
 function getSyncItem(id) {
@@ -342,7 +375,7 @@ async function processInvoiceSyncItem(item) {
 }
 
 async function processPaymentSyncItem(item) {
-  const payload = JSON.parse(item.payload || '{}');
+  const payload = hydrateQueuePayload(item);
   const paymentId = Number(item.ref_id);
   const result = await createEdariPayment(payload);
   if (!result.ok) {
@@ -516,6 +549,7 @@ module.exports = {
   processEdariQueue,
   syncAccountToEdari,
   queueInvoiceEdariSync,
+  resetSyncItemsForRetry,
   queuePaymentEdariSync,
   completeEdariSyncFromRemote,
   completeAccountSyncFromRemote

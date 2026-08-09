@@ -5,7 +5,7 @@ const { resolveEdariMaterial, cacheEdariMaterial, mapEdariToShorjaProduct } = re
 const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment, salesReport } = require('../lib/invoices');
 const { listAccounts, createAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { getEdariParentInfo } = require('../lib/edari-accounts');
-const { listPendingSync, listPendingSyncEnriched, processEdariQueue, syncAccountToEdari, syncQueueStats } = require('../lib/edari-sync');
+const { listPendingSync, listPendingSyncEnriched, processEdariQueue, syncAccountToEdari, syncQueueStats, resetSyncItemsForRetry } = require('../lib/edari-sync');
 const { listDelegateInvoices, listWarehousePrepInvoices, delegateInvoiceStats, warehousePrepStats, queueInvoiceForEdari, DELEGATE_BRANCH_CODE } = require('../lib/delegate-processed');
 const { isManualSyncOnlyMode } = require('../lib/edari-safety');
 const { canWriteEdari } = require('../lib/edari-bridge');
@@ -335,6 +335,13 @@ router.get('/edari/sync-queue', (req, res) => {
     manualSyncOnly: isManualSyncOnlyMode(),
     canWrite: canWriteEdari()
   });
+});
+
+router.post('/edari/sync-queue/retry', (req, res) => {
+  const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : null;
+  const kinds = Array.isArray(req.body?.kinds) ? req.body.kinds : null;
+  const reset = resetSyncItemsForRetry({ itemIds, kinds });
+  res.json({ ok: true, reset, stats: syncQueueStats() });
 });
 
 router.post('/edari/sync-queue/process', async (req, res) => {

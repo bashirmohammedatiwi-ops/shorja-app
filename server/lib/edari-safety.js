@@ -50,7 +50,9 @@ function canWriteEdariInvoices() {
 function canWriteEdariPayments() {
   const session = sessionStore().manualSyncSession;
   if (session?.payments) return true;
-  return canWriteEdariMaster() && isEnabled('EDARI_WRITE_INVOICES', false);
+  if (!canWriteEdariMaster()) return false;
+  if (isEnabled('EDARI_WRITE_PAYMENTS', false)) return true;
+  return isEnabled('EDARI_WRITE_INVOICES', false);
 }
 
 function canWriteEdariStock() {

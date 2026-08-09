@@ -557,7 +557,14 @@ body.premium-ready { background: #e8edf4; }
 .delegate-hub-card p { margin: 0 0 16px; color: var(--muted); font-size: 0.88rem; line-height: 1.6; }
 .delegate-hub-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 
-.quick-action.hidden { display: none !important; }
+.sync-status-error { color: var(--danger); font-weight: 700; }
+.sync-err-msg {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: #b91c1c;
+  line-height: 1.35;
+  max-width: 220px;
+}
 
 .app.premium-ready .content {
   flex: 1;
