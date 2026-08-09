@@ -31,6 +31,8 @@ router.get('/dashboard', (req, res) => {
   `).all(DELEGATE_BRANCH_CODE);
   const pendingSync = db.prepare(`SELECT COUNT(*) AS c FROM invoices WHERE sync_status = 'pending'`).get().c;
   const edariSync = syncQueueStats();
+  const edariSyncWarehouse = syncQueueStats({ scope: 'warehouse' });
+  const edariSyncDelegate = syncQueueStats({ scope: 'delegate' });
   const warehousePrep = warehousePrepStats();
   const delegatePrep = delegateInvoiceStats();
   const lowStock = db.prepare(`
@@ -46,6 +48,8 @@ router.get('/dashboard', (req, res) => {
     branches,
     pendingSync,
     edariSync,
+    edariSyncWarehouse,
+    edariSyncDelegate,
     warehousePrep,
     delegatePrep,
     lowStock: Number(lowStock),
@@ -298,10 +302,12 @@ router.post('/delegate-invoices/:id/queue-edari', (req, res) => {
 
 router.get('/accounts', (req, res) => {
   const scope = String(req.query.scope || '').trim();
+  const edariStatus = String(req.query.edariStatus || '').trim();
   res.json({ ok: true, ...listAccounts({
     q: req.query.q,
     hasDebt: req.query.debt === '1',
-    scope: scope === 'warehouse' || scope === 'delegate' ? scope : ''
+    scope: scope === 'warehouse' || scope === 'delegate' ? scope : '',
+    edariStatus: ['pending', 'synced', 'error'].includes(edariStatus) ? edariStatus : ''
   }) });
 });
 
@@ -325,13 +331,16 @@ router.get('/edari/parent', async (_req, res) => {
 
 router.get('/edari/sync-queue', (req, res) => {
   const limit = Math.min(200, Number(req.query.limit) || 100);
+  const scope = String(req.query.scope || '').trim();
+  const scoped = scope === 'warehouse' || scope === 'delegate' ? scope : 'warehouse';
   const kinds = req.query.kinds
     ? String(req.query.kinds).split(',').map((k) => k.trim()).filter(Boolean)
     : null;
   res.json({
     ok: true,
-    stats: syncQueueStats(),
-    items: listPendingSyncEnriched(limit, { kinds }),
+    scope: scoped,
+    stats: syncQueueStats({ scope: scoped }),
+    items: listPendingSyncEnriched(limit, { kinds, scope: scoped }),
     manualSyncOnly: isManualSyncOnlyMode(),
     canWrite: canWriteEdari()
   });
@@ -340,8 +349,10 @@ router.get('/edari/sync-queue', (req, res) => {
 router.post('/edari/sync-queue/retry', (req, res) => {
   const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : null;
   const kinds = Array.isArray(req.body?.kinds) ? req.body.kinds : null;
+  const scope = String(req.body?.scope || req.query?.scope || '').trim();
+  const scoped = scope === 'warehouse' || scope === 'delegate' ? scope : 'warehouse';
   const reset = resetSyncItemsForRetry({ itemIds, kinds });
-  res.json({ ok: true, reset, stats: syncQueueStats() });
+  res.json({ ok: true, reset, stats: syncQueueStats({ scope: scoped }) });
 });
 
 router.post('/edari/sync-queue/process', async (req, res) => {

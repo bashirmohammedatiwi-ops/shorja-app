@@ -23,12 +23,19 @@ function mapAccount(row) {
   };
 }
 
-function listAccounts({ q = '', hasDebt = false, scope = '', limit = 100, offset = 0 } = {}) {
+function listAccounts({ q = '', hasDebt = false, scope = '', edariStatus = '', limit = 100, offset = 0 } = {}) {
   const where = ['is_active = 1'];
   const params = [];
   if (scope === 'warehouse' || scope === 'delegate') {
     where.push('account_scope = ?');
     params.push(scope);
+  }
+  if (edariStatus === 'pending') {
+    where.push("COALESCE(edari_sync_status, 'none') IN ('pending', 'none')");
+  } else if (edariStatus === 'synced') {
+    where.push("edari_sync_status = 'synced'");
+  } else if (edariStatus === 'error') {
+    where.push("edari_sync_status = 'error'");
   }
   if (q) {
     where.push('(name LIKE ? OR code LIKE ? OR phone LIKE ?)');

@@ -284,6 +284,62 @@ body.premium-ready { background: #e8edf4; }
   color: var(--primary-dark);
 }
 
+.filter-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-group.hidden { display: none !important; }
+
+.nav-group-label {
+  margin: 10px 10px 6px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.app-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.app-mode-pill.warehouse {
+  background: linear-gradient(135deg, #ecfdf5, #f0fdfa);
+  border-color: #5eead4;
+  color: #0f766e;
+}
+
+.app-mode-pill.delegate {
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  border-color: #c4b5fd;
+  color: #6d28d9;
+}
+
+.app.app-warehouse.premium-ready .content {
+  background: linear-gradient(180deg, #f0fdfa 0%, #e8edf4 120px);
+}
+
+.app.app-delegate.premium-ready .content {
+  background: linear-gradient(180deg, #f5f3ff 0%, #e8edf4 120px);
+}
+
 .badge-pill {
   display: inline-block;
   padding: 3px 8px;

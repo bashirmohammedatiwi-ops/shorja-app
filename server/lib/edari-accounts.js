@@ -29,6 +29,20 @@ function edariSqlLiteral(value) {
   return out;
 }
 
+/** NexusDB string fields (e.g. File12n.Ref) are byte-limited in Windows-1256. */
+function clampEdariField(value, maxBytes) {
+  const s = String(value ?? '');
+  if (!maxBytes || maxBytes < 1) return s;
+  if (iconv.encode(s, 'win1256').length <= maxBytes) return s;
+  let out = '';
+  for (const ch of s) {
+    const next = out + ch;
+    if (iconv.encode(next, 'win1256').length > maxBytes) break;
+    out = next;
+  }
+  return out;
+}
+
 function normalizeName(s) {
   return String(s || '').replace(/\s+/g, ' ').trim();
 }
@@ -235,5 +249,6 @@ module.exports = {
   alignEdariAccountFields,
   buildEdariAccountName,
   edariSqlLiteral,
-  sqlEscAscii
+  sqlEscAscii,
+  clampEdariField
 };

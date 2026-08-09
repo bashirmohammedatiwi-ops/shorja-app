@@ -284,6 +284,7 @@ function migrateSchema() {
   migrateInvoicesKind();
   migrateEdariSync();
   migrateAccountScope();
+  migrateEdariQueueScope();
 }
 
 function migrateAccountScope() {
@@ -300,6 +301,66 @@ function migrateAccountScope() {
       INNER JOIN branches b ON i.branch_id = b.id
       WHERE b.code = 'DELEGATE' AND i.account_id IS NOT NULL
     )
+  `);
+}
+
+function migrateEdariQueueScope() {
+  try {
+    db.exec("ALTER TABLE edari_sync_queue ADD COLUMN queue_scope TEXT");
+  } catch { /* exists */ }
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_edari_sync_scope ON edari_sync_queue(queue_scope, status)');
+  } catch { /* exists */ }
+
+  db.exec(`
+    UPDATE edari_sync_queue SET queue_scope = 'delegate'
+    WHERE queue_scope IS NULL AND kind = 'account' AND ref_type = 'account'
+      AND ref_id IN (SELECT id FROM accounts WHERE account_scope = 'delegate')
+  `);
+  db.exec(`
+    UPDATE edari_sync_queue SET queue_scope = 'warehouse'
+    WHERE queue_scope IS NULL AND kind = 'account' AND ref_type = 'account'
+      AND ref_id IN (SELECT id FROM accounts WHERE COALESCE(account_scope, 'warehouse') = 'warehouse')
+  `);
+  db.exec(`
+    UPDATE edari_sync_queue SET queue_scope = 'delegate'
+    WHERE queue_scope IS NULL AND kind = 'invoice' AND ref_type = 'invoice'
+      AND ref_id IN (
+        SELECT i.id FROM invoices i
+        LEFT JOIN branches b ON b.id = i.branch_id
+        WHERE i.prep_mode = 'delegate'
+           OR COALESCE(b.code, '') = 'DELEGATE'
+           OR COALESCE(i.invoice_no, '') LIKE 'MND-%'
+      )
+  `);
+  db.exec(`
+    UPDATE edari_sync_queue SET queue_scope = 'warehouse'
+    WHERE queue_scope IS NULL AND kind = 'invoice' AND ref_type = 'invoice'
+      AND ref_id IN (
+        SELECT i.id FROM invoices i
+        LEFT JOIN branches b ON b.id = i.branch_id
+        WHERE COALESCE(i.prep_mode, 'branch') != 'delegate'
+          AND COALESCE(b.code, '') != 'DELEGATE'
+          AND COALESCE(i.invoice_no, '') NOT LIKE 'MND-%'
+      )
+  `);
+  db.exec(`
+    UPDATE edari_sync_queue SET queue_scope = 'delegate'
+    WHERE queue_scope IS NULL AND kind = 'payment' AND ref_type = 'payment'
+      AND ref_id IN (
+        SELECT p.id FROM payments p
+        JOIN accounts a ON a.id = p.account_id
+        WHERE a.account_scope = 'delegate'
+      )
+  `);
+  db.exec(`
+    UPDATE edari_sync_queue SET queue_scope = 'warehouse'
+    WHERE queue_scope IS NULL AND kind = 'payment' AND ref_type = 'payment'
+      AND ref_id IN (
+        SELECT p.id FROM payments p
+        JOIN accounts a ON a.id = p.account_id
+        WHERE COALESCE(a.account_scope, 'warehouse') = 'warehouse'
+      )
   `);
 }
 

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=7">
-  <link rel="stylesheet" href="premium.css?v=3">
+  <link rel="stylesheet" href="premium.css?v=4">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -67,24 +67,32 @@
         <strong id="sidebarUserName">مدير النظام</strong>
         <small id="sidebarUserRole">مركز التحكم والمزامنة</small>
       </div>
-      <nav id="mainNav">
-        <button type="button" class="nav active" data-view="dashboard" data-app="both">لوحة اليوم</button>
-        <button type="button" class="nav" data-view="reports" data-app="warehouse">التقارير</button>
-        <button type="button" class="nav" data-view="invoices" data-app="warehouse">الفواتير</button>
-        <button type="button" class="nav" data-view="warehousePrep" data-app="warehouse">تجهيز الشورجة</button>
-        <button type="button" class="nav" data-view="delegates" data-app="delegate">فواتير المندوبين</button>
-        <button type="button" class="nav" data-view="products" data-app="warehouse">المنتجات</button>
-        <button type="button" class="nav" data-view="prices" data-app="warehouse">الأسعار</button>
-        <button type="button" class="nav" data-view="accounts" data-app="both">الحسابات</button>
-        <button type="button" class="nav" data-view="payments" data-app="both">التسديدات</button>
-        <button type="button" class="nav" data-view="journal" data-app="warehouse">القيود</button>
-        <button type="button" class="nav nav-edari" data-view="edariSync" data-app="both">مزامنة الإداري</button>
+      <nav id="navWarehouse" class="nav-group">
+        <div class="nav-group-label">تطبيق الشورجة</div>
+        <button type="button" class="nav active" data-view="dashboard">لوحة اليوم</button>
+        <button type="button" class="nav" data-view="reports">التقارير</button>
+        <button type="button" class="nav" data-view="invoices">الفواتير</button>
+        <button type="button" class="nav" data-view="warehousePrep">تجهيز الشورجة</button>
+        <button type="button" class="nav" data-view="products">المنتجات</button>
+        <button type="button" class="nav" data-view="prices">الأسعار</button>
+        <button type="button" class="nav" data-view="accounts">حسابات الشورجة</button>
+        <button type="button" class="nav" data-view="payments">تسديدات الشورجة</button>
+        <button type="button" class="nav" data-view="journal">القيود</button>
+        <button type="button" class="nav nav-edari" data-view="edariSync">مزامنة الإداري</button>
+      </nav>
+      <nav id="navDelegate" class="nav-group hidden">
+        <div class="nav-group-label">تطبيق المندوبين</div>
+        <button type="button" class="nav" data-view="delegates">فواتير المندوبين</button>
+        <button type="button" class="nav" data-view="accounts">حسابات المندوبين</button>
+        <button type="button" class="nav" data-view="payments">تسديدات المندوبين</button>
+        <button type="button" class="nav nav-edari" data-view="edariSync">مزامنة الإداري</button>
       </nav>
       <button type="button" class="btn btn-ghost logout" id="btnLogout">خروج</button>
     </aside>
     <main class="content">
       <header class="page-top" id="pageTop">
         <div class="page-top-text">
+          <span class="app-mode-pill" id="appModePill">🏪 الشورجة</span>
           <h1 id="pageTitle">لوحة اليوم</h1>
           <p id="pageSubtitle">ملخص مبيعات الفروع والحسابات</p>
         </div>
@@ -96,36 +104,55 @@
         </div>
       </header>
 
-      <section id="viewDashboard" class="view">
-        <div class="quick-actions" id="quickActions">
+      <section id="viewDashboard" class="view" data-app-scope="warehouse">
+        <div class="quick-actions wh-only" id="quickActionsWarehouse">
           <button type="button" class="quick-action primary" data-goto="reports">📈 تقرير المبيعات</button>
           <button type="button" class="quick-action" data-goto="invoices">🧾 الفواتير</button>
           <button type="button" class="quick-action warehouse" data-goto="warehousePrep">🏪 تجهيز الشورجة</button>
-          <button type="button" class="quick-action delegate" data-goto="delegates">🚚 المندوبين</button>
           <button type="button" class="quick-action" data-goto="edariSync">🔄 مزامنة الإداري</button>
           <button type="button" class="quick-action" data-goto="prices">💰 رفع الأسعار</button>
+          <button type="button" class="quick-action" data-goto="accounts">👥 حسابات الشورجة</button>
+        </div>
+        <div class="quick-actions del-only hidden" id="quickActionsDelegate">
+          <button type="button" class="quick-action primary delegate" data-goto="delegates">🚚 فواتير المندوبين</button>
+          <button type="button" class="quick-action delegate" data-goto="accounts">👥 حسابات المندوبين</button>
+          <button type="button" class="quick-action delegate" data-goto="payments">💳 التسديدات</button>
+          <button type="button" class="quick-action" data-goto="edariSync">🔄 مزامنة الإداري</button>
         </div>
         <div id="dashboardAlerts"></div>
         <div id="edariSyncBar" class="edari-sync-bar" hidden></div>
         <div class="kpi-grid" id="kpiGrid"></div>
         <div class="dashboard-grid">
-          <div class="panel-card">
+          <div class="panel-card wh-only">
             <div class="panel-card-head"><h2>حالة الفروع</h2></div>
             <div class="panel-card-body" id="branchesList"></div>
           </div>
-          <div class="panel-card">
-            <div class="panel-card-head"><h2>اختصارات</h2></div>
+          <div class="panel-card wh-only">
+            <div class="panel-card-head"><h2>اختصارات الشورجة</h2></div>
             <div class="panel-card-body">
-              <p class="hint" style="margin-bottom:12px">فروع الشورجة والمندوبين منفصلان بالكامل. الترحيل إلى الإداري من قسم التجهيز أو المندوبين.</p>
+              <p class="hint" style="margin-bottom:12px">فروع الشورجة ونقاط البيع — منفصلة تماماً عن المندوبين.</p>
               <button type="button" class="btn btn-primary btn-sm" data-goto="warehousePrep">تجهيز الشورجة</button>
-              <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="delegates">فواتير المندوبين</button>
-              <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="accounts">حسابات العملاء</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="accounts">حسابات الشورجة</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="invoices">الفواتير</button>
+            </div>
+          </div>
+          <div class="panel-card del-only hidden">
+            <div class="panel-card-head"><h2>مركز المندوبين</h2></div>
+            <div class="panel-card-body" id="delegateHubPanel"></div>
+          </div>
+          <div class="panel-card del-only hidden">
+            <div class="panel-card-head"><h2>اختصارات المندوبين</h2></div>
+            <div class="panel-card-body">
+              <p class="hint" style="margin-bottom:12px">طلبات المندوبين وحساباتهم — لا تظهر في نقطة بيع الشورجة.</p>
+              <button type="button" class="btn btn-primary btn-sm" data-goto="delegates">فواتير المندوبين</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="accounts">حسابات المندوبين</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="payments">التسديدات</button>
             </div>
           </div>
         </div>
       </section>
 
-      <section id="viewReports" class="view hidden">
+      <section id="viewReports" class="view hidden" data-app-scope="warehouse">
         <div class="section-panel">
           <div class="toolbar-row">
             <label>من <input type="date" id="reportFrom" class="field-date"></label>
@@ -147,7 +174,7 @@
         </div>
       </section>
 
-      <section id="viewInvoices" class="view hidden">
+      <section id="viewInvoices" class="view hidden" data-app-scope="warehouse">
         <div class="section-panel">
           <div class="section-panel-toolbar">
             <div class="search-box">
@@ -166,7 +193,7 @@
         </div>
       </section>
 
-      <section id="viewWarehousePrep" class="view hidden">
+      <section id="viewWarehousePrep" class="view hidden" data-app-scope="warehouse">
         <div class="warehouse-hero" id="warehouseStats"></div>
         <div class="section-panel">
           <div class="section-panel-toolbar">
@@ -189,7 +216,7 @@
         </div>
       </section>
 
-      <section id="viewDelegates" class="view hidden">
+      <section id="viewDelegates" class="view hidden" data-app-scope="delegate">
         <div class="delegate-hero" id="delegateStats"></div>
         <div class="section-panel">
           <div class="section-panel-toolbar">
@@ -212,7 +239,7 @@
         </div>
       </section>
 
-      <section id="viewProducts" class="view hidden">
+      <section id="viewProducts" class="view hidden" data-app-scope="warehouse">
         <div class="section-panel">
           <div class="section-panel-toolbar">
             <div class="search-box">
@@ -249,7 +276,7 @@
         </div>
       </section>
 
-      <section id="viewPrices" class="view hidden">
+      <section id="viewPrices" class="view hidden" data-app-scope="warehouse">
         <div class="section-panel prices-layout">
           <div class="price-steps">
             <div class="step-card">
@@ -325,7 +352,7 @@
         </div>
       </section>
 
-      <section id="viewAccounts" class="view hidden">
+      <section id="viewAccounts" class="view hidden" data-app-scope="shared">
         <div class="section-panel">
           <div class="accounts-scope-banner" id="accountsScopeBanner"></div>
           <div class="section-panel-toolbar">
@@ -333,7 +360,12 @@
               <span class="search-ico" aria-hidden="true">⌕</span>
               <input type="search" id="accSearch" placeholder="بحث بالاسم أو الرقم...">
             </div>
-            <button type="button" class="filter-chip" id="btnAccDebtOnly">المدينون فقط</button>
+            <div class="filter-chip-row" id="accFilters">
+              <button type="button" class="filter-chip" data-acc-filter="debt">المدينون فقط</button>
+              <button type="button" class="filter-chip" data-acc-filter="edari-pending">بانتظار الإداري</button>
+              <button type="button" class="filter-chip" data-acc-filter="edari-synced">مرحّل للإداري</button>
+              <button type="button" class="filter-chip" data-acc-filter="edari-error">أخطاء الإداري</button>
+            </div>
             <button type="button" class="btn btn-secondary" id="btnNewAccount">+ حساب جديد</button>
           </div>
           <div class="section-panel-body no-pad">
@@ -342,7 +374,13 @@
         </div>
       </section>
 
-      <section id="viewPayments" class="view hidden">
+      <section id="viewPayments" class="view hidden" data-app-scope="shared">
+        <div class="accounts-scope-banner" id="paymentsScopeBanner"></div>
+        <div class="section-panel-toolbar payments-toolbar">
+          <label>من <input type="date" id="payFrom" class="field-date"></label>
+          <label>إلى <input type="date" id="payTo" class="field-date"></label>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnPayClearDates">كل التواريخ</button>
+        </div>
         <div class="form-card">
           <select id="payAcc"></select>
           <input type="number" id="payAmt" placeholder="المبلغ">
@@ -352,7 +390,7 @@
         <div class="table-wrap" id="paymentsTable"></div>
       </section>
 
-      <section id="viewJournal" class="view hidden">
+      <section id="viewJournal" class="view hidden" data-app-scope="warehouse">
         <div class="form-card journal-form">
           <h3>قيد تسوية يدوي</h3>
           <select id="adjAcc"></select>
@@ -363,8 +401,9 @@
         <div class="table-wrap" id="journalTable"></div>
       </section>
 
-      <section id="viewEdariSync" class="view hidden">
+      <section id="viewEdariSync" class="view hidden" data-app-scope="shared">
         <div class="edari-sync-panel">
+          <div class="accounts-scope-banner" id="edariScopeBanner"></div>
           <div class="edari-parent-card" id="edariParentPanel"></div>
           <div class="edari-sync-alert" id="edariSyncAlert">
             <strong>أثناء الترحيل:</strong> يمكن إبقاء برنامج الإداري (nprogwin) وEdariNX مفتوحين.
@@ -373,6 +412,11 @@
           </div>
           <div class="edari-sync-stats" id="edariSyncStats"></div>
           <div class="toolbar edari-sync-toolbar">
+            <div class="filter-chip-row" id="edariStatusFilters">
+              <button type="button" class="filter-chip active" data-edari-status="">الكل</button>
+              <button type="button" class="filter-chip" data-edari-status="pending">معلّق</button>
+              <button type="button" class="filter-chip" data-edari-status="error">أخطاء</button>
+            </div>
             <select id="edariSyncKindFilter">
               <option value="">كل الأنواع</option>
               <option value="account">حسابات فقط</option>
@@ -484,7 +528,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=16"></script>
-  <script src="premium.js?v=3"></script>
+  <script src="app.js?v=20"></script>
+  <script src="premium.js?v=7"></script>
 </body>
 </html>

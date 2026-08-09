@@ -84,7 +84,8 @@ async function runEdariSyncWorkerDesktop(options = {}) {
     serverJsonPaths: getServerJsonPaths(),
     kinds: options.kinds || null,
     itemIds: options.itemIds || null,
-    limit: options.limit || 100
+    limit: options.limit || 100,
+    scope: options.scope || ''
   });
 }
 

@@ -54,10 +54,16 @@ router.post('/heartbeat/:branchId', authSyncKey, (req, res) => {
 
 router.get('/edari/queue', authSyncKey, (req, res) => {
   const limit = Math.min(200, Number(req.query.limit) || 50);
+  const scope = String(req.query.scope || '').trim();
+  const scoped = scope === 'warehouse' || scope === 'delegate' ? scope : '';
   const kinds = req.query.kinds
     ? String(req.query.kinds).split(',').map((k) => k.trim()).filter(Boolean)
     : null;
-  res.json({ ok: true, items: listPendingSyncForRemote(limit, { kinds }) });
+  res.json({
+    ok: true,
+    scope: scoped || null,
+    items: listPendingSyncForRemote(limit, { kinds, scope: scoped })
+  });
 });
 
 router.post('/edari/queue/:id/complete', authSyncKey, (req, res) => {

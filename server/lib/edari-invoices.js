@@ -1,6 +1,5 @@
 const { runQuery, runExecute, rowObjects, canWriteEdari } = require('./edari-bridge');
-const db = require('../db');
-const { edariSqlLiteral, sqlEscAscii, loadParentAccount } = require('./edari-accounts');
+const { edariSqlLiteral, sqlEscAscii, loadParentAccount, clampEdariField } = require('./edari-accounts');
 const { lookupEdariMaterial } = require('./edari-lookup');
 const {
   canWriteEdariInvoices,
@@ -21,6 +20,8 @@ const PRICE_GROUP = Number(process.env.EDARI_PRICE_GROUP || 4);
 const INVOICE_PERSON = Number(process.env.EDARI_INVOICE_PERSON || 255);
 const TAX_REC_NO = Number(process.env.EDARI_TAX_REC_NO || 183);
 const SHORJA_REMARKS = shorjaRemarksTag();
+const EDARI_REF_MAX = 30;
+const EDARI_EXP1_MAX = 50;
 
 function resolveInvoiceBook(payload) {
   const fromEnv = Number(process.env.EDARI_INVOICE_BOOK || 0);
@@ -343,12 +344,15 @@ async function insertJournalEntry({
   billNum = 0, billSeq = 0, billKind = 0, billBook = 0,
   bondNum = 0, refBillNum = '', oppositeAcc = 0
 }) {
-  const ref = String(refBillNum || (billNum > 0 ? billNum : ''));
-  const book = Number(billBook || INVOICE_BOOK || 0);
+  const linkedToBill = Number(billSeq || 0) > 0;
+  const forBill = linkedToBill ? 1 : 0;
+  const ref = clampEdariField(String(refBillNum || (billNum > 0 ? billNum : '')), EDARI_REF_MAX);
+  const exp1Safe = clampEdariField(exp1, EDARI_EXP1_MAX);
+  const book = linkedToBill ? Number(billBook || INVOICE_BOOK || 0) : 0;
   const sql = `INSERT INTO File12n (Num, Acc, "Date", Am, Dept, Exp1, Exp2, BillNum, BillSeq, BillKind, BillBook, Remarks, ForBill, Ref, Two)
     VALUES (${Number(bondNum)}, ${Number(acc)}, ${formatEdariTimestamp(dateStr)}, ${roundAmount(amount)}, ${isDebit ? 'True' : 'False'},
-      ${edariSqlLiteral(exp1)}, '', ${Number(billNum || 0)}, ${Number(billSeq || 0)}, ${Number(billKind || 0)}, ${book},
-      '', 1, ${edariSqlLiteral(ref)}, ${Number(oppositeAcc || 0)})`;
+      ${edariSqlLiteral(exp1Safe)}, '', ${Number(billNum || 0)}, ${Number(billSeq || 0)}, ${Number(billKind || 0)}, ${book},
+      '', ${forBill}, ${edariSqlLiteral(ref)}, ${Number(oppositeAcc || 0)})`;
   return runExecute(sql);
 }
 
@@ -666,6 +670,21 @@ async function finalizeInvoiceWrites() {
   return syncAutoIncTables(['File15n', 'file14n', 'File12n', 'File13n']);
 }
 
+let localDb;
+function lookupAccountEdariSeq(accountId) {
+  if (!accountId) return 0;
+  if (localDb === undefined) {
+    try {
+      localDb = require('../db');
+    } catch {
+      localDb = null;
+    }
+  }
+  if (!localDb) return 0;
+  const acc = localDb.prepare('SELECT edari_seq FROM accounts WHERE id = ?').get(Number(accountId));
+  return Number(acc?.edari_seq || 0);
+}
+
 async function createEdariPayment(payload) {
   if (!canWriteEdari()) {
     return { ok: false, queued: true, error: 'كتابة Edari غير متاحة على هذا السيرفر' };
@@ -676,8 +695,7 @@ async function createEdariPayment(payload) {
 
   let customerSeq = Number(payload.edariSeq || 0);
   if (!customerSeq && payload.accountId) {
-    const acc = db.prepare('SELECT edari_seq FROM accounts WHERE id = ?').get(Number(payload.accountId));
-    customerSeq = Number(acc?.edari_seq || 0);
+    customerSeq = lookupAccountEdariSeq(payload.accountId);
   }
   if (!customerSeq) {
     return { ok: false, error: 'الحساب غير مربوط بإداري — رحّل حساب العميل أولاً' };
@@ -687,7 +705,8 @@ async function createEdariPayment(payload) {
   if (amount <= 0) return { ok: false, error: 'مبلغ التسديد غير صالح' };
 
   const dateStr = payload.paymentDate || new Date().toISOString().slice(0, 10);
-  const exp1 = `تسديد${payload.paymentNo ? ` ${payload.paymentNo}` : ''}${payload.notes ? ` — ${payload.notes}` : ''}`;
+  let exp1 = `تسديد${payload.paymentNo ? ` ${payload.paymentNo}` : ''}${payload.notes ? ` — ${payload.notes}` : ''}`;
+  exp1 = clampEdariField(exp1, EDARI_EXP1_MAX);
 
   const result = await withEdariRetry('createEdariPayment', async () => {
     const bondNum = await nextJournalBondNum();
@@ -700,8 +719,9 @@ async function createEdariPayment(payload) {
       billNum: 0,
       billSeq: 0,
       billKind: 0,
+      billBook: 0,
       bondNum,
-      refBillNum: String(payload.paymentNo || '')
+      refBillNum: String(bondNum)
     });
     if (!j.ok) return { ok: false, error: j.error || 'فشل قيد التسديد في إداري' };
     await syncAutoIncTables(['File12n']);

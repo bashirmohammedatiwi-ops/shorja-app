@@ -1,5 +1,5 @@
 /**
- * Premium admin enhancements v3 — dual-app switcher (الشورجة | المندوبين)
+ * Premium admin enhancements v4 — dual-app isolation (الشورجة | المندوبين)
  */
 (function () {
   const APP_KEY = 'shorja_admin_app';
@@ -45,7 +45,23 @@
   let delegateFilter = '';
   let warehouseFilter = '';
   let accDebtOnly = false;
+  let accEdariFilter = '';
+  let edariStatusFilter = '';
   let clockTimer = null;
+
+  const VIEW_SCOPE = {
+    dashboard: 'warehouse',
+    reports: 'warehouse',
+    invoices: 'warehouse',
+    warehousePrep: 'warehouse',
+    products: 'warehouse',
+    prices: 'warehouse',
+    journal: 'warehouse',
+    delegates: 'delegate',
+    accounts: 'shared',
+    payments: 'shared',
+    edariSync: 'shared'
+  };
 
   function $(id) { return document.getElementById(id); }
 
@@ -61,7 +77,37 @@
     }
   }
 
-  function applyAppContext(navigate = true) {
+  function updatePaymentsBanner() {
+    const el = $('paymentsScopeBanner');
+    if (!el) return;
+    if (currentApp === 'warehouse') {
+      el.className = 'accounts-scope-banner warehouse';
+      el.innerHTML = '<span class="banner-ico">💳</span><div><strong>تسديدات الشورجة</strong><p>دفعات زبائن فروع الشورجة فقط</p></div>';
+    } else {
+      el.className = 'accounts-scope-banner delegate';
+      el.innerHTML = '<span class="banner-ico">💳</span><div><strong>تسديدات المندوبين</strong><p>دفعات زبائن المندوبين فقط</p></div>';
+    }
+  }
+
+  function updateEdariBanner() {
+    const el = $('edariScopeBanner');
+    if (!el) return;
+    if (currentApp === 'warehouse') {
+      el.className = 'accounts-scope-banner warehouse';
+      el.innerHTML = '<span class="banner-ico">🔄</span><div><strong>مزامنة إداري — الشورجة</strong><p>حسابات وفواتير وتسديدات الشورجة فقط — بدون المندوبين</p></div>';
+    } else {
+      el.className = 'accounts-scope-banner delegate';
+      el.innerHTML = '<span class="banner-ico">🔄</span><div><strong>مزامنة إداري — المندوبين</strong><p>طابور ترحيل المندوبين فقط — منفصل عن الشورجة</p></div>';
+    }
+  }
+
+  function viewAllowed(view) {
+    const scope = VIEW_SCOPE[view];
+    if (!scope || scope === 'shared') return true;
+    return scope === currentApp;
+  }
+
+  function applyAppContext() {
     const meta = APP_META[currentApp];
     const appEl = $('app');
     appEl?.classList.remove('app-warehouse', 'app-delegate');
@@ -69,6 +115,16 @@
 
     document.querySelectorAll('.app-switch-tab').forEach((tab) => {
       tab.classList.toggle('active', tab.dataset.app === currentApp);
+    });
+
+    $('navWarehouse')?.classList.toggle('hidden', currentApp !== 'warehouse');
+    $('navDelegate')?.classList.toggle('hidden', currentApp !== 'delegate');
+
+    document.querySelectorAll('.wh-only').forEach((el) => {
+      el.classList.toggle('hidden', currentApp !== 'warehouse');
+    });
+    document.querySelectorAll('.del-only').forEach((el) => {
+      el.classList.toggle('hidden', currentApp !== 'delegate');
     });
 
     if ($('sidebarAppTitle')) $('sidebarAppTitle').textContent = meta.title;
@@ -80,36 +136,51 @@
         : 'طلبات المندوبين · حساباتهم';
     }
 
-    document.querySelectorAll('.nav[data-view]').forEach((btn) => {
-      const apps = btn.dataset.app || 'both';
-      const show = apps === 'both' || apps === currentApp;
-      btn.classList.toggle('nav-hidden', !show);
-    });
-
-    document.querySelectorAll('#quickActions .quick-action').forEach((btn) => {
-      const goto = btn.dataset.goto;
-      const warehouseOnly = ['reports', 'invoices', 'warehousePrep', 'products', 'prices'].includes(goto);
-      const delegateOnly = goto === 'delegates';
-      if (currentApp === 'warehouse') btn.classList.toggle('hidden', delegateOnly);
-      else btn.classList.toggle('hidden', warehouseOnly);
-    });
+    const modePill = $('appModePill');
+    if (modePill) {
+      modePill.textContent = currentApp === 'warehouse' ? '🏪 تطبيق الشورجة' : '🚚 تطبيق المندوبين';
+      modePill.className = `app-mode-pill ${currentApp}`;
+    }
 
     PAGE_TITLES.accounts = [meta.accountsLabel, currentApp === 'warehouse'
       ? 'زبائن فروع الشورجة — منفصلون عن المندوبين'
       : 'زبائن المندوبين فقط'];
     PAGE_TITLES.payments = [meta.paymentsLabel, 'تسجيل دفعات العملاء'];
-    PAGE_TITLES.dashboard = currentApp === 'warehouse'
-      ? ['لوحة الشورجة', 'ملخص مبيعات الفروع والمخزن']
-      : ['لوحة المندوبين', 'طلبات المندوبين وحساباتهم'];
+    PAGE_TITLES.dashboard = ['لوحة الشورجة', 'ملخص مبيعات الفروع والمخزن'];
+    PAGE_TITLES.delegates = ['فواتير المندوبين', 'طلبات المندوبين الجاهزة للترحيل'];
+    PAGE_TITLES.edariSync = currentApp === 'warehouse'
+      ? ['مزامنة الإداري — الشورجة', 'ترحيل حسابات وفواتير الشورجة فقط']
+      : ['مزامنة الإداري — المندوبين', 'ترحيل طلبات وحسابات المندوبين فقط'];
 
     updateAccountsBanner();
+    updatePaymentsBanner();
+    updateEdariBanner();
 
-    if (navigate) {
-      const active = document.querySelector('.nav.active');
-      if (active?.classList.contains('nav-hidden')) {
-        document.querySelector('.nav[data-view="dashboard"]')?.click();
-      }
+    const edariView = $('viewEdariSync');
+    if (edariView && !edariView.classList.contains('hidden') && typeof window.loadEdariSync === 'function') {
+      window.loadEdariSync();
     }
+    refreshAppBadges();
+
+    document.title = currentApp === 'warehouse' ? 'ديما الحياة — الشورجة' : 'ديما الحياة — المندوبين';
+  }
+
+  function pickEdariSyncStats(data) {
+    if (!data) return {};
+    if (currentApp === 'warehouse') return data.edariSyncWarehouse || data.edariSync || {};
+    if (currentApp === 'delegate') return data.edariSyncDelegate || data.edariSync || {};
+    return data.edariSync || {};
+  }
+
+  function refreshAppBadges() {
+    api('/admin/dashboard').then((data) => {
+      const edari = pickEdariSyncStats(data);
+      updateNavBadges({
+        edariTotal: Number(edari.total || 0),
+        delegatePending: data.delegatePrep?.pending || 0,
+        warehousePending: data.warehousePrep?.pending || 0
+      });
+    }).catch(() => {});
   }
 
   function switchApp(app) {
@@ -117,15 +188,40 @@
     if (app === currentApp) return;
     currentApp = app;
     localStorage.setItem(APP_KEY, app);
-    applyAppContext(true);
-    document.querySelector('.nav[data-view="dashboard"]')?.click();
+    applyAppContext();
+    const edariView = $('viewEdariSync');
+    if (edariView && !edariView.classList.contains('hidden') && typeof window.loadEdariSync === 'function') {
+      window.loadEdariSync();
+      return;
+    }
+    const homeView = app === 'delegate' ? 'delegates' : 'dashboard';
+    const navRoot = app === 'delegate' ? '#navDelegate' : '#navWarehouse';
+    document.querySelector(`${navRoot} .nav[data-view="${homeView}"]`)?.click();
   }
 
   function setupAppSwitcher() {
     document.querySelectorAll('.app-switch-tab').forEach((tab) => {
       tab.addEventListener('click', () => switchApp(tab.dataset.app));
     });
-    applyAppContext(false);
+    applyAppContext();
+    patchNavClicks();
+  }
+
+  function patchNavClicks() {
+    document.querySelectorAll('.nav[data-view]').forEach((btn) => {
+      if (btn.dataset.patchedNav) return;
+      btn.dataset.patchedNav = '1';
+      btn.addEventListener('click', (e) => {
+        const view = btn.dataset.view;
+        if (!viewAllowed(view)) {
+          e.stopImmediatePropagation();
+          toast('هذا القسم غير متاح في التطبيق الحالي');
+          return;
+        }
+        document.querySelectorAll('.nav').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+      }, true);
+    });
   }
 
   function exportTableCsv(tableEl, filename) {
@@ -156,15 +252,29 @@
     const edari = Number(stats.edariTotal || 0);
     const delegate = Number(stats.delegatePending || 0);
     const warehouse = Number(stats.warehousePending || 0);
-    const map = { edariSync: edari, delegates: delegate, warehousePrep: warehouse };
-    Object.entries(map).forEach(([view, n]) => {
-      const badge = document.querySelector(`[data-nav-badge="${view}"]`);
-      if (!badge) return;
-      if (n > 0) {
-        badge.textContent = n > 99 ? '99+' : String(n);
+    document.querySelectorAll('[data-nav-badge]').forEach((badge) => badge.classList.add('hidden'));
+    if (currentApp === 'warehouse') {
+      const map = { edariSync: edari, warehousePrep: warehouse };
+      Object.entries(map).forEach(([view, n]) => {
+        const badge = document.querySelector(`#navWarehouse [data-nav-badge="${view}"]`);
+        if (!badge) return;
+        if (n > 0) {
+          badge.textContent = n > 99 ? '99+' : String(n);
+          badge.classList.remove('hidden');
+        }
+      });
+    } else {
+      const badge = document.querySelector('#navDelegate [data-nav-badge="delegates"]');
+      if (badge && delegate > 0) {
+        badge.textContent = delegate > 99 ? '99+' : String(delegate);
         badge.classList.remove('hidden');
-      } else badge.classList.add('hidden');
-    });
+      }
+      const edariBadge = document.querySelector('#navDelegate [data-nav-badge="edariSync"]');
+      if (edariBadge && edari > 0) {
+        edariBadge.textContent = edari > 99 ? '99+' : String(edari);
+        edariBadge.classList.remove('hidden');
+      }
+    }
   }
 
   function updateClock() {
@@ -265,7 +375,7 @@
     if (userEl) userEl.textContent = currentUser.fullName || 'مدير النظام';
 
     const t = data.today;
-    const edari = data.edariSync || {};
+    const edari = pickEdariSyncStats(data);
     const edariPending = Number(edari.total || 0);
     const delegate = data.delegatePrep || {};
     const warehouse = data.warehousePrep || {};
@@ -305,8 +415,9 @@
     });
 
     $('kpiGrid').className = 'kpi-grid premium-kpis';
-    if (currentApp === 'warehouse') {
-      $('kpiGrid').innerHTML = `
+    if (currentApp !== 'warehouse') return;
+
+    $('kpiGrid').innerHTML = `
         <div class="kpi premium-kpi"><div class="ico">🧾</div><div class="lbl">فواتير اليوم</div><div class="val">${t.salesCount}</div></div>
         <div class="kpi premium-kpi"><div class="ico">💵</div><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmt(t.salesAmount)}</div></div>
         <div class="kpi premium-kpi"><div class="ico">↩️</div><div class="lbl">مرتجعات</div><div class="val" dir="ltr">${fmt(t.returnsAmount)}</div></div>
@@ -317,7 +428,7 @@
         <div class="kpi premium-kpi${edariPending ? ' warn' : ''}"><div class="ico">🔄</div><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>
         <div class="kpi premium-kpi"><div class="ico">📦</div><div class="lbl">منتجات</div><div class="val">${data.products.total}</div></div>
         <div class="kpi premium-kpi"><div class="ico">🏷️</div><div class="lbl">إصدار الأسعار</div><div class="val">v${data.priceVersion || 0}</div></div>`;
-      $('branchesList').innerHTML = `
+    $('branchesList').innerHTML = `
         <div class="branch-grid">${(data.branches || []).map((b) => {
           const online = branchOnline(b.last_seen_at);
           return `<article class="branch-card ${online ? 'online' : 'offline'}">
@@ -332,29 +443,6 @@
             </div>
           </article>`;
         }).join('') || '<p style="color:var(--muted)">لا توجد فروع</p>'}</div>`;
-    } else {
-      $('kpiGrid').innerHTML = `
-        <div class="kpi premium-kpi delegate"><div class="ico">🚚</div><div class="lbl">فواتير جاهزة</div><div class="val">${delegate.total || 0}</div></div>
-        <div class="kpi premium-kpi warn"><div class="ico">⏳</div><div class="lbl">بانتظار الإداري</div><div class="val">${delegate.pending || 0}</div></div>
-        <div class="kpi premium-kpi"><div class="ico">✓</div><div class="lbl">مرحّلة</div><div class="val">${delegate.synced || 0}</div></div>
-        <div class="kpi premium-kpi"><div class="ico">👥</div><div class="lbl">حسابات المندوبين</div><div class="val">${accStats.total || 0}</div></div>
-        <div class="kpi premium-kpi warn"><div class="ico">💳</div><div class="lbl">ديون المندوبين</div><div class="val" dir="ltr">${fmt(accStats.totalDebt)}</div></div>
-        <div class="kpi premium-kpi"><div class="ico">📋</div><div class="lbl">مدينون</div><div class="val">${accStats.withDebt || 0}</div></div>
-        <div class="kpi premium-kpi${edariPending ? ' warn' : ''}"><div class="ico">🔄</div><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>`;
-      $('branchesList').innerHTML = `
-        <div class="delegate-hub-card">
-          <div class="delegate-hub-icon">🚚</div>
-          <h3>مركز المندوبين</h3>
-          <p>جميع طلبات المندوبين وحساباتهم منفصلة عن فروع الشورجة. راجع الفواتير الجاهزة ثم رحّلها إلى الإداري.</p>
-          <div class="delegate-hub-actions">
-            <button type="button" class="btn btn-primary btn-sm" data-goto="delegates">فواتير المندوبين</button>
-            <button type="button" class="btn btn-secondary btn-sm" data-goto="accounts">حسابات المندوبين</button>
-          </div>
-        </div>`;
-      $('branchesList').querySelectorAll('[data-goto]').forEach((b) => {
-        b.addEventListener('click', () => document.querySelector(`.nav[data-view="${b.dataset.goto}"]`)?.click());
-      });
-    }
 
     const syncBar = $('edariSyncBar');
     if (syncBar) syncBar.hidden = true;
@@ -584,9 +672,10 @@
   window.loadAccounts = async function loadAccountsPremium() {
     const q = $('accSearch')?.value || '';
     const debtQ = accDebtOnly ? '&debt=1' : '';
+    const edariQ = accEdariFilter ? `&edariStatus=${encodeURIComponent(accEdariFilter)}` : '';
     const scopeQ = currentApp === 'warehouse' || currentApp === 'delegate' ? `&scope=${currentApp}` : '';
     updateAccountsBanner();
-    const data = await api(`/admin/accounts?q=${encodeURIComponent(q)}${debtQ}${scopeQ}`);
+    const data = await api(`/admin/accounts?q=${encodeURIComponent(q)}${debtQ}${edariQ}${scopeQ}`);
     $('accountTable').innerHTML = `
       <table>
         <thead><tr><th>الرمز</th><th>الاسم</th><th>الهاتف</th><th>الدين</th><th>حد الائتمان</th><th>الإداري</th><th></th></tr></thead>
@@ -618,10 +707,42 @@
     });
   };
 
-  $('btnAccDebtOnly')?.addEventListener('click', () => {
-    accDebtOnly = !accDebtOnly;
-    $('btnAccDebtOnly')?.classList.toggle('active', accDebtOnly);
+  $('accFilters')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-acc-filter]');
+    if (!chip) return;
+    const f = chip.dataset.accFilter || '';
+    if (f === 'debt') {
+      accDebtOnly = !accDebtOnly;
+      chip.classList.toggle('active', accDebtOnly);
+      loadAccounts();
+      return;
+    }
+    const edariMap = { 'edari-pending': 'pending', 'edari-synced': 'synced', 'edari-error': 'error' };
+    const next = edariMap[f] || '';
+    accEdariFilter = accEdariFilter === next ? '' : next;
+    $('accFilters')?.querySelectorAll('[data-acc-filter]').forEach((c) => {
+      if (c.dataset.accFilter === 'debt') return;
+      const key = edariMap[c.dataset.accFilter] || '';
+      c.classList.toggle('active', key && key === accEdariFilter);
+    });
     loadAccounts();
+  });
+
+  window.filterEdariSyncByStatus = function filterEdariSyncByStatus(status) {
+    edariStatusFilter = status || '';
+    window.edariStatusFilter = edariStatusFilter;
+    renderEdariSyncTable();
+  };
+
+  $('edariStatusFilters')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-edari-status]');
+    if (!chip) return;
+    edariStatusFilter = chip.dataset.edariStatus || '';
+    window.edariStatusFilter = edariStatusFilter;
+    $('edariStatusFilters').querySelectorAll('.filter-chip').forEach((c) => {
+      c.classList.toggle('active', c === chip);
+    });
+    renderEdariSyncTable();
   });
 
   // ——— Enhanced Edari Sync ———
@@ -702,11 +823,16 @@
     if ($('invFrom')) $('invFrom').value = today;
     if ($('invTo')) $('invTo').value = today;
 
-    if (token && !$('loginScreen')?.classList.contains('hidden') === false && $('app') && !$('app').classList.contains('hidden')) {
+    if (token && $('app') && !$('app').classList.contains('hidden')) {
       api('/auth/me').then((d) => {
         currentUser = d.user;
         $('sidebarUserName').textContent = currentUser?.fullName || 'مدير';
       }).catch(() => {});
+      const homeView = currentApp === 'delegate' ? 'delegates' : 'dashboard';
+      const navRoot = currentApp === 'delegate' ? '#navDelegate' : '#navWarehouse';
+      setTimeout(() => {
+        document.querySelector(`${navRoot} .nav[data-view="${homeView}"]`)?.click();
+      }, 50);
     }
   }
 

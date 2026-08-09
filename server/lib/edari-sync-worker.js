@@ -61,9 +61,10 @@ function logSync(message, detail) {
   }
 }
 
-async function fetchPending(serverUrl, extraPaths, limit = 100, kinds = null) {
+async function fetchPending(serverUrl, extraPaths, limit = 100, kinds = null, scope = '') {
   const params = new URLSearchParams({ limit: String(limit) });
   if (Array.isArray(kinds) && kinds.length) params.set('kinds', kinds.join(','));
+  if (scope === 'warehouse' || scope === 'delegate') params.set('scope', scope);
   const res = await fetch(`${serverUrl}/api/sync/edari/queue?${params.toString()}`, {
     headers: getAuthHeaders(extraPaths),
     signal: AbortSignal.timeout(20000)
@@ -114,7 +115,8 @@ async function runEdariSyncWorker({
   serverUrl = null,
   kinds = null,
   itemIds = null,
-  limit = 50
+  limit = 50,
+  scope = ''
 } = {}) {
   const map = handlers || {
     account: createEdariCustomerAccount,
@@ -135,7 +137,7 @@ async function runEdariSyncWorker({
     return { skipped: true, reason: 'missing_sync_key' };
   }
 
-  const items = await fetchPending(baseUrl, serverJsonPaths, limit, kindFilter);
+  const items = await fetchPending(baseUrl, serverJsonPaths, limit, kindFilter, scope);
   const idSet = Array.isArray(itemIds) && itemIds.length
     ? new Set(itemIds.map(Number))
     : null;

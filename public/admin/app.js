@@ -41,9 +41,39 @@ function adminAppScope() {
   return window.getAdminAppScope?.() || localStorage.getItem(APP_KEY) || 'warehouse';
 }
 
+window.viewAllowed = (view) => {
+  const fn = window.getAdminAppScope;
+  if (!fn) return true;
+  const map = {
+    dashboard: 'warehouse', reports: 'warehouse', invoices: 'warehouse',
+    warehousePrep: 'warehouse', products: 'warehouse', prices: 'warehouse',
+    journal: 'warehouse', delegates: 'delegate'
+  };
+  const scope = map[view];
+  if (!scope) return true;
+  return scope === fn();
+};
+window.edariStatusFilter = '';
+
 function scopeQuery() {
   const s = adminAppScope();
   return s === 'warehouse' || s === 'delegate' ? `&scope=${s}` : '';
+}
+
+function syncItemScope(item) {
+  return item.queueScope || item.queue_scope || inferSyncItemScope(item);
+}
+
+function inferSyncItemScope(item) {
+  const title = String(item.title || item.payload?.invoiceNo || '');
+  if (/^MND-/i.test(title)) return 'delegate';
+  return 'warehouse';
+}
+
+function filterSyncItemsByApp(items) {
+  const scope = adminAppScope();
+  if (scope !== 'warehouse' && scope !== 'delegate') return items;
+  return items.filter((item) => syncItemScope(item) === scope);
 }
 
 function debounce(fn, ms = 220) {
@@ -127,9 +157,13 @@ document.getElementById('btnLogout').addEventListener('click', () => {
 
 document.querySelectorAll('.nav').forEach((btn) => {
   btn.addEventListener('click', () => {
+    const view = btn.dataset.view;
+    if (window.viewAllowed && !window.viewAllowed(view)) {
+      toast('هذا القسم غير متاح في التطبيق الحالي');
+      return;
+    }
     document.querySelectorAll('.nav').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
-    const view = btn.dataset.view;
     document.querySelectorAll('.view').forEach((v) => v.classList.add('hidden'));
     document.getElementById(`view${view.charAt(0).toUpperCase() + view.slice(1)}`).classList.remove('hidden');
     setPageTitle(view);
@@ -237,8 +271,14 @@ function updateEdariSyncToolbar() {
 function renderEdariSyncTable() {
   const wrap = document.getElementById('edariSyncTable');
   if (!wrap) return;
-  if (!edariSyncItems.length) {
-    wrap.innerHTML = '<p style="color:var(--muted);padding:16px">لا توجد عناصر معلّقة في الطابور.</p>';
+  let items = edariSyncItems;
+  if (window.edariStatusFilter) {
+    items = items.filter((i) => i.status === window.edariStatusFilter);
+  }
+  items = filterSyncItemsByApp(items);
+  if (!items.length) {
+    const scopeLabel = adminAppScope() === 'delegate' ? 'المندوبين' : 'الشورجة';
+    wrap.innerHTML = `<p style="color:var(--muted);padding:16px">لا توجد عناصر معلّقة في طابور مزامنة ${scopeLabel}.</p>`;
     updateEdariSyncToolbar();
     return;
   }
@@ -256,7 +296,7 @@ function renderEdariSyncTable() {
         </tr>
       </thead>
       <tbody>
-        ${edariSyncItems.map((item) => `
+        ${items.map((item) => `
           <tr class="${item.status === 'error' ? 'row-error' : ''}">
             <td><input type="checkbox" class="edari-sync-check" data-id="${item.id}" ${edariSyncSelected.has(item.id) ? 'checked' : ''}></td>
             <td>${edariKindBadge(item.kind)}</td>
@@ -291,16 +331,21 @@ function renderEdariSyncTable() {
 
 async function loadEdariSync() {
   const kind = document.getElementById('edariSyncKindFilter')?.value || '';
-  const q = kind ? `?kinds=${encodeURIComponent(kind)}` : '';
+  const params = new URLSearchParams();
+  if (kind) params.set('kinds', kind);
+  const scope = adminAppScope();
+  params.set('scope', scope === 'delegate' ? 'delegate' : 'warehouse');
+  const q = params.toString() ? `?${params}` : '';
   const data = await api(`/admin/edari/sync-queue${q}`);
   const stats = data.stats || {};
   const byKind = stats.queueByKind || {};
-  edariSyncItems = data.items || [];
+  edariSyncItems = filterSyncItemsByApp(data.items || []);
   edariSyncSelected = new Set([...edariSyncSelected].filter((id) => edariSyncItems.some((i) => i.id === id)));
+  const scopeLabel = scope === 'delegate' ? 'المندوبين' : 'الشورجة';
   const statsEl = document.getElementById('edariSyncStats');
   if (statsEl) {
     statsEl.innerHTML = `
-      <div class="edari-stat"><span class="lbl">معلّق</span><span class="val">${stats.pending || 0}</span></div>
+      <div class="edari-stat"><span class="lbl">معلّق (${scopeLabel})</span><span class="val">${stats.pending || 0}</span></div>
       <div class="edari-stat warn"><span class="lbl">أخطاء</span><span class="val">${stats.error || 0}</span></div>
       <div class="edari-stat"><span class="lbl">حسابات</span><span class="val">${byKind.account || 0}</span></div>
       <div class="edari-stat"><span class="lbl">فواتير</span><span class="val">${byKind.invoice || 0}</span></div>
@@ -328,13 +373,18 @@ async function runEdariSyncTransfer({ kinds = null, itemIds = null } = {}) {
     if (ids?.length || kinds?.length) {
       await api('/admin/edari/sync-queue/retry', {
         method: 'POST',
-        body: JSON.stringify({ itemIds: ids, kinds: kinds || null })
+        body: JSON.stringify({
+          itemIds: ids,
+          kinds: kinds || null,
+          scope: adminAppScope() === 'delegate' ? 'delegate' : 'warehouse'
+        })
       });
     }
     const result = await window.edariDesktop.processEdariSync({
       kinds: kinds || null,
       itemIds: ids,
-      limit: 100
+      limit: 100,
+      scope: adminAppScope() === 'delegate' ? 'delegate' : 'warehouse'
     });
     if (result?.skipped) {
       const reasons = { busy: 'المزامنة قيد التشغيل', missing_sync_key: 'مفتاح المزامنة غير مضبوط', not_windows: 'يتطلب Windows' };
@@ -1275,7 +1325,14 @@ async function loadPayments() {
     `<option value="${a.id}">${esc(a.name)} — دين: ${fmt(a.balance)}</option>`
   ).join('');
   document.getElementById('payAcc').innerHTML = opts;
-  const pays = await api(`/admin/payments?limit=100${scopeQuery()}`);
+  const payParams = new URLSearchParams({ limit: '100' });
+  const scope = adminAppScope();
+  if (scope === 'warehouse' || scope === 'delegate') payParams.set('scope', scope);
+  const from = document.getElementById('payFrom')?.value || '';
+  const to = document.getElementById('payTo')?.value || '';
+  if (from) payParams.set('from', from);
+  if (to) payParams.set('to', to);
+  const pays = await api(`/admin/payments?${payParams}`);
   document.getElementById('paymentsTable').innerHTML = `
     <table>
       <thead><tr><th>الرقم</th><th>الحساب</th><th>المبلغ</th><th>التاريخ</th><th>الإداري</th><th>ملاحظات</th></tr></thead>
@@ -1309,6 +1366,16 @@ document.getElementById('btnPay').addEventListener('click', async () => {
     loadDashboard();
     loadAccounts();
   } catch (err) { toast(err.message); }
+});
+
+document.getElementById('payFrom')?.addEventListener('change', () => loadPayments());
+document.getElementById('payTo')?.addEventListener('change', () => loadPayments());
+document.getElementById('btnPayClearDates')?.addEventListener('click', () => {
+  const f = document.getElementById('payFrom');
+  const t = document.getElementById('payTo');
+  if (f) f.value = '';
+  if (t) t.value = '';
+  loadPayments();
 });
 
 async function loadJournal() {
