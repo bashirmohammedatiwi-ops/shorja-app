@@ -6,7 +6,7 @@ const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, li
 const { listAccounts, createAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { getEdariParentInfo } = require('../lib/edari-accounts');
 const { listPendingSync, listPendingSyncEnriched, processEdariQueue, syncAccountToEdari, syncQueueStats } = require('../lib/edari-sync');
-const { listDelegateInvoices, delegateInvoiceStats, queueInvoiceForEdari } = require('../lib/delegate-processed');
+const { listDelegateInvoices, listWarehousePrepInvoices, delegateInvoiceStats, warehousePrepStats, queueInvoiceForEdari, DELEGATE_BRANCH_CODE } = require('../lib/delegate-processed');
 const { isManualSyncOnlyMode } = require('../lib/edari-safety');
 const { canWriteEdari } = require('../lib/edari-bridge');
 const { resetBusinessData, snapshotCounts } = require('../lib/reset-business-data');
@@ -21,9 +21,17 @@ router.get('/dashboard', (req, res) => {
   const today = dailySummary({});
   const products = stats();
   const accounts = accountStats();
-  const branches = db.prepare('SELECT id, code, name, last_seen_at, price_version FROM branches').all();
+  const accountsWarehouse = accountStats({ scope: 'warehouse' });
+  const accountsDelegate = accountStats({ scope: 'delegate' });
+  const branches = db.prepare(`
+    SELECT id, code, name, last_seen_at, price_version
+    FROM branches
+    WHERE code != ?
+    ORDER BY id
+  `).all(DELEGATE_BRANCH_CODE);
   const pendingSync = db.prepare(`SELECT COUNT(*) AS c FROM invoices WHERE sync_status = 'pending'`).get().c;
   const edariSync = syncQueueStats();
+  const warehousePrep = warehousePrepStats();
   const delegatePrep = delegateInvoiceStats();
   const lowStock = db.prepare(`
     SELECT COUNT(*) AS c FROM products WHERE is_active = 1 AND stock_qty <= 5
@@ -33,9 +41,12 @@ router.get('/dashboard', (req, res) => {
     today,
     products,
     accounts,
+    accountsWarehouse,
+    accountsDelegate,
     branches,
     pendingSync,
     edariSync,
+    warehousePrep,
     delegatePrep,
     lowStock: Number(lowStock),
     priceVersion: getLatestVersion()
@@ -220,7 +231,8 @@ router.get('/invoices', (req, res) => {
       dateFrom: req.query.from,
       dateTo: req.query.to,
       q: req.query.q,
-      limit: Number(req.query.limit) || 100
+      limit: Number(req.query.limit) || 100,
+      excludePrepModes: ['delegate']
     })
   });
 });
@@ -254,6 +266,19 @@ router.get('/delegate-invoices', (req, res) => {
   });
 });
 
+router.get('/warehouse-prep-invoices', (req, res) => {
+  res.json({
+    ok: true,
+    stats: warehousePrepStats(),
+    ...listWarehousePrepInvoices({
+      q: req.query.q,
+      dateFrom: req.query.from,
+      dateTo: req.query.to,
+      limit: Number(req.query.limit) || 100
+    })
+  });
+});
+
 router.post('/delegate-invoices/:id/queue-edari', (req, res) => {
   try {
     const invoice = loadInvoice(Number(req.params.id));
@@ -272,15 +297,21 @@ router.post('/delegate-invoices/:id/queue-edari', (req, res) => {
 });
 
 router.get('/accounts', (req, res) => {
+  const scope = String(req.query.scope || '').trim();
   res.json({ ok: true, ...listAccounts({
     q: req.query.q,
-    hasDebt: req.query.debt === '1'
+    hasDebt: req.query.debt === '1',
+    scope: scope === 'warehouse' || scope === 'delegate' ? scope : ''
   }) });
 });
 
 router.post('/accounts', async (req, res) => {
   try {
-    const account = await createAccount(req.body || {});
+    const body = req.body || {};
+    const account = await createAccount({
+      ...body,
+      accountScope: body.accountScope === 'delegate' ? 'delegate' : 'warehouse'
+    });
     res.json({ ok: true, account });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
@@ -351,11 +382,13 @@ router.post('/payments', (req, res) => {
 });
 
 router.get('/payments', (req, res) => {
+  const scope = String(req.query.scope || '').trim();
   res.json({ ok: true, payments: listPayments({
     accountId: req.query.accountId ? Number(req.query.accountId) : null,
     branchId: req.query.branchId ? Number(req.query.branchId) : null,
     dateFrom: req.query.from,
-    dateTo: req.query.to
+    dateTo: req.query.to,
+    accountScope: scope === 'warehouse' || scope === 'delegate' ? scope : ''
   }) });
 });
 
@@ -375,17 +408,30 @@ router.post('/journal/adjustment', (req, res) => {
 });
 
 router.get('/journal', (req, res) => {
+  const scope = String(req.query.scope || '').trim();
   res.json({
     ok: true,
     entries: listJournal({
       accountId: req.query.accountId ? Number(req.query.accountId) : null,
+      accountScope: scope === 'warehouse' || scope === 'delegate' ? scope : '',
       limit: Number(req.query.limit) || 200
     })
   });
 });
 
-router.get('/branches', (_req, res) => {
-  const branches = db.prepare('SELECT * FROM branches ORDER BY id').all().map((b) => ({
+router.get('/branches', (req, res) => {
+  const scope = String(req.query.scope || 'pos').trim();
+  let sql = 'SELECT * FROM branches';
+  const params = [];
+  if (scope === 'pos') {
+    sql += ' WHERE code != ?';
+    params.push(DELEGATE_BRANCH_CODE);
+  } else if (scope === 'delegate') {
+    sql += ' WHERE code = ?';
+    params.push(DELEGATE_BRANCH_CODE);
+  }
+  sql += ' ORDER BY id';
+  const branches = db.prepare(sql).all(...params).map((b) => ({
     id: b.id,
     code: b.code,
     name: b.name,

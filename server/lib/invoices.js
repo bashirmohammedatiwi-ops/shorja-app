@@ -418,13 +418,20 @@ async function createReturn(parentId, data, user) {
   }, user);
 }
 
-function listInvoices({ branchId, dateFrom, dateTo, q, kind, limit = 50, offset = 0 } = {}) {
+function listInvoices({ branchId, dateFrom, dateTo, q, kind, limit = 50, offset = 0, excludePrepModes = [] } = {}) {
   const where = ['1=1'];
   const params = [];
   if (branchId) { where.push('i.branch_id = ?'); params.push(branchId); }
   if (dateFrom) { where.push('i.invoice_date >= ?'); params.push(dateFrom); }
   if (dateTo) { where.push('i.invoice_date <= ?'); params.push(dateTo); }
   if (kind) { where.push('i.kind = ?'); params.push(kind); }
+  if (Array.isArray(excludePrepModes) && excludePrepModes.length) {
+    const modes = excludePrepModes.map((m) => String(m).trim()).filter(Boolean);
+    if (modes.length) {
+      where.push(`COALESCE(i.prep_mode, 'branch') NOT IN (${modes.map(() => '?').join(', ')})`);
+      params.push(...modes);
+    }
+  }
   if (q) {
     where.push('(i.invoice_no LIKE ? OR i.customer_name LIKE ? OR EXISTS (SELECT 1 FROM invoice_lines l WHERE l.invoice_id = i.id AND (l.barcode LIKE ? OR l.name LIKE ?)))');
     const like = `%${q}%`;
@@ -447,11 +454,18 @@ function listInvoices({ branchId, dateFrom, dateTo, q, kind, limit = 50, offset 
   };
 }
 
-function dailySummary({ branchId, date } = {}) {
+function dailySummary({ branchId, date, excludePrepModes = ['delegate'] } = {}) {
   const d = date || new Date().toISOString().slice(0, 10);
   const where = ['invoice_date = ?'];
   const params = [d];
   if (branchId) { where.push('branch_id = ?'); params.push(branchId); }
+  if (Array.isArray(excludePrepModes) && excludePrepModes.length) {
+    const modes = excludePrepModes.map((m) => String(m).trim()).filter(Boolean);
+    if (modes.length) {
+      where.push(`COALESCE(prep_mode, 'branch') NOT IN (${modes.map(() => '?').join(', ')})`);
+      params.push(...modes);
+    }
+  }
   const sales = db.prepare(`
     SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS amount,
       COALESCE(SUM(paid_amount), 0) AS paid, COALESCE(SUM(due_amount), 0) AS due
@@ -522,13 +536,17 @@ function createPayment({ accountId, amount, method, notes, branchId, createdBy, 
   return payment;
 }
 
-function listPayments({ accountId, branchId, dateFrom, dateTo, limit = 50 } = {}) {
+function listPayments({ accountId, branchId, dateFrom, dateTo, accountScope = '', limit = 50 } = {}) {
   const where = ['1=1'];
   const params = [];
   if (accountId) { where.push('p.account_id = ?'); params.push(accountId); }
   if (branchId) { where.push('p.branch_id = ?'); params.push(branchId); }
   if (dateFrom) { where.push('p.payment_date >= ?'); params.push(dateFrom); }
   if (dateTo) { where.push('p.payment_date <= ?'); params.push(dateTo); }
+  if (accountScope === 'warehouse' || accountScope === 'delegate') {
+    where.push('a.account_scope = ?');
+    params.push(accountScope);
+  }
   const rows = db.prepare(`
     SELECT p.*, a.name AS account_name, a.code AS account_code
     FROM payments p JOIN accounts a ON a.id = p.account_id
@@ -552,11 +570,23 @@ function listPayments({ accountId, branchId, dateFrom, dateTo, limit = 50 } = {}
   }));
 }
 
-function listJournal({ accountId, limit = 100 } = {}) {
-  const where = accountId ? 'WHERE account_id = ?' : '';
-  const params = accountId ? [accountId] : [];
+function listJournal({ accountId, accountScope = '', limit = 100 } = {}) {
+  const where = [];
+  const params = [];
+  if (accountId) {
+    where.push('j.account_id = ?');
+    params.push(accountId);
+  }
+  if (accountScope === 'warehouse' || accountScope === 'delegate') {
+    where.push('a.account_scope = ?');
+    params.push(accountScope);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const rows = db.prepare(`
-    SELECT * FROM journal_entries ${where} ORDER BY created_at DESC LIMIT ?
+    SELECT j.* FROM journal_entries j
+    LEFT JOIN accounts a ON a.id = j.account_id
+    ${whereSql}
+    ORDER BY j.created_at DESC LIMIT ?
   `).all(...params, limit);
   return rows.map((r) => ({
     id: r.id,
@@ -590,12 +620,25 @@ function createAdjustment({ accountId, amount, description, createdBy, branchId 
   return tx();
 }
 
-function salesReport({ branchId, dateFrom, dateTo } = {}) {
+function salesReport({ branchId, dateFrom, dateTo, excludePrepModes = ['delegate'] } = {}) {
   const from = dateFrom || new Date().toISOString().slice(0, 10);
   const to = dateTo || from;
   const where = ['invoice_date >= ?', 'invoice_date <= ?'];
   const params = [from, to];
   if (branchId) { where.push('branch_id = ?'); params.push(branchId); }
+  if (Array.isArray(excludePrepModes) && excludePrepModes.length) {
+    const modes = excludePrepModes.map((m) => String(m).trim()).filter(Boolean);
+    if (modes.length) {
+      where.push(`COALESCE(prep_mode, 'branch') NOT IN (${modes.map(() => '?').join(', ')})`);
+      params.push(...modes);
+    }
+  }
+  const invoiceWhere = where.map((clause) => {
+    if (clause.startsWith('invoice_date')) return `i.${clause}`;
+    if (clause.startsWith('branch_id')) return `i.${clause}`;
+    if (clause.startsWith('COALESCE(prep_mode')) return clause.replace('prep_mode', 'i.prep_mode');
+    return clause;
+  });
 
   const sales = db.prepare(`
     SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS amount,
@@ -617,12 +660,11 @@ function salesReport({ branchId, dateFrom, dateTo } = {}) {
     SELECT l.barcode, l.name, SUM(l.qty) AS qty, SUM(l.line_total) AS amount
     FROM invoice_lines l
     JOIN invoices i ON i.id = l.invoice_id
-    WHERE i.invoice_date >= ? AND i.invoice_date <= ?
-    ${branchId ? 'AND i.branch_id = ?' : ''}
+    WHERE ${invoiceWhere.join(' AND ')}
     AND i.kind = 'sale'
     GROUP BY l.barcode, l.name
     ORDER BY amount DESC LIMIT 10
-  `).all(...(branchId ? [from, to, branchId] : [from, to]));
+  `).all(...params);
 
   const payments = db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count

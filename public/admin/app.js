@@ -1,5 +1,6 @@
 const API = '/api';
 const KEY = 'shorja_admin';
+const APP_KEY = 'shorja_admin_app';
 let token = null;
 let activeInvoiceId = null;
 let editingProduct = null;
@@ -21,8 +22,9 @@ const CATEGORY_ICONS = {
 const PAGE_TITLES = {
   dashboard: ['لوحة اليوم', 'ملخص مبيعات الفروع والحسابات'],
   reports: ['التقارير', 'تحليل المبيعات والمنتجات الأكثر مبيعاً'],
-  invoices: ['فواتير المبيعات', 'سجل المبيعات والمرتجعات'],
-  delegates: ['المندوبين', 'فواتير التجهيز الجاهزة للترحيل إلى الإداري'],
+  invoices: ['فواتير الشورجة', 'مبيعات فروع الشورجة فقط — بدون المندوبين'],
+  warehousePrep: ['تجهيز الشورجة', 'فواتير فروع الشورجة الجاهزة للترحيل بعد التجهيز'],
+  delegates: ['المندوبين', 'طلبات المندوبين الجاهزة للترحيل — منفصلة عن الشورجة'],
   products: ['المنتجات', 'استعراض وإدارة مخزون المنتجات'],
   prices: ['إدارة الأسعار', 'حدد المنتجات بالباركود ثم ارفعها للفروع'],
   accounts: ['حسابات العملاء', 'الديون وحدود الائتمان'],
@@ -34,6 +36,15 @@ const PAGE_TITLES = {
 const EDARI_KIND_LABELS = { account: 'حساب', invoice: 'فاتورة', payment: 'تسديد' };
 let edariSyncItems = [];
 let edariSyncSelected = new Set();
+
+function adminAppScope() {
+  return window.getAdminAppScope?.() || localStorage.getItem(APP_KEY) || 'warehouse';
+}
+
+function scopeQuery() {
+  const s = adminAppScope();
+  return s === 'warehouse' || s === 'delegate' ? `&scope=${s}` : '';
+}
 
 function debounce(fn, ms = 220) {
   let t;
@@ -126,6 +137,7 @@ document.querySelectorAll('.nav').forEach((btn) => {
       dashboard: () => (window.loadDashboard || loadDashboard)(),
       reports: () => (window.loadReports || (() => {}))(),
       invoices: () => (window.loadInvoices || loadInvoices)(),
+      warehousePrep: () => (window.loadWarehousePrep || loadWarehousePrep)(),
       delegates: () => (window.loadDelegates || loadDelegates)(),
       products: loadProducts,
       prices: loadPrices,
@@ -418,30 +430,24 @@ async function loadInvoices() {
 document.getElementById('invDate')?.addEventListener('change', loadInvoices);
 document.getElementById('invSearch')?.addEventListener('input', debounce(loadInvoices, 250));
 
-async function loadDelegates() {
-  const date = document.getElementById('delegateDate')?.value || '';
-  const q = document.getElementById('delegateSearch')?.value || '';
-  const params = new URLSearchParams();
-  if (date) { params.set('from', date); params.set('to', date); }
-  if (q) params.set('q', q);
-  const data = await api(`/admin/delegate-invoices?${params.toString()}`);
-  const stats = data.stats || {};
-  const statsEl = document.getElementById('delegateStats');
-  if (statsEl) {
-    statsEl.innerHTML = `
-      <div class="kpi"><div class="lbl">جاهزة للترحيل</div><div class="val">${stats.total || 0}</div></div>
-      <div class="kpi warn"><div class="lbl">بانتظار الإداري</div><div class="val">${stats.pending || 0}</div></div>
-      <div class="kpi"><div class="lbl">مرحّلة</div><div class="val">${stats.synced || 0}</div></div>`;
-  }
-  const rows = data.invoices || [];
-  document.getElementById('delegateTable').innerHTML = `
+function renderPrepStats(el, stats) {
+  if (!el) return;
+  el.innerHTML = `
+    <div class="kpi"><div class="lbl">جاهزة للترحيل</div><div class="val">${stats.total || 0}</div></div>
+    <div class="kpi warn"><div class="lbl">بانتظار الإداري</div><div class="val">${stats.pending || 0}</div></div>
+    <div class="kpi"><div class="lbl">مرحّلة</div><div class="val">${stats.synced || 0}</div></div>`;
+}
+
+function renderPrepTable(tableEl, rows, { labelHeader, labelFn }) {
+  if (!tableEl) return;
+  tableEl.innerHTML = `
     <table>
       <thead><tr>
-        <th>المصدر</th><th>رقم الفاتورة</th><th>طلب التجهيز</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>الإداري</th><th></th>
+        <th>${labelHeader}</th><th>رقم الفاتورة</th><th>طلب التجهيز</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>الإداري</th><th></th>
       </tr></thead>
       <tbody>${rows.map((i) => `
         <tr>
-          <td>${esc(i.sourceLabel || (i.prepMode === 'warehouse' ? 'شورجة' : 'مندوب'))}</td>
+          <td>${esc(labelFn(i))}</td>
           <td><button type="button" class="linkish" data-invoice-id="${i.id}">${esc(i.invoiceNo)}</button></td>
           <td dir="ltr">${esc(i.prepOrderNo || '—')}</td>
           <td>${esc(i.customerName || 'نقدي')}</td>
@@ -452,20 +458,51 @@ async function loadDelegates() {
             ? '<span style="color:var(--ok)">✓</span>'
             : `<button type="button" class="btn btn-secondary btn-sm" data-queue-edari="${i.id}">ترحيل للإداري</button>`}
           </td>
-        </tr>`).join('') || '<tr><td colspan="8">لا توجد فواتير مجهّزة بانتظار العرض</td></tr>'}
+        </tr>`).join('') || '<tr><td colspan="8">لا توجد فواتير</td></tr>'}
       </tbody>
     </table>`;
-  document.getElementById('delegateTable').querySelectorAll('[data-invoice-id]').forEach((btn) => {
+  tableEl.querySelectorAll('[data-invoice-id]').forEach((btn) => {
     btn.addEventListener('click', () => openInvoice(Number(btn.dataset.invoiceId)));
   });
-  document.getElementById('delegateTable').querySelectorAll('[data-queue-edari]').forEach((btn) => {
+  tableEl.querySelectorAll('[data-queue-edari]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       try {
         await api(`/admin/delegate-invoices/${btn.dataset.queueEdari}/queue-edari`, { method: 'POST' });
         toast('أُضيفت الفاتورة لطابور الإداري — راجع «مزامنة الإداري» للترحيل');
-        loadDelegates();
+        document.querySelector('.nav.active')?.click();
       } catch (err) { toast(err.message); }
     });
+  });
+}
+
+async function loadWarehousePrep() {
+  const date = document.getElementById('warehouseDate')?.value || '';
+  const q = document.getElementById('warehouseSearch')?.value || '';
+  const params = new URLSearchParams();
+  if (date) { params.set('from', date); params.set('to', date); }
+  if (q) params.set('q', q);
+  const data = await api(`/admin/warehouse-prep-invoices?${params.toString()}`);
+  renderPrepStats(document.getElementById('warehouseStats'), data.stats || {});
+  renderPrepTable(document.getElementById('warehouseTable'), data.invoices || [], {
+    labelHeader: 'الفرع',
+    labelFn: (i) => i.branchName || i.sourceLabel || 'فرع الشورجة'
+  });
+}
+
+document.getElementById('warehouseDate')?.addEventListener('change', loadWarehousePrep);
+document.getElementById('warehouseSearch')?.addEventListener('input', debounce(loadWarehousePrep, 250));
+
+async function loadDelegates() {
+  const date = document.getElementById('delegateDate')?.value || '';
+  const q = document.getElementById('delegateSearch')?.value || '';
+  const params = new URLSearchParams();
+  if (date) { params.set('from', date); params.set('to', date); }
+  if (q) params.set('q', q);
+  const data = await api(`/admin/delegate-invoices?${params.toString()}`);
+  renderPrepStats(document.getElementById('delegateStats'), data.stats || {});
+  renderPrepTable(document.getElementById('delegateTable'), data.invoices || [], {
+    labelHeader: 'المندوب',
+    labelFn: (i) => i.prepOrderNo || i.sourceLabel || '—'
   });
 }
 
@@ -1129,7 +1166,7 @@ document.getElementById('btnPublishPrices').addEventListener('click', async () =
 
 async function loadAccounts() {
   const q = document.getElementById('accSearch').value || '';
-  const data = await api(`/admin/accounts?q=${encodeURIComponent(q)}`);
+  const data = await api(`/admin/accounts?q=${encodeURIComponent(q)}${scopeQuery()}`);
   document.getElementById('accountTable').innerHTML = `
     <table>
       <thead><tr><th>الرمز</th><th>الاسم</th><th>الهاتف</th><th>الرصيد / الدين</th><th>حد الائتمان</th><th>الإداري</th></tr></thead>
@@ -1215,7 +1252,8 @@ document.getElementById('accountForm')?.addEventListener('submit', async (e) => 
         phone: document.getElementById('accFormPhone').value.trim(),
         address: document.getElementById('accFormAddress').value.trim(),
         creditLimit: Number(document.getElementById('accFormCredit').value || 0),
-        notes: document.getElementById('accFormNotes').value.trim()
+        notes: document.getElementById('accFormNotes').value.trim(),
+        accountScope: adminAppScope()
       })
     });
     document.getElementById('accountModal').close();
@@ -1226,12 +1264,12 @@ document.getElementById('accountForm')?.addEventListener('submit', async (e) => 
 });
 
 async function loadPayments() {
-  const acc = await api('/admin/accounts');
+  const acc = await api(`/admin/accounts?limit=500${scopeQuery()}`);
   const opts = (acc.accounts||[]).map((a) =>
     `<option value="${a.id}">${esc(a.name)} — دين: ${fmt(a.balance)}</option>`
   ).join('');
   document.getElementById('payAcc').innerHTML = opts;
-  const pays = await api('/admin/payments');
+  const pays = await api(`/admin/payments?limit=100${scopeQuery()}`);
   document.getElementById('paymentsTable').innerHTML = `
     <table>
       <thead><tr><th>الرقم</th><th>الحساب</th><th>المبلغ</th><th>التاريخ</th><th>الإداري</th><th>ملاحظات</th></tr></thead>
@@ -1268,11 +1306,11 @@ document.getElementById('btnPay').addEventListener('click', async () => {
 });
 
 async function loadJournal() {
-  const acc = await api('/admin/accounts');
+  const acc = await api(`/admin/accounts?limit=500${scopeQuery()}`);
   document.getElementById('adjAcc').innerHTML = (acc.accounts||[]).map((a) =>
     `<option value="${a.id}">${esc(a.name)} — ${fmt(a.balance)}</option>`
   ).join('');
-  const data = await api('/admin/journal?limit=100');
+  const data = await api(`/admin/journal?limit=100${scopeQuery()}`);
   document.getElementById('journalTable').innerHTML = `
     <table>
       <thead><tr><th>الرقم</th><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th></tr></thead>

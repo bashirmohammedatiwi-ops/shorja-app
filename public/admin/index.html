@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=6">
-  <link rel="stylesheet" href="premium.css?v=1">
+  <link rel="stylesheet" href="styles.css?v=7">
+  <link rel="stylesheet" href="premium.css?v=3">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -27,38 +27,58 @@
         <p class="err hidden" id="loginError"></p>
       </form>
       <div class="login-features">
-        <p>لوحة موحّدة للفروع والمندوبين والإداري</p>
-        <p>تقارير مبيعات · ترحيل Edari · إدارة الأسعار</p>
+        <p>تطبيقان منفصلان: الشورجة · المندوبين</p>
+        <p>حسابات منفصلة · تقارير · ترحيل Edari</p>
         <p>يعمل مع تطبيق Windows للترحيل المباشر</p>
       </div>
     </div>
   </div>
 
   <div id="app" class="app hidden">
+    <header class="app-switcher-bar" id="appSwitcherBar">
+      <div class="app-switcher-inner">
+        <button type="button" class="app-switch-tab active" data-app="warehouse" id="appTabWarehouse">
+          <span class="app-switch-ico">🏪</span>
+          <span class="app-switch-text">
+            <strong>الشورجة</strong>
+            <small>فروع · نقاط البيع · المخزن</small>
+          </span>
+        </button>
+        <button type="button" class="app-switch-tab" data-app="delegate" id="appTabDelegate">
+          <span class="app-switch-ico">🚚</span>
+          <span class="app-switch-text">
+            <strong>المندوبين</strong>
+            <small>طلبات · حسابات المندوبين</small>
+          </span>
+        </button>
+      </div>
+    </header>
+    <div class="app-body">
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <aside class="sidebar">
       <div class="logo-wrap">
-        <div class="logo-mark sm">د</div>
+        <div class="logo-mark sm" id="sidebarLogoMark">د</div>
         <div>
-          <strong>ديما الحياة</strong>
-          <small>لوحة الإدارة المركزية</small>
+          <strong id="sidebarAppTitle">ديما الحياة</strong>
+          <small id="sidebarAppSubtitle">لوحة الشورجة</small>
         </div>
       </div>
       <div class="sidebar-user">
         <strong id="sidebarUserName">مدير النظام</strong>
-        <small>مركز التحكم والمزامنة</small>
+        <small id="sidebarUserRole">مركز التحكم والمزامنة</small>
       </div>
-      <nav>
-        <button type="button" class="nav active" data-view="dashboard">لوحة اليوم</button>
-        <button type="button" class="nav" data-view="reports">التقارير</button>
-        <button type="button" class="nav" data-view="invoices">الفواتير</button>
-        <button type="button" class="nav" data-view="delegates">المندوبين</button>
-        <button type="button" class="nav" data-view="products">المنتجات</button>
-        <button type="button" class="nav" data-view="prices">الأسعار</button>
-        <button type="button" class="nav" data-view="accounts">الحسابات</button>
-        <button type="button" class="nav" data-view="payments">التسديدات</button>
-        <button type="button" class="nav" data-view="journal">القيود</button>
-        <button type="button" class="nav nav-edari" data-view="edariSync">مزامنة الإداري</button>
+      <nav id="mainNav">
+        <button type="button" class="nav active" data-view="dashboard" data-app="both">لوحة اليوم</button>
+        <button type="button" class="nav" data-view="reports" data-app="warehouse">التقارير</button>
+        <button type="button" class="nav" data-view="invoices" data-app="warehouse">الفواتير</button>
+        <button type="button" class="nav" data-view="warehousePrep" data-app="warehouse">تجهيز الشورجة</button>
+        <button type="button" class="nav" data-view="delegates" data-app="delegate">فواتير المندوبين</button>
+        <button type="button" class="nav" data-view="products" data-app="warehouse">المنتجات</button>
+        <button type="button" class="nav" data-view="prices" data-app="warehouse">الأسعار</button>
+        <button type="button" class="nav" data-view="accounts" data-app="both">الحسابات</button>
+        <button type="button" class="nav" data-view="payments" data-app="both">التسديدات</button>
+        <button type="button" class="nav" data-view="journal" data-app="warehouse">القيود</button>
+        <button type="button" class="nav nav-edari" data-view="edariSync" data-app="both">مزامنة الإداري</button>
       </nav>
       <button type="button" class="btn btn-ghost logout" id="btnLogout">خروج</button>
     </aside>
@@ -80,6 +100,7 @@
         <div class="quick-actions" id="quickActions">
           <button type="button" class="quick-action primary" data-goto="reports">📈 تقرير المبيعات</button>
           <button type="button" class="quick-action" data-goto="invoices">🧾 الفواتير</button>
+          <button type="button" class="quick-action warehouse" data-goto="warehousePrep">🏪 تجهيز الشورجة</button>
           <button type="button" class="quick-action delegate" data-goto="delegates">🚚 المندوبين</button>
           <button type="button" class="quick-action" data-goto="edariSync">🔄 مزامنة الإداري</button>
           <button type="button" class="quick-action" data-goto="prices">💰 رفع الأسعار</button>
@@ -95,8 +116,9 @@
           <div class="panel-card">
             <div class="panel-card-head"><h2>اختصارات</h2></div>
             <div class="panel-card-body">
-              <p class="hint" style="margin-bottom:12px">استخدم الشريط الجانبي أو الأزرار أعلاه للوصول السريع. الترحيل إلى الإداري يتم من تطبيق Windows أو من قسم المندوبين.</p>
-              <button type="button" class="btn btn-primary btn-sm" data-goto="delegates">فواتير المندوبين</button>
+              <p class="hint" style="margin-bottom:12px">فروع الشورجة والمندوبين منفصلان بالكامل. الترحيل إلى الإداري من قسم التجهيز أو المندوبين.</p>
+              <button type="button" class="btn btn-primary btn-sm" data-goto="warehousePrep">تجهيز الشورجة</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="delegates">فواتير المندوبين</button>
               <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="accounts">حسابات العملاء</button>
             </div>
           </div>
@@ -144,6 +166,29 @@
         </div>
       </section>
 
+      <section id="viewWarehousePrep" class="view hidden">
+        <div class="warehouse-hero" id="warehouseStats"></div>
+        <div class="section-panel">
+          <div class="section-panel-toolbar">
+            <div class="search-box">
+              <span class="search-ico" aria-hidden="true">⌕</span>
+              <input type="search" id="warehouseSearch" placeholder="بحث برقم الفاتورة، الفرع، العميل...">
+            </div>
+            <input type="date" id="warehouseDate" class="field-date">
+            <div class="toolbar-row" id="warehouseFilters" style="margin:0">
+              <button type="button" class="filter-chip active" data-warehouse-filter="">الكل</button>
+              <button type="button" class="filter-chip" data-warehouse-filter="pending">بانتظار الإداري</button>
+              <button type="button" class="filter-chip" data-warehouse-filter="synced">مرحّلة</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btnQueueAllWarehouse">ترحيل الكل للإداري</button>
+            </div>
+          </div>
+          <p class="hint warehouse-hint">فواتير فروع الشورجة بعد «تم التجهيز» من المستودع — منفصلة عن طلبات المندوبين.</p>
+          <div class="section-panel-body no-pad">
+            <div class="table-wrap" id="warehouseTable"></div>
+          </div>
+        </div>
+      </section>
+
       <section id="viewDelegates" class="view hidden">
         <div class="delegate-hero" id="delegateStats"></div>
         <div class="section-panel">
@@ -160,7 +205,7 @@
               <button type="button" class="btn btn-primary btn-sm" id="btnQueueAllDelegates">ترحيل الكل للإداري</button>
             </div>
           </div>
-          <p class="hint delegate-hint">فواتير وصلت بعد ضغط موظف التجهيز على «تم التجهيز» — يمكن ترحيلها إلى الإداري على حساب الزبون في الشجرة.</p>
+          <p class="hint delegate-hint">طلبات المندوبين فقط بعد «تم التجهيز» — منفصلة عن فروع الشورجة.</p>
           <div class="section-panel-body no-pad">
             <div class="table-wrap" id="delegateTable"></div>
           </div>
@@ -282,6 +327,7 @@
 
       <section id="viewAccounts" class="view hidden">
         <div class="section-panel">
+          <div class="accounts-scope-banner" id="accountsScopeBanner"></div>
           <div class="section-panel-toolbar">
             <div class="search-box">
               <span class="search-ico" aria-hidden="true">⌕</span>
@@ -345,6 +391,7 @@
         </div>
       </section>
     </main>
+    </div>
   </div>
   <div id="toast" class="toast hidden"></div>
 
@@ -437,7 +484,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=13"></script>
-  <script src="premium.js?v=1"></script>
+  <script src="app.js?v=15"></script>
+  <script src="premium.js?v=3"></script>
 </body>
 </html>

@@ -1,11 +1,36 @@
 /**
- * Premium admin enhancements v2
+ * Premium admin enhancements v3 — dual-app switcher (الشورجة | المندوبين)
  */
 (function () {
+  const APP_KEY = 'shorja_admin_app';
+  let currentApp = localStorage.getItem(APP_KEY) || 'warehouse';
+
+  window.getAdminAppScope = () => currentApp;
+
+  const APP_META = {
+    warehouse: {
+      title: 'ديما الحياة',
+      subtitle: 'لوحة الشورجة',
+      logo: 'د',
+      themeClass: 'app-warehouse',
+      accountsLabel: 'حسابات الشورجة',
+      paymentsLabel: 'تسديدات الشورجة'
+    },
+    delegate: {
+      title: 'المندوبين',
+      subtitle: 'لوحة المندوبين',
+      logo: 'م',
+      themeClass: 'app-delegate',
+      accountsLabel: 'حسابات المندوبين',
+      paymentsLabel: 'تسديدات المندوبين'
+    }
+  };
+
   const NAV_ICONS = {
     dashboard: '📊',
     reports: '📈',
     invoices: '🧾',
+    warehousePrep: '🏪',
     delegates: '🚚',
     products: '📦',
     prices: '💰',
@@ -18,10 +43,90 @@
   let currentUser = null;
   let branchesCache = [];
   let delegateFilter = '';
+  let warehouseFilter = '';
   let accDebtOnly = false;
   let clockTimer = null;
 
   function $(id) { return document.getElementById(id); }
+
+  function updateAccountsBanner() {
+    const el = $('accountsScopeBanner');
+    if (!el) return;
+    if (currentApp === 'warehouse') {
+      el.className = 'accounts-scope-banner warehouse';
+      el.innerHTML = '<span class="banner-ico">🏪</span><div><strong>حسابات الشورجة</strong><p>زبائن فروع الشورجة ونقاط البيع فقط — لا تظهر حسابات المندوبين في نقطة البيع</p></div>';
+    } else {
+      el.className = 'accounts-scope-banner delegate';
+      el.innerHTML = '<span class="banner-ico">🚚</span><div><strong>حسابات المندوبين</strong><p>زبائن المندوبين منفصلون تماماً عن الشورجة — تُدار من هنا فقط</p></div>';
+    }
+  }
+
+  function applyAppContext(navigate = true) {
+    const meta = APP_META[currentApp];
+    const appEl = $('app');
+    appEl?.classList.remove('app-warehouse', 'app-delegate');
+    appEl?.classList.add(meta.themeClass);
+
+    document.querySelectorAll('.app-switch-tab').forEach((tab) => {
+      tab.classList.toggle('active', tab.dataset.app === currentApp);
+    });
+
+    if ($('sidebarAppTitle')) $('sidebarAppTitle').textContent = meta.title;
+    if ($('sidebarAppSubtitle')) $('sidebarAppSubtitle').textContent = meta.subtitle;
+    if ($('sidebarLogoMark')) $('sidebarLogoMark').textContent = meta.logo;
+    if ($('sidebarUserRole')) {
+      $('sidebarUserRole').textContent = currentApp === 'warehouse'
+        ? 'فروع الشورجة · نقاط البيع · المخزن'
+        : 'طلبات المندوبين · حساباتهم';
+    }
+
+    document.querySelectorAll('.nav[data-view]').forEach((btn) => {
+      const apps = btn.dataset.app || 'both';
+      const show = apps === 'both' || apps === currentApp;
+      btn.classList.toggle('nav-hidden', !show);
+    });
+
+    document.querySelectorAll('#quickActions .quick-action').forEach((btn) => {
+      const goto = btn.dataset.goto;
+      const warehouseOnly = ['reports', 'invoices', 'warehousePrep', 'products', 'prices'].includes(goto);
+      const delegateOnly = goto === 'delegates';
+      if (currentApp === 'warehouse') btn.classList.toggle('hidden', delegateOnly);
+      else btn.classList.toggle('hidden', warehouseOnly);
+    });
+
+    PAGE_TITLES.accounts = [meta.accountsLabel, currentApp === 'warehouse'
+      ? 'زبائن فروع الشورجة — منفصلون عن المندوبين'
+      : 'زبائن المندوبين فقط'];
+    PAGE_TITLES.payments = [meta.paymentsLabel, 'تسجيل دفعات العملاء'];
+    PAGE_TITLES.dashboard = currentApp === 'warehouse'
+      ? ['لوحة الشورجة', 'ملخص مبيعات الفروع والمخزن']
+      : ['لوحة المندوبين', 'طلبات المندوبين وحساباتهم'];
+
+    updateAccountsBanner();
+
+    if (navigate) {
+      const active = document.querySelector('.nav.active');
+      if (active?.classList.contains('nav-hidden')) {
+        document.querySelector('.nav[data-view="dashboard"]')?.click();
+      }
+    }
+  }
+
+  function switchApp(app) {
+    if (app !== 'warehouse' && app !== 'delegate') return;
+    if (app === currentApp) return;
+    currentApp = app;
+    localStorage.setItem(APP_KEY, app);
+    applyAppContext(true);
+    document.querySelector('.nav[data-view="dashboard"]')?.click();
+  }
+
+  function setupAppSwitcher() {
+    document.querySelectorAll('.app-switch-tab').forEach((tab) => {
+      tab.addEventListener('click', () => switchApp(tab.dataset.app));
+    });
+    applyAppContext(false);
+  }
 
   function exportTableCsv(tableEl, filename) {
     if (!tableEl) return;
@@ -50,7 +155,8 @@
   function updateNavBadges(stats = {}) {
     const edari = Number(stats.edariTotal || 0);
     const delegate = Number(stats.delegatePending || 0);
-    const map = { edariSync: edari, delegates: delegate };
+    const warehouse = Number(stats.warehousePending || 0);
+    const map = { edariSync: edari, delegates: delegate, warehousePrep: warehouse };
     Object.entries(map).forEach(([view, n]) => {
       const badge = document.querySelector(`[data-nav-badge="${view}"]`);
       if (!badge) return;
@@ -136,7 +242,7 @@
   async function fetchBranches() {
     if (branchesCache.length) return branchesCache;
     try {
-      const data = await api('/admin/branches');
+      const data = await api('/admin/branches?scope=pos');
       branchesCache = data.branches || [];
     } catch { branchesCache = []; }
     return branchesCache;
@@ -162,22 +268,36 @@
     const edari = data.edariSync || {};
     const edariPending = Number(edari.total || 0);
     const delegate = data.delegatePrep || {};
+    const warehouse = data.warehousePrep || {};
     const lowStock = Number(data.lowStock || 0);
+    const accStats = currentApp === 'warehouse'
+      ? (data.accountsWarehouse || data.accounts)
+      : (data.accountsDelegate || { total: 0, withDebt: 0, totalDebt: 0 });
 
     updateNavBadges({
       edariTotal: edariPending,
-      delegatePending: delegate.pending || 0
+      delegatePending: delegate.pending || 0,
+      warehousePending: warehouse.pending || 0
     });
 
     const alerts = [];
-    if (edariPending > 0) {
-      alerts.push(`<div class="alert-strip edari"><span>${edariPending} عنصر بانتظار الترحيل إلى الإداري</span><button type="button" class="btn btn-sm" data-goto="edariSync">مراجعة</button></div>`);
-    }
-    if ((delegate.pending || 0) > 0) {
-      alerts.push(`<div class="alert-strip delegate"><span>${delegate.pending} فاتورة مندوبين جاهزة للترحيل</span><button type="button" class="btn btn-sm" data-goto="delegates">عرض</button></div>`);
-    }
-    if (lowStock > 0) {
-      alerts.push(`<div class="alert-strip stock"><span>${lowStock} منتج بمخزون منخفض (≤5)</span><button type="button" class="btn btn-sm" data-goto="products">المنتجات</button></div>`);
+    if (currentApp === 'warehouse') {
+      if (edariPending > 0) {
+        alerts.push(`<div class="alert-strip edari"><span>${edariPending} عنصر بانتظار الترحيل إلى الإداري</span><button type="button" class="btn btn-sm" data-goto="edariSync">مراجعة</button></div>`);
+      }
+      if ((warehouse.pending || 0) > 0) {
+        alerts.push(`<div class="alert-strip warehouse"><span>${warehouse.pending} فاتورة شورجة جاهزة للترحيل</span><button type="button" class="btn btn-sm" data-goto="warehousePrep">عرض</button></div>`);
+      }
+      if (lowStock > 0) {
+        alerts.push(`<div class="alert-strip stock"><span>${lowStock} منتج بمخزون منخفض (≤5)</span><button type="button" class="btn btn-sm" data-goto="products">المنتجات</button></div>`);
+      }
+    } else {
+      if ((delegate.pending || 0) > 0) {
+        alerts.push(`<div class="alert-strip delegate"><span>${delegate.pending} فاتورة مندوبين جاهزة للترحيل</span><button type="button" class="btn btn-sm" data-goto="delegates">عرض</button></div>`);
+      }
+      if (edariPending > 0) {
+        alerts.push(`<div class="alert-strip edari"><span>${edariPending} عنصر بانتظار الترحيل إلى الإداري</span><button type="button" class="btn btn-sm" data-goto="edariSync">مراجعة</button></div>`);
+      }
     }
     $('dashboardAlerts').innerHTML = alerts.join('');
     $('dashboardAlerts').querySelectorAll('[data-goto]').forEach((b) => {
@@ -185,35 +305,59 @@
     });
 
     $('kpiGrid').className = 'kpi-grid premium-kpis';
-    $('kpiGrid').innerHTML = `
-      <div class="kpi premium-kpi"><div class="ico">🧾</div><div class="lbl">فواتير اليوم</div><div class="val">${t.salesCount}</div></div>
-      <div class="kpi premium-kpi"><div class="ico">💵</div><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmt(t.salesAmount)}</div></div>
-      <div class="kpi premium-kpi"><div class="ico">↩️</div><div class="lbl">مرتجعات</div><div class="val" dir="ltr">${fmt(t.returnsAmount)}</div></div>
-      <div class="kpi premium-kpi accent"><div class="ico">📈</div><div class="lbl">صافي اليوم</div><div class="val" dir="ltr">${fmt(t.netSales)}</div></div>
-      <div class="kpi premium-kpi"><div class="ico">📦</div><div class="lbl">منتجات</div><div class="val">${data.products.total}</div></div>
-      <div class="kpi premium-kpi warn"><div class="ico">💳</div><div class="lbl">إجمالي الديون</div><div class="val" dir="ltr">${fmt(data.accounts.totalDebt)}</div></div>
-      <div class="kpi premium-kpi delegate"><div class="ico">🚚</div><div class="lbl">مندوبين للترحيل</div><div class="val">${delegate.pending || 0}</div></div>
-      <div class="kpi premium-kpi${edariPending ? ' warn' : ''}"><div class="ico">🔄</div><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>
-      <div class="kpi premium-kpi"><div class="ico">🏷️</div><div class="lbl">إصدار الأسعار</div><div class="val">v${data.priceVersion || 0}</div></div>`;
+    if (currentApp === 'warehouse') {
+      $('kpiGrid').innerHTML = `
+        <div class="kpi premium-kpi"><div class="ico">🧾</div><div class="lbl">فواتير اليوم</div><div class="val">${t.salesCount}</div></div>
+        <div class="kpi premium-kpi"><div class="ico">💵</div><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmt(t.salesAmount)}</div></div>
+        <div class="kpi premium-kpi"><div class="ico">↩️</div><div class="lbl">مرتجعات</div><div class="val" dir="ltr">${fmt(t.returnsAmount)}</div></div>
+        <div class="kpi premium-kpi accent"><div class="ico">📈</div><div class="lbl">صافي اليوم</div><div class="val" dir="ltr">${fmt(t.netSales)}</div></div>
+        <div class="kpi premium-kpi"><div class="ico">👥</div><div class="lbl">حسابات الشورجة</div><div class="val">${accStats.total || 0}</div></div>
+        <div class="kpi premium-kpi warn"><div class="ico">💳</div><div class="lbl">ديون الشورجة</div><div class="val" dir="ltr">${fmt(accStats.totalDebt)}</div></div>
+        <div class="kpi premium-kpi warehouse"><div class="ico">🏪</div><div class="lbl">تجهيز للترحيل</div><div class="val">${warehouse.pending || 0}</div></div>
+        <div class="kpi premium-kpi${edariPending ? ' warn' : ''}"><div class="ico">🔄</div><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>
+        <div class="kpi premium-kpi"><div class="ico">📦</div><div class="lbl">منتجات</div><div class="val">${data.products.total}</div></div>
+        <div class="kpi premium-kpi"><div class="ico">🏷️</div><div class="lbl">إصدار الأسعار</div><div class="val">v${data.priceVersion || 0}</div></div>`;
+      $('branchesList').innerHTML = `
+        <div class="branch-grid">${(data.branches || []).map((b) => {
+          const online = branchOnline(b.last_seen_at);
+          return `<article class="branch-card ${online ? 'online' : 'offline'}">
+            <div class="branch-card-top">
+              <span class="status-dot ${online ? 'online' : 'offline'}"></span>
+              <strong>${esc(b.name)}</strong>
+            </div>
+            <div class="branch-card-meta">
+              <div>${esc(b.code)}</div>
+              <div>${online ? 'متصل الآن' : `آخر اتصال: ${esc(b.last_seen_at || '—')}`}</div>
+              <div>أسعار v${b.price_version || 0}</div>
+            </div>
+          </article>`;
+        }).join('') || '<p style="color:var(--muted)">لا توجد فروع</p>'}</div>`;
+    } else {
+      $('kpiGrid').innerHTML = `
+        <div class="kpi premium-kpi delegate"><div class="ico">🚚</div><div class="lbl">فواتير جاهزة</div><div class="val">${delegate.total || 0}</div></div>
+        <div class="kpi premium-kpi warn"><div class="ico">⏳</div><div class="lbl">بانتظار الإداري</div><div class="val">${delegate.pending || 0}</div></div>
+        <div class="kpi premium-kpi"><div class="ico">✓</div><div class="lbl">مرحّلة</div><div class="val">${delegate.synced || 0}</div></div>
+        <div class="kpi premium-kpi"><div class="ico">👥</div><div class="lbl">حسابات المندوبين</div><div class="val">${accStats.total || 0}</div></div>
+        <div class="kpi premium-kpi warn"><div class="ico">💳</div><div class="lbl">ديون المندوبين</div><div class="val" dir="ltr">${fmt(accStats.totalDebt)}</div></div>
+        <div class="kpi premium-kpi"><div class="ico">📋</div><div class="lbl">مدينون</div><div class="val">${accStats.withDebt || 0}</div></div>
+        <div class="kpi premium-kpi${edariPending ? ' warn' : ''}"><div class="ico">🔄</div><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>`;
+      $('branchesList').innerHTML = `
+        <div class="delegate-hub-card">
+          <div class="delegate-hub-icon">🚚</div>
+          <h3>مركز المندوبين</h3>
+          <p>جميع طلبات المندوبين وحساباتهم منفصلة عن فروع الشورجة. راجع الفواتير الجاهزة ثم رحّلها إلى الإداري.</p>
+          <div class="delegate-hub-actions">
+            <button type="button" class="btn btn-primary btn-sm" data-goto="delegates">فواتير المندوبين</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-goto="accounts">حسابات المندوبين</button>
+          </div>
+        </div>`;
+      $('branchesList').querySelectorAll('[data-goto]').forEach((b) => {
+        b.addEventListener('click', () => document.querySelector(`.nav[data-view="${b.dataset.goto}"]`)?.click());
+      });
+    }
 
     const syncBar = $('edariSyncBar');
     if (syncBar) syncBar.hidden = true;
-
-    $('branchesList').innerHTML = `
-      <div class="branch-grid">${(data.branches || []).map((b) => {
-        const online = branchOnline(b.last_seen_at);
-        return `<article class="branch-card ${online ? 'online' : 'offline'}">
-          <div class="branch-card-top">
-            <span class="status-dot ${online ? 'online' : 'offline'}"></span>
-            <strong>${esc(b.name)}</strong>
-          </div>
-          <div class="branch-card-meta">
-            <div>${esc(b.code)}</div>
-            <div>${online ? 'متصل الآن' : `آخر اتصال: ${esc(b.last_seen_at || '—')}`}</div>
-            <div>أسعار v${b.price_version || 0}</div>
-          </div>
-        </article>`;
-      }).join('') || '<p style="color:var(--muted)">لا توجد فروع</p>'}</div>`;
   };
 
   // ——— Reports ———
@@ -302,34 +446,15 @@
   $('invTo')?.addEventListener('change', loadInvoices);
   $('invBranch')?.addEventListener('change', loadInvoices);
 
-  // ——— Enhanced Delegates ———
-  const _loadDelegates = loadDelegates;
-  window.loadDelegates = async function loadDelegatesPremium() {
-    const date = $('delegateDate')?.value || '';
-    const q = $('delegateSearch')?.value || '';
-    const params = new URLSearchParams();
-    if (date) { params.set('from', date); params.set('to', date); }
-    if (q) params.set('q', q);
-    const data = await api(`/admin/delegate-invoices?${params}`);
-    const stats = data.stats || {};
-    $('delegateStats').className = 'kpi-grid premium-kpis delegate-hero';
-    $('delegateStats').innerHTML = `
-      <div class="kpi premium-kpi"><div class="lbl">جاهزة</div><div class="val">${stats.total || 0}</div></div>
-      <div class="kpi premium-kpi warn"><div class="lbl">بانتظار الإداري</div><div class="val">${stats.pending || 0}</div></div>
-      <div class="kpi premium-kpi"><div class="lbl">مرحّلة</div><div class="val">${stats.synced || 0}</div></div>`;
-
-    let rows = data.invoices || [];
-    if (delegateFilter === 'pending') rows = rows.filter((i) => i.edariSyncStatus !== 'synced');
-    if (delegateFilter === 'synced') rows = rows.filter((i) => i.edariSyncStatus === 'synced');
-
-    $('delegateTable').innerHTML = `
+  function renderPrepTablePremium(tableEl, rows, { labelHeader, labelFn, badgeClass }) {
+    tableEl.innerHTML = `
       <table>
         <thead><tr>
-          <th>المصدر</th><th>الفاتورة</th><th>طلب التجهيز</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>الإداري</th><th></th>
+          <th>${labelHeader}</th><th>الفاتورة</th><th>طلب التجهيز</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>الإداري</th><th></th>
         </tr></thead>
         <tbody>${rows.map((i) => `
           <tr>
-            <td><span class="badge-pill ${i.prepMode === 'warehouse' ? 'warehouse' : 'delegate'}">${esc(i.sourceLabel || '')}</span></td>
+            <td><span class="badge-pill ${badgeClass}">${esc(labelFn(i))}</span></td>
             <td><button type="button" class="linkish" data-invoice-id="${i.id}">${esc(i.invoiceNo)}</button></td>
             <td dir="ltr">${esc(i.prepOrderNo || '—')}</td>
             <td>${esc(i.customerName || 'نقدي')}</td>
@@ -340,18 +465,95 @@
           </tr>`).join('') || '<tr><td colspan="8">لا توجد فواتير</td></tr>'}
         </tbody>
       </table>`;
-
-    $('delegateTable').querySelectorAll('[data-invoice-id]').forEach((btn) => {
+    tableEl.querySelectorAll('[data-invoice-id]').forEach((btn) => {
       btn.addEventListener('click', () => openInvoice(Number(btn.dataset.invoiceId)));
     });
-    $('delegateTable').querySelectorAll('[data-queue-edari]').forEach((btn) => {
+    tableEl.querySelectorAll('[data-queue-edari]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         try {
           await api(`/admin/delegate-invoices/${btn.dataset.queueEdari}/queue-edari`, { method: 'POST' });
           toast('أُضيفت للطابور — راجع مزامنة الإداري');
-          loadDelegates();
+          document.querySelector('.nav.active')?.click();
         } catch (err) { toast(err.message); }
       });
+    });
+  }
+
+  function renderPrepStatsPremium(el, stats) {
+    el.className = 'kpi-grid premium-kpis';
+    el.innerHTML = `
+      <div class="kpi premium-kpi"><div class="lbl">جاهزة</div><div class="val">${stats.total || 0}</div></div>
+      <div class="kpi premium-kpi warn"><div class="lbl">بانتظار الإداري</div><div class="val">${stats.pending || 0}</div></div>
+      <div class="kpi premium-kpi"><div class="lbl">مرحّلة</div><div class="val">${stats.synced || 0}</div></div>`;
+  }
+
+  // ——— Warehouse Prep (Shorja branches only) ———
+  window.loadWarehousePrep = async function loadWarehousePrepPremium() {
+    const date = $('warehouseDate')?.value || '';
+    const q = $('warehouseSearch')?.value || '';
+    const params = new URLSearchParams();
+    if (date) { params.set('from', date); params.set('to', date); }
+    if (q) params.set('q', q);
+    const data = await api(`/admin/warehouse-prep-invoices?${params}`);
+    const stats = data.stats || {};
+    $('warehouseStats').className = 'kpi-grid premium-kpis warehouse-hero';
+    renderPrepStatsPremium($('warehouseStats'), stats);
+    let rows = data.invoices || [];
+    if (warehouseFilter === 'pending') rows = rows.filter((i) => i.edariSyncStatus !== 'synced');
+    if (warehouseFilter === 'synced') rows = rows.filter((i) => i.edariSyncStatus === 'synced');
+    renderPrepTablePremium($('warehouseTable'), rows, {
+      labelHeader: 'الفرع',
+      labelFn: (i) => i.branchName || i.sourceLabel || 'فرع الشورجة',
+      badgeClass: 'warehouse'
+    });
+  };
+
+  $('warehouseFilters')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-warehouse-filter]');
+    if (!chip) return;
+    warehouseFilter = chip.dataset.warehouseFilter || '';
+    $('warehouseFilters').querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
+    loadWarehousePrep();
+  });
+
+  $('btnQueueAllWarehouse')?.addEventListener('click', async () => {
+    try {
+      const data = await api('/admin/warehouse-prep-invoices');
+      const pending = (data.invoices || []).filter((i) => i.edariSyncStatus !== 'synced');
+      if (!pending.length) { toast('لا توجد فواتير للترحيل'); return; }
+      if (!confirm(`ترحيل ${pending.length} فاتورة شورجة إلى طابور الإداري؟`)) return;
+      for (const inv of pending) {
+        await api(`/admin/delegate-invoices/${inv.id}/queue-edari`, { method: 'POST' });
+      }
+      toast(`تمت إضافة ${pending.length} فاتورة للطابور`);
+      loadWarehousePrep();
+    } catch (err) { toast(err.message); }
+  });
+
+  $('warehouseDate')?.addEventListener('change', loadWarehousePrep);
+  $('warehouseSearch')?.addEventListener('input', debounce(loadWarehousePrep, 250));
+
+  // ——— Delegates only ———
+  const _loadDelegates = loadDelegates;
+  window.loadDelegates = async function loadDelegatesPremium() {
+    const date = $('delegateDate')?.value || '';
+    const q = $('delegateSearch')?.value || '';
+    const params = new URLSearchParams();
+    if (date) { params.set('from', date); params.set('to', date); }
+    if (q) params.set('q', q);
+    const data = await api(`/admin/delegate-invoices?${params}`);
+    const stats = data.stats || {};
+    $('delegateStats').className = 'kpi-grid premium-kpis delegate-hero';
+    renderPrepStatsPremium($('delegateStats'), stats);
+
+    let rows = data.invoices || [];
+    if (delegateFilter === 'pending') rows = rows.filter((i) => i.edariSyncStatus !== 'synced');
+    if (delegateFilter === 'synced') rows = rows.filter((i) => i.edariSyncStatus === 'synced');
+
+    renderPrepTablePremium($('delegateTable'), rows, {
+      labelHeader: 'المندوب',
+      labelFn: (i) => i.prepOrderNo || i.sourceLabel || '—',
+      badgeClass: 'delegate'
     });
   };
 
@@ -382,7 +584,9 @@
   window.loadAccounts = async function loadAccountsPremium() {
     const q = $('accSearch')?.value || '';
     const debtQ = accDebtOnly ? '&debt=1' : '';
-    const data = await api(`/admin/accounts?q=${encodeURIComponent(q)}${debtQ}`);
+    const scopeQ = currentApp === 'warehouse' || currentApp === 'delegate' ? `&scope=${currentApp}` : '';
+    updateAccountsBanner();
+    const data = await api(`/admin/accounts?q=${encodeURIComponent(q)}${debtQ}${scopeQ}`);
     $('accountTable').innerHTML = `
       <table>
         <thead><tr><th>الرمز</th><th>الاسم</th><th>الهاتف</th><th>الدين</th><th>حد الائتمان</th><th>الإداري</th><th></th></tr></thead>
@@ -480,11 +684,14 @@
   }
 
   // ——— Extend nav for reports ———
-  PAGE_TITLES.reports = ['التقارير', 'تحليل المبيعات والمنتجات الأكثر مبيعاً'];
+  PAGE_TITLES.reports = ['تقارير الشورجة', 'مبيعات فروع الشورجة فقط — بدون المندوبين'];
+  PAGE_TITLES.warehousePrep = ['تجهيز الشورجة', 'فواتير فروع الشورجة الجاهزة للترحيل'];
+  PAGE_TITLES.delegates = ['المندوبين', 'طلبات المندوبين فقط — منفصلة عن الشورجة'];
 
   // ——— Init ———
   function initPremium() {
     decorateNav();
+    setupAppSwitcher();
     setupHeader();
     setupQuickActions();
     fetchBranches();

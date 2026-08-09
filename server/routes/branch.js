@@ -57,7 +57,7 @@ router.get('/categories', (_req, res) => {
 
 router.get('/accounts', (req, res) => {
   const q = String(req.query.q || '').trim();
-  res.json({ ok: true, ...listAccounts({ q, hasDebt: req.query.debt === '1' }) });
+  res.json({ ok: true, ...listAccounts({ q, hasDebt: req.query.debt === '1', scope: 'warehouse' }) });
 });
 
 router.post('/accounts', async (req, res) => {
@@ -71,7 +71,8 @@ router.post('/accounts', async (req, res) => {
       phone: body.phone || '',
       address: body.address || '',
       creditLimit: Number(body.creditLimit || 0),
-      notes: body.notes || ''
+      notes: body.notes || '',
+      accountScope: 'warehouse'
     });
     res.json({ ok: true, account });
   } catch (err) {

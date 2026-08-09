@@ -17,14 +17,19 @@ function mapAccount(row) {
     edariNum: row.edari_num || '',
     edariSyncStatus: row.edari_sync_status || 'none',
     edariSyncError: row.edari_sync_error || '',
+    accountScope: row.account_scope || 'warehouse',
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
 }
 
-function listAccounts({ q = '', hasDebt = false, limit = 100, offset = 0 } = {}) {
+function listAccounts({ q = '', hasDebt = false, scope = '', limit = 100, offset = 0 } = {}) {
   const where = ['is_active = 1'];
   const params = [];
+  if (scope === 'warehouse' || scope === 'delegate') {
+    where.push('account_scope = ?');
+    params.push(scope);
+  }
   if (q) {
     where.push('(name LIKE ? OR code LIKE ? OR phone LIKE ?)');
     const like = `%${q}%`;
@@ -48,13 +53,14 @@ function getAccount(id) {
 
 async function createAccount(data) {
   const code = String(data.code || '').trim() || nextAccountCode();
+  const scope = data.accountScope === 'delegate' ? 'delegate' : 'warehouse';
   const row = db.prepare(`
-    INSERT INTO accounts (code, name, phone, address, balance, credit_limit, notes, edari_sync_status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+    INSERT INTO accounts (code, name, phone, address, balance, credit_limit, notes, edari_sync_status, account_scope)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
     RETURNING id
   `).get(
     code, data.name, data.phone || '', data.address || '',
-    Number(data.balance || 0), Number(data.creditLimit || 0), data.notes || ''
+    Number(data.balance || 0), Number(data.creditLimit || 0), data.notes || '', scope
   );
   const account = getAccount(Number(row.id));
   if (process.env.EDARI_SYNC_ACCOUNTS !== '0') {
@@ -77,11 +83,13 @@ function updateBalance(accountId, delta) {
   return getAccount(accountId);
 }
 
-function accountStats() {
-  const total = db.prepare('SELECT COUNT(*) AS c FROM accounts WHERE is_active = 1').get().c;
-  const withDebt = db.prepare('SELECT COUNT(*) AS c FROM accounts WHERE is_active = 1 AND balance > 0').get().c;
-  const totalDebt = db.prepare('SELECT COALESCE(SUM(balance), 0) AS s FROM accounts WHERE is_active = 1 AND balance > 0').get().s;
-  return { total, withDebt, totalDebt: Number(totalDebt) };
+function accountStats({ scope = '' } = {}) {
+  const scopeWhere = scope === 'warehouse' || scope === 'delegate' ? ' AND account_scope = ?' : '';
+  const scopeParams = scopeWhere ? [scope] : [];
+  const total = db.prepare(`SELECT COUNT(*) AS c FROM accounts WHERE is_active = 1${scopeWhere}`).get(...scopeParams).c;
+  const withDebt = db.prepare(`SELECT COUNT(*) AS c FROM accounts WHERE is_active = 1 AND balance > 0${scopeWhere}`).get(...scopeParams).c;
+  const totalDebt = db.prepare(`SELECT COALESCE(SUM(balance), 0) AS s FROM accounts WHERE is_active = 1 AND balance > 0${scopeWhere}`).get(...scopeParams).s;
+  return { total, withDebt, totalDebt: Number(totalDebt), scope: scope || 'all' };
 }
 
 /** Debt snapshot for invoice print: previous balance before this invoice, current invoice due, total after. */

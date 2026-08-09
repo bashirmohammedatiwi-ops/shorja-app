@@ -283,6 +283,24 @@ function migrateSchema() {
 
   migrateInvoicesKind();
   migrateEdariSync();
+  migrateAccountScope();
+}
+
+function migrateAccountScope() {
+  try {
+    db.exec("ALTER TABLE accounts ADD COLUMN account_scope TEXT NOT NULL DEFAULT 'warehouse'");
+  } catch { /* exists */ }
+  try {
+    db.exec('CREATE INDEX IF NOT EXISTS idx_accounts_scope ON accounts(account_scope)');
+  } catch { /* exists */ }
+  db.exec(`
+    UPDATE accounts SET account_scope = 'delegate'
+    WHERE id IN (
+      SELECT DISTINCT i.account_id FROM invoices i
+      INNER JOIN branches b ON i.branch_id = b.id
+      WHERE b.code = 'DELEGATE' AND i.account_id IS NOT NULL
+    )
+  `);
 }
 
 function migrateEdariSync() {

@@ -30,10 +30,14 @@ function resolveAccountId(edariSeq, customerName) {
   const seq = String(edariSeq || '').trim();
   if (seq) {
     const existing = db.prepare('SELECT id FROM accounts WHERE edari_seq = ?').get(seq);
-    if (existing) return Number(existing.id);
+    if (existing) {
+      db.prepare("UPDATE accounts SET account_scope = 'delegate' WHERE id = ? AND account_scope != 'delegate'")
+        .run(Number(existing.id));
+      return Number(existing.id);
+    }
     const row = db.prepare(`
-      INSERT INTO accounts (code, name, edari_seq, edari_sync_status, edari_sync_error)
-      VALUES (?, ?, ?, 'synced', '')
+      INSERT INTO accounts (code, name, edari_seq, edari_sync_status, edari_sync_error, account_scope)
+      VALUES (?, ?, ?, 'synced', '', 'delegate')
       RETURNING id
     `).get(nextLinkedAccountCode(), String(customerName || 'زبون مندوب').trim() || 'زبون مندوب', seq);
     return Number(row.id);
@@ -41,7 +45,11 @@ function resolveAccountId(edariSeq, customerName) {
   const name = String(customerName || '').trim();
   if (name) {
     const byName = db.prepare('SELECT id FROM accounts WHERE name = ? AND is_active = 1 ORDER BY id DESC LIMIT 1').get(name);
-    if (byName) return Number(byName.id);
+    if (byName) {
+      db.prepare("UPDATE accounts SET account_scope = 'delegate' WHERE id = ? AND account_scope != 'delegate'")
+        .run(Number(byName.id));
+      return Number(byName.id);
+    }
   }
   return null;
 }
@@ -221,12 +229,21 @@ async function handleDelegateProcessedOrder(body = {}) {
   };
 }
 
-function listDelegateInvoices({ q, dateFrom, dateTo, limit = 100, offset = 0 } = {}) {
+function getDelegateBranchId() {
+  const row = db.prepare('SELECT id FROM branches WHERE code = ?').get(DELEGATE_BRANCH_CODE);
+  return row ? Number(row.id) : null;
+}
+
+function listPrepInvoices({ prepMode, q, dateFrom, dateTo, limit = 100, offset = 0 } = {}) {
+  const mode = String(prepMode || '').trim();
+  if (mode !== 'warehouse' && mode !== 'delegate') {
+    throw new Error('prepMode مطلوب: warehouse أو delegate');
+  }
   const where = [
     "i.prep_status = 'processing'",
-    "(i.prep_mode = 'warehouse' OR i.prep_mode = 'delegate')"
+    'i.prep_mode = ?'
   ];
-  const params = [];
+  const params = [mode];
   if (dateFrom) { where.push('i.invoice_date >= ?'); params.push(dateFrom); }
   if (dateTo) { where.push('i.invoice_date <= ?'); params.push(dateTo); }
   if (q) {
@@ -257,8 +274,8 @@ function listDelegateInvoices({ q, dateFrom, dateTo, limit = 100, offset = 0 } =
     return {
       ...inv,
       branchName: row.branch_name || '',
-      sourceLabel: row.prep_mode === 'warehouse'
-        ? `شورجة · ${row.branch_name || 'فرع'}`
+      sourceLabel: mode === 'warehouse'
+        ? (row.branch_name || 'فرع الشورجة')
         : `مندوب · ${row.prep_order_no || inv.prepOrderNo || '—'}`
     };
   });
@@ -266,7 +283,19 @@ function listDelegateInvoices({ q, dateFrom, dateTo, limit = 100, offset = 0 } =
   return { invoices, total: Number(total) };
 }
 
-function delegateInvoiceStats() {
+function listDelegateInvoices(opts = {}) {
+  return listPrepInvoices({ ...opts, prepMode: 'delegate' });
+}
+
+function listWarehousePrepInvoices(opts = {}) {
+  return listPrepInvoices({ ...opts, prepMode: 'warehouse' });
+}
+
+function prepInvoiceStats(prepMode) {
+  const mode = String(prepMode || '').trim();
+  if (mode !== 'warehouse' && mode !== 'delegate') {
+    throw new Error('prepMode مطلوب: warehouse أو delegate');
+  }
   const row = db.prepare(`
     SELECT
       COUNT(*) AS total,
@@ -274,8 +303,8 @@ function delegateInvoiceStats() {
       SUM(CASE WHEN edari_sync_status IN ('pending', 'error', 'hold') OR edari_sync_status IS NULL THEN 1 ELSE 0 END) AS pending
     FROM invoices
     WHERE prep_status = 'processing'
-      AND prep_mode IN ('warehouse', 'delegate')
-  `).get();
+      AND prep_mode = ?
+  `).get(mode);
   return {
     total: Number(row?.total || 0),
     synced: Number(row?.synced || 0),
@@ -283,10 +312,24 @@ function delegateInvoiceStats() {
   };
 }
 
+function delegateInvoiceStats() {
+  return prepInvoiceStats('delegate');
+}
+
+function warehousePrepStats() {
+  return prepInvoiceStats('warehouse');
+}
+
 module.exports = {
+  DELEGATE_BRANCH_CODE,
   ensureDelegateBranch,
+  getDelegateBranchId,
   handleDelegateProcessedOrder,
+  listPrepInvoices,
   listDelegateInvoices,
+  listWarehousePrepInvoices,
+  prepInvoiceStats,
   delegateInvoiceStats,
+  warehousePrepStats,
   queueInvoiceForEdari
 };
