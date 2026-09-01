@@ -690,7 +690,7 @@ function openProductView(p) {
     <div class="product-detail-grid">
       <div class="detail-item"><label>الباركود</label><strong dir="ltr">${esc(p.barcode)}</strong></div>
       <div class="detail-item"><label>سعر الجملة</label><strong dir="ltr">${fmt(p.costPrice || 0)}</strong></div>
-      <div class="detail-item"><label>سعر البيع</label><strong dir="ltr">${fmt(p.price)}</strong></div>
+      <div class="detail-item"><label>نصف الجملة</label><strong dir="ltr">${fmt(p.price)}</strong></div>
       <div class="detail-item"><label>المخزون</label><strong dir="ltr">${fmt(p.stockQty)}</strong></div>
       <div class="detail-item"><label>القسم</label><strong>${esc(p.category || '—')}</strong></div>
       <div class="detail-item"><label>الوحدة</label><strong>${esc(p.unit || 'قطعة')}</strong></div>
@@ -973,7 +973,7 @@ async function refreshProductFormFromAdmin() {
   try {
     const product = await fetchProductFromEdari(code);
     fillProductForm(product);
-    toast(`تم جلب من الإداري: ${product.name} · جملة ${fmt(product.costPrice)} · مخزون ${fmt(product.stockQty)}`);
+    toast(`تم جلب من الإداري: ${product.name} · نصف جملة ${fmt(product.price)} · مخزون ${fmt(product.stockQty)}`);
   } catch (err) {
     toast(err.message || 'فشل جلب المنتج');
   } finally {
@@ -981,6 +981,82 @@ async function refreshProductFormFromAdmin() {
   }
 }
 
+async function importAllProductsFromEdari() {
+  const btn = document.getElementById('btnImportEdariProducts');
+  const progressEl = document.getElementById('edariImportProgress');
+  if (btn?.disabled) return;
+
+  let status;
+  try {
+    status = await api('/admin/products/edari-import/status');
+  } catch (err) {
+    toast(err.message || 'تعذر الاتصال بالإداري — استخدم تطبيق Windows');
+    return;
+  }
+
+  const total = Number(status.totalInEdari || 0);
+  const local = Number(status.localProducts || 0);
+  const confirmed = confirm(
+    `استيراد ${total.toLocaleString('ar-IQ')} مادة من الإداري؟\n\n` +
+    `• السعر في الشورجة = نصف الجملة (SellPr2 أو SellPr4)\n` +
+    `• سعر الجملة يُحفظ للمرجع فقط\n` +
+    `• المنتجات المحلية حالياً: ${local.toLocaleString('ar-IQ')}\n\n` +
+    'اضغط OK للمتابعة.'
+  );
+  if (!confirmed) return;
+  const pushToBranches = confirm('هل تريد رفع الأسعار لجميع الفروع بعد انتهاء الاستيراد؟');
+
+  if (btn) btn.disabled = true;
+  if (progressEl) {
+    progressEl.classList.remove('hidden');
+    progressEl.textContent = 'جاري الاستيراد من الإداري...';
+  }
+
+  let afterSeq = 0;
+  let imported = 0;
+  let skipped = 0;
+  let hasMore = true;
+
+  try {
+    while (hasMore) {
+      const batch = await api('/admin/products/import-edari-batch', {
+        method: 'POST',
+        body: JSON.stringify({ afterSeq, limit: 500 })
+      });
+      imported += Number(batch.imported || 0);
+      skipped += Number(batch.skipped || 0);
+      afterSeq = Number(batch.lastSeq || afterSeq);
+      hasMore = !!batch.hasMore;
+      const pct = total ? Math.min(100, Math.round((afterSeq / total) * 100)) : 0;
+      if (progressEl) {
+        progressEl.textContent = `استيراد من الإداري: ${imported.toLocaleString('ar-IQ')} منتج · ${skipped} متخطى · ~${pct}%`;
+      }
+    }
+
+    let publishMsg = '';
+    if (pushToBranches) {
+      const pub = await api('/admin/prices/publish', {
+        method: 'POST',
+        body: JSON.stringify({
+          all: true,
+          note: 'استيراد كامل من الإداري — سعر نصف الجملة'
+        })
+      });
+      publishMsg = ` · حزمة v${pub.version}`;
+    }
+
+    toast(`تم استيراد ${imported.toLocaleString('ar-IQ')} منتج من الإداري${publishMsg}`);
+    loadProducts();
+    loadDashboard();
+  } catch (err) {
+    toast(err.message || 'فشل استيراد المنتجات');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (progressEl) progressEl.classList.add('hidden');
+  }
+}
+
+document.getElementById('btnImportEdariProducts')?.addEventListener('click', importAllProductsFromEdari);
 document.getElementById('btnNewProduct')?.addEventListener('click', () => openProductModal());
 document.getElementById('btnProdCancel')?.addEventListener('click', () => {
   document.getElementById('productModal').close();
@@ -1138,7 +1214,7 @@ async function addPriceItem(forceRefresh = false) {
     input.focus();
     toast(existed
       ? `تم تحديث من الإداري: ${product.name}`
-      : `تمت الإضافة من الإداري: ${product.name} · جملة ${fmt(product.costPrice)}`);
+      : `تمت الإضافة من الإداري: ${product.name} · نصف جملة ${fmt(product.price)}`);
   } catch (err) {
     toast(err.message || 'المادة غير موجودة في الإداري (Edari)');
   }
@@ -1163,7 +1239,7 @@ async function refreshPriceBarcodeFromAdmin() {
       toast(`تم تحديث التفاصيل: ${product.name}`);
     } else {
       fillProductPreviewFromBarcode(product);
-      toast(`جاهز للإضافة: ${product.name} · جملة ${fmt(product.costPrice || 0)} · مخزون ${fmt(product.stockQty)}`);
+      toast(`جاهز للإضافة: ${product.name} · نصف جملة ${fmt(product.price || 0)} · مخزون ${fmt(product.stockQty)}`);
     }
   } catch (err) {
     toast(err.message || 'فشل جلب المنتج');
@@ -1177,7 +1253,7 @@ function fillProductPreviewFromBarcode(product) {
   const hint = document.getElementById('priceSelectionHint');
   if (!hint || priceSelection.size) return;
   hint.classList.remove('hidden');
-  hint.innerHTML = `معاينة: <strong>${esc(product.name)}</strong> · جملة <span dir="ltr">${fmt(product.costPrice || 0)}</span> · بيع <span dir="ltr">${fmt(product.price)}</span> · مخزون <span dir="ltr">${fmt(product.stockQty)}</span>`;
+  hint.innerHTML = `معاينة: <strong>${esc(product.name)}</strong> · جملة <span dir="ltr">${fmt(product.costPrice || 0)}</span> · نصف جملة <span dir="ltr">${fmt(product.price)}</span> · مخزون <span dir="ltr">${fmt(product.stockQty)}</span>`;
 }
 
 document.getElementById('btnAddPriceItem')?.addEventListener('click', () => addPriceItem(false));

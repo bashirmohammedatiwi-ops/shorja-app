@@ -238,11 +238,24 @@ async function alignEdariAccountFields(seq, { name, phone = '', address = '', no
   return runExecute(sql);
 }
 
+async function lookupAccountSeqByNum(num) {
+  const accountNum = String(num ?? '').trim();
+  if (!accountNum) return 0;
+  const r = await runQuery(
+    `SELECT Seq, Num, Master, SubCount FROM File11n WHERE Num = '${sqlEscAscii(accountNum)}' AND SubCount = 0`
+  );
+  if (!r.ok) return 0;
+  const row = rowObjects(r)[0];
+  if (!row) return 0;
+  return Number(row.Seq ?? row.seq ?? 0);
+}
+
 module.exports = {
   PARENT_NUM,
   PARENT_NAME_HINT,
   clearParentCache,
   loadParentAccount,
+  lookupAccountSeqByNum,
   createEdariCustomerAccount,
   getEdariParentInfo,
   fixEdariAccountName,

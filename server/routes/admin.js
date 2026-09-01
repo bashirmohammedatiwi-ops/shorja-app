@@ -2,6 +2,8 @@ const express = require('express');
 const { authRequired } = require('../lib/auth');
 const { listProducts, upsertProduct, bulkUpsert, stats, getByBarcode, getProduct, deactivateProduct } = require('../lib/products');
 const { resolveEdariMaterial, cacheEdariMaterial, mapEdariToShorjaProduct } = require('../lib/edari-materials');
+const { importEdariProductsBatch, importAllEdariProducts } = require('../lib/edari-product-import');
+const { countEdariMaterials } = require('../lib/edari-lookup');
 const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment, salesReport } = require('../lib/invoices');
 const { listAccounts, createAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { getEdariParentInfo } = require('../lib/edari-accounts');
@@ -174,7 +176,12 @@ router.post('/prices/publish', (req, res) => {
     let items = [];
     const missing = [];
 
-    if (Array.isArray(req.body?.items) && req.body.items.length) {
+    if (req.body?.all === true || req.body?.all === 1 || req.body?.all === '1') {
+      items = listProducts({ limit: 500000, activeOnly: true }).products.map(mapProductForPackage);
+      if (!items.length) {
+        return res.status(400).json({ ok: false, error: 'لا توجد منتجات للرفع' });
+      }
+    } else if (Array.isArray(req.body?.items) && req.body.items.length) {
       items = req.body.items.map(mapProductForPackage);
     } else if (Array.isArray(req.body?.barcodes) && req.body.barcodes.length) {
       for (const code of req.body.barcodes) {
@@ -220,6 +227,50 @@ router.post('/products/import', (req, res) => {
     res.json({ ok: true, count });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.get('/products/edari-import/status', async (_req, res) => {
+  try {
+    const totalInEdari = await countEdariMaterials();
+    const local = stats();
+    res.json({
+      ok: true,
+      totalInEdari,
+      localProducts: local.total,
+      priceMode: 'half_wholesale',
+      requiresWindows: true
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || 'Edari غير متاح' });
+  }
+});
+
+router.post('/products/import-edari-batch', async (req, res) => {
+  try {
+    const afterSeq = Number(req.body?.afterSeq || 0);
+    const limit = Number(req.body?.limit || 500);
+    const result = await importEdariProductsBatch({ afterSeq, limit });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || 'فشل استيراد الدفعة' });
+  }
+});
+
+router.post('/products/import-edari-all', async (req, res) => {
+  try {
+    const batchSize = Number(req.body?.batchSize || 500);
+    const publish = req.body?.publish === true || req.body?.publish === 1 || req.body?.publish === '1';
+    const maxBatches = Number(req.body?.maxBatches || 0);
+    const result = await importAllEdariProducts({
+      batchSize,
+      maxBatches,
+      publish,
+      publishNote: req.body?.note || 'استيراد كامل من الإداري — سعر نصف الجملة'
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message || 'فشل الاستيراد من الإداري' });
   }
 });
 

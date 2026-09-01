@@ -220,7 +220,7 @@ function hydrateQueuePayload(item) {
   if (item.kind === 'invoice' && item.ref_type === 'invoice') {
     const inv = db.prepare(`
       SELECT i.account_id, i.customer_name, i.subtotal, i.total, i.discount,
-             i.paid_amount, i.due_amount, i.invoice_date, i.notes, i.kind,
+             i.paid_amount, i.due_amount, i.payment_method, i.invoice_date, i.notes, i.kind,
              a.edari_seq, a.edari_sync_status, a.name AS account_name,
              b.name AS branch_name
       FROM invoices i
@@ -239,6 +239,7 @@ function hydrateQueuePayload(item) {
       payload.discount = inv.discount ?? payload.discount;
       payload.paidAmount = inv.paid_amount ?? payload.paidAmount;
       payload.dueAmount = inv.due_amount ?? payload.dueAmount;
+      payload.paymentMethod = inv.payment_method || payload.paymentMethod;
       payload.invoiceDate = inv.invoice_date || payload.invoiceDate;
       payload.notes = inv.notes ?? payload.notes;
       payload.kind = inv.kind || payload.kind;

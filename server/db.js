@@ -271,6 +271,7 @@ function migrateSchema() {
     CREATE INDEX IF NOT EXISTS idx_edari_materials_barcode ON edari_materials(barcode);
     CREATE INDEX IF NOT EXISTS idx_edari_materials_num ON edari_materials(num);
   `);
+  try { db.exec('ALTER TABLE edari_materials ADD COLUMN sell_pr4 REAL DEFAULT 0'); } catch { /* exists */ }
 
   const cols = [
     'ALTER TABLE invoice_lines ADD COLUMN original_price REAL',

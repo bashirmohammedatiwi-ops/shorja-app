@@ -1,5 +1,5 @@
 const db = require('../db');
-const { bulkUpsert } = require('./products');
+const { bulkUpsert, upsertProduct } = require('./products');
 
 function getLatestVersion(branchId = null) {
   const row = branchId
@@ -29,8 +29,8 @@ function publishPricePackage({ items = [], branchId = null, note = '' } = {}) {
         item.category || '', item.hasOffer ? 1 : 0,
         item.offerName || null, item.originalPrice || null
       );
+      upsertProduct(item);
     }
-    bulkUpsert(items);
     if (branchId) {
       db.prepare('UPDATE branches SET price_version = ? WHERE id = ?').run(version, branchId);
     } else {

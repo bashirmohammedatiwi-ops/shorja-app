@@ -1,5 +1,7 @@
 const { runQuery, runExecute, rowObjects, canWriteEdari } = require('./edari-bridge');
-const { edariSqlLiteral, sqlEscAscii, loadParentAccount, clampEdariField } = require('./edari-accounts');
+const {
+  edariSqlLiteral, sqlEscAscii, loadParentAccount, lookupAccountSeqByNum, clampEdariField
+} = require('./edari-accounts');
 const { lookupEdariMaterial } = require('./edari-lookup');
 const {
   canWriteEdariInvoices,
@@ -15,6 +17,7 @@ const RETURNS_ACCOUNT_SEQ = Number(process.env.EDARI_RETURNS_ACCOUNT_SEQ || 42);
 const CASH_ACCOUNT_SEQ = Number(process.env.EDARI_CASH_ACCOUNT_SEQ || 316);
 const DISCOUNT_ACCOUNT_SEQ = Number(process.env.EDARI_DISCOUNT_ACCOUNT_SEQ || 132);
 const WALKIN_CUSTOMER_SEQ = Number(process.env.EDARI_WALKIN_CUSTOMER_SEQ || 0);
+const WALKIN_CUSTOMER_NUM = String(process.env.EDARI_WALKIN_CUSTOMER_NUM || '121119002').trim();
 const INVOICE_BOOK = Number(process.env.EDARI_INVOICE_BOOK || 1);
 const PRICE_GROUP = Number(process.env.EDARI_PRICE_GROUP || 4);
 const INVOICE_PERSON = Number(process.env.EDARI_INVOICE_PERSON || 255);
@@ -255,6 +258,18 @@ async function resolveWalkInCustomerSeq() {
   if (WALKIN_CUSTOMER_SEQ > 0) return WALKIN_CUSTOMER_SEQ;
   if (cachedWalkInSeq) return cachedWalkInSeq;
 
+  if (WALKIN_CUSTOMER_NUM) {
+    try {
+      const byNum = await lookupAccountSeqByNum(WALKIN_CUSTOMER_NUM);
+      if (byNum > 0) {
+        cachedWalkInSeq = byNum;
+        return cachedWalkInSeq;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
   try {
     const parent = await loadParentAccount();
     const r = await runQuery(
@@ -285,16 +300,21 @@ async function resolveWalkInCustomerSeq() {
   return 0;
 }
 
+function isCashInvoice(payload) {
+  if (payload.kind === 'return') return false;
+  const method = String(payload.paymentMethod || '').toLowerCase();
+  if (method === 'credit' || method === 'partial') return false;
+  if (payload.accountId || payload.edariSeq) return false;
+  if (method === 'cash') return true;
+  if (Number(payload.dueAmount || 0) > 0) return false;
+  return Number(payload.paidAmount || 0) > 0;
+}
+
 async function resolveCustomerSeq(payload) {
   const direct = Number(payload.edariSeq || 0);
   if (direct > 0) return direct;
 
-  const isCashSale = payload.kind !== 'return' && (
-    (Number(payload.dueAmount || 0) <= 0 && Number(payload.paidAmount || 0) > 0)
-    || (!payload.accountId && Number(payload.paidAmount || 0) > 0)
-  );
-
-  if (isCashSale) {
+  if (isCashInvoice(payload)) {
     const walkIn = await resolveWalkInCustomerSeq();
     if (walkIn > 0) return walkIn;
   }
@@ -482,7 +502,7 @@ async function createEdariInvoice(payload) {
     }
     return {
       ok: false,
-      error: 'الحساب غير مربوط بإداري — للمبيعات النقدية عيّن EDARI_WALKIN_CUSTOMER_SEQ أو اربط حساب نقدي'
+      error: `الحساب غير مربوط بإداري — للمبيعات النقدية عيّن EDARI_WALKIN_CUSTOMER_NUM (الافتراضي ${WALKIN_CUSTOMER_NUM})`
     };
   }
 

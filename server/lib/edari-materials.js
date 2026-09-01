@@ -1,16 +1,19 @@
 const db = require('../db');
-const { wholesalePrice, stockQty } = require('./edari-lookup');
+const { wholesalePrice, halfWholesalePrice, retailPrice, stockQty } = require('./edari-lookup');
 
 function mapEdariMaterial(row) {
   if (!row) return null;
   const sellPr1 = Number(row.sell_pr1 ?? row.SellPr1 ?? row.sellPr1 ?? 0);
   const sellPr2 = Number(row.sell_pr2 ?? row.SellPr2 ?? 0);
   const sellPr3 = Number(row.sell_pr3 ?? row.SellPr3 ?? 0);
+  const sellPr4 = Number(row.sell_pr4 ?? row.SellPr4 ?? 0);
   const sellPr5 = Number(row.sell_pr5 ?? row.SellPr5 ?? 0);
   const inTot = Number(row.in_tot ?? row.InTot ?? row.inTot ?? 0);
   const outTot = Number(row.out_tot ?? row.OutTot ?? row.outTot ?? 0);
   const qty = stockQty(inTot, outTot);
   const wholesale = wholesalePrice(sellPr1, sellPr2, sellPr3, sellPr5);
+  const halfWholesale = halfWholesalePrice(sellPr1, sellPr2, sellPr3, sellPr4, sellPr5);
+  const retail = retailPrice(sellPr1, sellPr2, sellPr3, sellPr4, sellPr5);
   return {
     seq: String(row.seq || row.Seq || ''),
     num: String(row.num || row.Num || ''),
@@ -22,10 +25,12 @@ function mapEdariMaterial(row) {
     sellPr1,
     sellPr2,
     sellPr3,
+    sellPr4,
     sellPr5,
-    priceRetail: sellPr1,
+    priceRetail: retail,
     wholesalePrice: wholesale,
-    price: wholesale,
+    halfWholesalePrice: halfWholesale,
+    price: halfWholesale,
     bonus: Number(row.bonus ?? row.Bonus ?? 0),
     inTot,
     outTot,
@@ -38,15 +43,19 @@ function mapEdariMaterial(row) {
 
 function mapEdariToShorjaProduct(material) {
   if (!material) return null;
-  const wholesale = Number(material.wholesalePrice ?? material.price ?? material.sellPr1 ?? 0);
-  const retail = Number(material.priceRetail ?? material.sellPr1 ?? wholesale);
+  const wholesale = Number(material.wholesalePrice ?? material.sellPr1 ?? 0);
+  const halfWholesale = Number(
+    material.halfWholesalePrice ?? material.price ?? material.sellPr2 ?? material.sellPr4 ?? wholesale
+  );
+  const retail = Number(material.priceRetail ?? material.sellPr4 ?? halfWholesale);
   return {
     barcode: String(material.barcode || material.num || '').trim(),
     sku: String(material.num || '').trim(),
     name: String(material.name || material.name1 || '').trim(),
     unit: String(material.unit || 'قطعة').trim() || 'قطعة',
     costPrice: wholesale,
-    price: retail,
+    price: halfWholesale,
+    retailPrice: retail,
     stockQty: Number(material.stockQty ?? material.qty ?? 0),
     category: '',
     edariSeq: String(material.seq || '')
@@ -87,6 +96,7 @@ function cacheEdariMaterial(material) {
     sellPr1: Number(material.sellPr1 ?? material.SellPr1 ?? material.priceRetail ?? 0),
     sellPr2: Number(material.sellPr2 ?? material.SellPr2 ?? 0),
     sellPr3: Number(material.sellPr3 ?? material.SellPr3 ?? 0),
+    sellPr4: Number(material.sellPr4 ?? material.SellPr4 ?? 0),
     sellPr5: Number(material.sellPr5 ?? material.SellPr5 ?? 0),
     bonus: Number(material.bonus ?? material.Bonus ?? 0),
     inTot: Number(material.inTot ?? material.InTot ?? 0),
@@ -99,8 +109,8 @@ function cacheEdariMaterial(material) {
   const now = new Date().toISOString();
   db.prepare(`
     INSERT INTO edari_materials
-      (seq, num, barcode, name1, name2, unit, sell_pr1, sell_pr2, sell_pr3, sell_pr5, bonus, in_tot, out_tot, remarks, synced_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (seq, num, barcode, name1, name2, unit, sell_pr1, sell_pr2, sell_pr3, sell_pr4, sell_pr5, bonus, in_tot, out_tot, remarks, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(seq) DO UPDATE SET
       num = excluded.num,
       barcode = excluded.barcode,
@@ -110,6 +120,7 @@ function cacheEdariMaterial(material) {
       sell_pr1 = excluded.sell_pr1,
       sell_pr2 = excluded.sell_pr2,
       sell_pr3 = excluded.sell_pr3,
+      sell_pr4 = excluded.sell_pr4,
       sell_pr5 = excluded.sell_pr5,
       bonus = excluded.bonus,
       in_tot = excluded.in_tot,
@@ -126,6 +137,7 @@ function cacheEdariMaterial(material) {
     parsed.sellPr1,
     parsed.sellPr2,
     parsed.sellPr3,
+    parsed.sellPr4,
     parsed.sellPr5,
     parsed.bonus,
     parsed.inTot,

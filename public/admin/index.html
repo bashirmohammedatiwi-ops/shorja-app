@@ -252,6 +252,7 @@
                 <button type="button" class="view-toggle-btn" data-mode="table">جدول</button>
               </div>
               <button type="button" class="btn btn-primary" id="btnNewProduct">+ منتج جديد</button>
+              <button type="button" class="btn btn-secondary" id="btnImportEdariProducts" title="استيراد كل المواد من الإداري بسعر نصف الجملة">استيراد من الإداري</button>
               <label class="file-btn btn btn-secondary">استيراد CSV
                 <input type="file" id="csvImport" accept=".csv,.txt" hidden>
               </label>
@@ -266,6 +267,7 @@
           </div>
 
           <div class="prod-stats" id="prodStats"></div>
+          <p class="hint hidden" id="edariImportProgress"></p>
 
           <div class="section-panel-body">
             <div id="prodGrid" class="prod-grid"></div>
@@ -312,7 +314,7 @@
             <div class="table-wrap price-selection-wrap hidden" id="priceSelectionWrap">
               <table>
                 <thead>
-                  <tr><th>الباركود</th><th>الاسم</th><th>سعر الجملة</th><th>سعر البيع</th><th>المخزون</th><th></th></tr>
+                  <tr><th>الباركود</th><th>الاسم</th><th>سعر الجملة</th><th>نصف الجملة</th><th>المخزون</th><th></th></tr>
                 </thead>
                 <tbody id="priceSelectionBody"></tbody>
               </table>
@@ -475,11 +477,11 @@
           <input type="text" id="prodName" class="field" required>
         </div>
         <div>
-          <label>سعر الجملة</label>
+          <label>سعر الجملة (مرجع)</label>
           <input type="number" id="prodCostPrice" class="field" min="0" value="0">
         </div>
         <div>
-          <label>سعر البيع</label>
+          <label>سعر نصف الجملة (البيع)</label>
           <input type="number" id="prodPrice" class="field" min="0" value="0">
         </div>
         <div>
@@ -528,7 +530,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=20"></script>
+  <script src="app.js?v=21"></script>
   <script src="premium.js?v=7"></script>
 </body>
 </html>
