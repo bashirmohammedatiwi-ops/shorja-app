@@ -982,34 +982,47 @@ async function refreshProductFormFromAdmin() {
 }
 
 async function importAllProductsFromEdari() {
-  const btn = document.getElementById('btnImportEdariProducts');
-  const progressEl = document.getElementById('edariImportProgress');
-  if (btn?.disabled) return;
+  const buttons = document.querySelectorAll('[data-import-edari-all]');
+  const progressEls = document.querySelectorAll('#edariImportProgress, #edariImportProgressPrices');
+  if ([...buttons].some((b) => b.disabled)) return;
 
-  let status;
-  try {
-    status = await api('/admin/products/edari-import/status');
-  } catch (err) {
-    toast(err.message || 'تعذر الاتصال بالإداري — استخدم تطبيق Windows');
+  const useDesktop = !!window.edariDesktop?.fetchEdariProductImportBatch;
+  if (!useDesktop) {
+    toast('رفع كل المنتجات يتطلب تطبيق الإدارة v1.0.24 على Windows (ليس المتصفح)', 'err');
     return;
   }
 
-  const total = Number(status.totalInEdari || 0);
-  const local = Number(status.localProducts || 0);
+  let total = 0;
+  let local = 0;
+  try {
+    const [st, dash] = await Promise.all([
+      window.edariDesktop.getEdariProductImportStatus(),
+      api('/admin/dashboard').catch(() => ({ products: { total: 0 } }))
+    ]);
+    if (!st?.ok) throw new Error(st?.error || 'تعذر الاتصال بـ Edari');
+    total = Number(st.totalInEdari || 0);
+    local = Number(dash.products?.total || 0);
+  } catch (err) {
+    toast(err.message || 'تعذر الاتصال بالإداري — تأكد من EdariNX', 'err');
+    return;
+  }
+
   const confirmed = confirm(
-    `استيراد ${total.toLocaleString('ar-IQ')} مادة من الإداري؟\n\n` +
-    `• السعر في الشورجة = نصف الجملة (SellPr2 أو SellPr4)\n` +
-    `• سعر الجملة يُحفظ للمرجع فقط\n` +
-    `• المنتجات المحلية حالياً: ${local.toLocaleString('ar-IQ')}\n\n` +
+    `رفع ${total.toLocaleString('ar-IQ')} منتج من الإداري دفعة واحدة؟\n\n` +
+    '• السعر = نصف الجملة (SellPr2 أو SellPr4)\n' +
+    '• بدون إدخال باركود منتج منتج\n' +
+    `• المنتجات الحالية في الشورجة: ${local.toLocaleString('ar-IQ')}\n\n` +
     'اضغط OK للمتابعة.'
   );
   if (!confirmed) return;
-  const pushToBranches = confirm('هل تريد رفع الأسعار لجميع الفروع بعد انتهاء الاستيراد؟');
+  const pushToBranches = confirm('هل تريد إرسال الأسعار لنقاط البيع (الفروع) بعد الانتهاء؟');
 
-  if (btn) btn.disabled = true;
-  if (progressEl) {
-    progressEl.classList.remove('hidden');
-    progressEl.textContent = 'جاري الاستيراد من الإداري...';
+  buttons.forEach((b) => { b.disabled = true; });
+  if (progressEls.length) {
+    progressEls.forEach((el) => {
+      el.classList.remove('hidden');
+      el.textContent = 'جاري رفع كل المنتجات من الإداري...';
+    });
   }
 
   let afterSeq = 0;
@@ -1019,17 +1032,22 @@ async function importAllProductsFromEdari() {
 
   try {
     while (hasMore) {
-      const batch = await api('/admin/products/import-edari-batch', {
-        method: 'POST',
-        body: JSON.stringify({ afterSeq, limit: 500 })
-      });
+      const batch = await window.edariDesktop.fetchEdariProductImportBatch({ afterSeq, limit: 500 });
+      if (!batch?.ok) throw new Error(batch?.error || 'فشل جلب دفعة من Edari');
+      if (batch.products?.length) {
+        await api('/admin/products/bulk', {
+          method: 'POST',
+          body: JSON.stringify({ items: batch.products })
+        });
+      }
       imported += Number(batch.imported || 0);
       skipped += Number(batch.skipped || 0);
       afterSeq = Number(batch.lastSeq || afterSeq);
       hasMore = !!batch.hasMore;
       const pct = total ? Math.min(100, Math.round((afterSeq / total) * 100)) : 0;
-      if (progressEl) {
-        progressEl.textContent = `استيراد من الإداري: ${imported.toLocaleString('ar-IQ')} منتج · ${skipped} متخطى · ~${pct}%`;
+      if (progressEls.length) {
+        const msg = `رفع المنتجات: ${imported.toLocaleString('ar-IQ')} · ${skipped} متخطى · ~${pct}%`;
+        progressEls.forEach((el) => { el.textContent = msg; });
       }
     }
 
@@ -1045,18 +1063,23 @@ async function importAllProductsFromEdari() {
       publishMsg = ` · حزمة v${pub.version}`;
     }
 
-    toast(`تم استيراد ${imported.toLocaleString('ar-IQ')} منتج من الإداري${publishMsg}`);
+    toast(`تم رفع ${imported.toLocaleString('ar-IQ')} منتج من الإداري${publishMsg}`);
     loadProducts();
     loadDashboard();
+    if (!document.getElementById('viewPrices')?.classList.contains('hidden')) {
+      loadPriceBrowse();
+    }
   } catch (err) {
-    toast(err.message || 'فشل استيراد المنتجات');
+    toast(err.message || 'فشل رفع المنتجات');
   } finally {
-    if (btn) btn.disabled = false;
-    if (progressEl) progressEl.classList.add('hidden');
+    buttons.forEach((b) => { b.disabled = false; });
+    if (progressEls.length) progressEls.forEach((el) => el.classList.add('hidden'));
   }
 }
 
-document.getElementById('btnImportEdariProducts')?.addEventListener('click', importAllProductsFromEdari);
+document.querySelectorAll('[data-import-edari-all]').forEach((btn) => {
+  btn.addEventListener('click', importAllProductsFromEdari);
+});
 document.getElementById('btnNewProduct')?.addEventListener('click', () => openProductModal());
 document.getElementById('btnProdCancel')?.addEventListener('click', () => {
   document.getElementById('productModal').close();

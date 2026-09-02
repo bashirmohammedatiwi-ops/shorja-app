@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=7">
+  <link rel="stylesheet" href="styles.css?v=8">
   <link rel="stylesheet" href="premium.css?v=4">
 </head>
 <body>
@@ -111,6 +111,7 @@
           <button type="button" class="quick-action warehouse" data-goto="warehousePrep">🏪 تجهيز الشورجة</button>
           <button type="button" class="quick-action" data-goto="edariSync">🔄 مزامنة الإداري</button>
           <button type="button" class="quick-action" data-goto="prices">💰 رفع الأسعار</button>
+          <button type="button" class="quick-action primary" data-import-edari-all">📦 رفع كل المنتجات من الإداري</button>
           <button type="button" class="quick-action" data-goto="accounts">👥 حسابات الشورجة</button>
         </div>
         <div class="quick-actions del-only hidden" id="quickActionsDelegate">
@@ -252,7 +253,7 @@
                 <button type="button" class="view-toggle-btn" data-mode="table">جدول</button>
               </div>
               <button type="button" class="btn btn-primary" id="btnNewProduct">+ منتج جديد</button>
-              <button type="button" class="btn btn-secondary" id="btnImportEdariProducts" title="استيراد كل المواد من الإداري بسعر نصف الجملة">استيراد من الإداري</button>
+              <button type="button" class="btn btn-primary" data-import-edari-all title="رفع كل مواد Edari دفعة واحدة بسعر نصف الجملة">📦 رفع كل المنتجات من الإداري</button>
               <label class="file-btn btn btn-secondary">استيراد CSV
                 <input type="file" id="csvImport" accept=".csv,.txt" hidden>
               </label>
@@ -280,12 +281,22 @@
 
       <section id="viewPrices" class="view hidden" data-app-scope="warehouse">
         <div class="section-panel prices-layout">
+          <div class="action-card import-edari-hero">
+            <div>
+              <h2>رفع كل المنتجات من الإداري</h2>
+              <p class="hint">زر واحد يرفع كل مواد Edari (~48,000+) إلى الشورجة ب<strong>سعر نصف الجملة</strong> — بدون باركود منتج منتج.</p>
+              <p class="hint subtle">يتطلب تطبيق Windows للإدارة مع EdariNX. بعد الرفع يمكن إرسال الأسعار لنقاط البيع.</p>
+            </div>
+            <button type="button" class="btn btn-primary btn-lg" data-import-edari-all">📦 رفع كل المنتجات الآن</button>
+          </div>
+          <p class="hint hidden" id="edariImportProgressPrices"></p>
+
           <div class="price-steps">
             <div class="step-card">
               <div class="step-num">1</div>
               <div>
-                <h3>اختر المنتجات</h3>
-                <p>بالباركود أو من الاستعراض أدناه</p>
+                <h3>تحديث يدوي (اختياري)</h3>
+                <p>باركود منتج واحد أو منتجات محددة</p>
               </div>
             </div>
             <div class="step-card">
@@ -530,7 +541,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=21"></script>
+  <script src="app.js?v=23"></script>
   <script src="premium.js?v=7"></script>
 </body>
 </html>

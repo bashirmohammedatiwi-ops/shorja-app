@@ -58,7 +58,8 @@ ipcMain.handle('lookup-edari-material', async (_e, code) => {
     applyEdariEnv();
     const lookupPath = getEdariLibPath('edari-lookup.js');
     delete require.cache[require.resolve(lookupPath)];
-    const { lookupEdariMaterial } = require(lookupPath);
+    const { lookupEdariMaterial, resetOdbcBridgeCache } = require(lookupPath);
+    resetOdbcBridgeCache?.();
     const material = await lookupEdariMaterial(code);
     if (!material) return { ok: false, error: 'المادة غير موجودة في Edari' };
     return { ok: true, material };
@@ -86,6 +87,30 @@ async function processEdariQueueLocal(options = {}) {
 }
 
 ipcMain.handle('process-edari-sync', (_e, options) => processEdariQueueLocal(options || {}));
+
+ipcMain.handle('edari-product-import-status', async () => {
+  try {
+    applyEdariEnv();
+    const workerPath = path.join(__dirname, 'edari-product-import-worker.js');
+    delete require.cache[require.resolve(workerPath)];
+    const { getEdariProductImportStatus } = require(workerPath);
+    return await getEdariProductImportStatus();
+  } catch (err) {
+    return { ok: false, error: err.message || 'فشل الاتصال بـ Edari' };
+  }
+});
+
+ipcMain.handle('edari-product-import-batch', async (_e, options) => {
+  try {
+    applyEdariEnv();
+    const workerPath = path.join(__dirname, 'edari-product-import-worker.js');
+    delete require.cache[require.resolve(workerPath)];
+    const { fetchEdariProductImportBatch } = require(workerPath);
+    return await fetchEdariProductImportBatch(options || {});
+  } catch (err) {
+    return { ok: false, error: err.message || 'فشل جلب الدفعة من Edari' };
+  }
+});
 
 function createWindow() {
   const server = getServerUrl();

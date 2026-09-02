@@ -1,14 +1,40 @@
 const path = require('path');
 const { getEdariConnection } = require('./edari-connection');
 
-const edariRoot = process.env.EDARI_READER_ROOT
-  || path.join(__dirname, '..', '..', '..', 'db', 'edari-reader');
+function resolveEdariReaderRoot() {
+  if (process.env.EDARI_READER_ROOT) return process.env.EDARI_READER_ROOT;
+  return path.join(__dirname, '..', '..', '..', 'db', 'edari-reader');
+}
 
 let odbcBridge;
-try {
-  odbcBridge = require(path.join(edariRoot, 'lib', 'odbc-bridge'));
-} catch {
+let odbcBridgeRoot;
+
+function getOdbcBridge() {
+  const root = resolveEdariReaderRoot();
+  if (odbcBridge && odbcBridgeRoot === root) return odbcBridge;
+  odbcBridgeRoot = root;
   odbcBridge = null;
+  try {
+    odbcBridge = require(path.join(root, 'lib', 'odbc-bridge'));
+  } catch {
+    odbcBridge = null;
+  }
+  return odbcBridge;
+}
+
+function requireOdbcBridge() {
+  const bridge = getOdbcBridge();
+  if (!bridge) {
+    throw new Error(
+      'Edari ODBC غير متوفر — تأكد من تشغيل EdariNX وتثبيت edari-reader، ثم أعد تشغيل تطبيق الإدارة على Windows'
+    );
+  }
+  return bridge;
+}
+
+function resetOdbcBridgeCache() {
+  odbcBridge = null;
+  odbcBridgeRoot = null;
 }
 
 const MATERIAL_SELECT = `
@@ -100,9 +126,7 @@ function mapMaterialRow(row) {
 }
 
 async function lookupEdariMaterial(code) {
-  if (!odbcBridge) {
-    throw new Error('Edari ODBC غير متوفر على هذا السيرفر — استخدم تطبيق الإدارة على Windows');
-  }
+  const odbc = requireOdbcBridge();
 
   const raw = String(code ?? '').trim();
   if (!raw) return null;
@@ -122,16 +146,14 @@ async function lookupEdariMaterial(code) {
     WHERE SubCount = 0 AND (${conditions.join(' OR ')})
   `;
 
-  const result = await odbcBridge.runQuery({ ...getEdariConnection(), sql });
+  const result = await odbc.runQuery({ ...getEdariConnection(), sql });
   if (!result.ok) throw new Error(result.error || 'فشل الاتصال بـ Edari');
   if (!result.rows?.length) return null;
   return mapMaterialRow(result.rows[0]);
 }
 
 async function listEdariMaterials({ afterSeq = 0, limit = 500 } = {}) {
-  if (!odbcBridge) {
-    throw new Error('Edari ODBC غير متوفر — شغّل الاستيراد من تطبيق الإدارة على Windows');
-  }
+  const odbc = requireOdbcBridge();
   const batch = Math.min(Math.max(Number(limit) || 500, 1), 2000);
   const cursor = Math.max(Number(afterSeq) || 0, 0);
   const sql = `
@@ -140,7 +162,7 @@ async function listEdariMaterials({ afterSeq = 0, limit = 500 } = {}) {
     WHERE SubCount = 0 AND Seq > ${cursor}
     ORDER BY Seq
   `;
-  const result = await odbcBridge.runQuery({ ...getEdariConnection(), sql });
+  const result = await odbc.runQuery({ ...getEdariConnection(), sql });
   if (!result.ok) throw new Error(result.error || 'فشل جلب المواد من Edari');
   const rows = (result.rows || []).map(mapMaterialRow).filter(Boolean);
   const lastSeq = rows.length ? Number(rows[rows.length - 1].seq || 0) : cursor;
@@ -148,10 +170,8 @@ async function listEdariMaterials({ afterSeq = 0, limit = 500 } = {}) {
 }
 
 async function countEdariMaterials() {
-  if (!odbcBridge) {
-    throw new Error('Edari ODBC غير متوفر — شغّل الاستيراد من تطبيق الإدارة على Windows');
-  }
-  const result = await odbcBridge.runQuery({
+  const odbc = requireOdbcBridge();
+  const result = await odbc.runQuery({
     ...getEdariConnection(),
     sql: 'SELECT COUNT(*) AS c FROM File13n WHERE SubCount = 0'
   });
@@ -169,5 +189,6 @@ module.exports = {
   halfWholesalePrice,
   retailPrice,
   stockQty,
-  MATERIAL_SELECT
+  MATERIAL_SELECT,
+  resetOdbcBridgeCache
 };
