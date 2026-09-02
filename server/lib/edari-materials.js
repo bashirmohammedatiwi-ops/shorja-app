@@ -1,5 +1,12 @@
 const db = require('../db');
-const { wholesalePrice, halfWholesalePrice, retailPrice, stockQty } = require('./edari-lookup');
+const {
+  wholesalePrice,
+  halfWholesalePrice,
+  retailPrice,
+  stockQty,
+  pickProductBarcode,
+  mapEdariToShorjaProduct: mapEdariToShorjaProductFromLookup
+} = require('./edari-lookup');
 
 function mapEdariMaterial(row) {
   if (!row) return null;
@@ -42,24 +49,7 @@ function mapEdariMaterial(row) {
 }
 
 function mapEdariToShorjaProduct(material) {
-  if (!material) return null;
-  const wholesale = Number(material.wholesalePrice ?? material.sellPr1 ?? 0);
-  const halfWholesale = Number(
-    material.halfWholesalePrice ?? material.price ?? material.sellPr2 ?? material.sellPr4 ?? wholesale
-  );
-  const retail = Number(material.priceRetail ?? material.sellPr4 ?? halfWholesale);
-  return {
-    barcode: String(material.barcode || material.num || '').trim(),
-    sku: String(material.num || '').trim(),
-    name: String(material.name || material.name1 || '').trim(),
-    unit: String(material.unit || 'قطعة').trim() || 'قطعة',
-    costPrice: wholesale,
-    price: halfWholesale,
-    retailPrice: retail,
-    stockQty: Number(material.stockQty ?? material.qty ?? 0),
-    category: '',
-    edariSeq: String(material.seq || '')
-  };
+  return mapEdariToShorjaProductFromLookup(material);
 }
 
 function normalizeCode(code) {

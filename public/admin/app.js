@@ -1009,7 +1009,7 @@ async function importAllProductsFromEdari() {
 
   const confirmed = confirm(
     `رفع ${total.toLocaleString('ar-IQ')} منتج من الإداري دفعة واحدة؟\n\n` +
-    '• السعر = نصف الجملة (SellPr2 أو SellPr4)\n' +
+    '• السعر = نصف الجملة (SellPr2 فقط — عمود نصف الجملة في الإداري)\n' +
     '• بدون إدخال باركود منتج منتج\n' +
     `• المنتجات الحالية في الشورجة: ${local.toLocaleString('ar-IQ')}\n\n` +
     'اضغط OK للمتابعة.'

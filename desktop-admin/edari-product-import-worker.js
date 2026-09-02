@@ -23,43 +23,26 @@ function clearEdariLibCache(names = []) {
 }
 
 function loadImportLib() {
-  clearEdariLibCache([
-    'edari-connection.js',
-    'edari-lookup.js'
-  ]);
+  clearEdariLibCache(['edari-connection.js', 'edari-lookup.js']);
   const lookupPath = getEdariLibPath('edari-lookup.js');
-  const { countEdariMaterials, listEdariMaterials, resetOdbcBridgeCache } = require(lookupPath);
+  const {
+    countEdariMaterials,
+    listEdariMaterials,
+    mapEdariToShorjaProduct,
+    resetOdbcBridgeCache
+  } = require(lookupPath);
   resetOdbcBridgeCache?.();
-  return { countEdariMaterials, listEdariMaterials };
-}
-
-function mapEdariToShorjaProduct(material) {
-  if (!material) return null;
-  const wholesale = Number(material.wholesalePrice ?? material.sellPr1 ?? 0);
-  const halfWholesale = Number(
-    material.halfWholesalePrice ?? material.price ?? material.sellPr2 ?? material.sellPr4 ?? wholesale
-  );
-  return {
-    barcode: String(material.barcode || material.num || '').trim(),
-    sku: String(material.num || '').trim(),
-    name: String(material.name || material.name1 || '').trim(),
-    unit: String(material.unit || 'قطعة').trim() || 'قطعة',
-    costPrice: wholesale,
-    price: halfWholesale,
-    stockQty: Number(material.stockQty ?? material.qty ?? 0),
-    category: '',
-    edariSeq: String(material.seq || '')
-  };
+  return { countEdariMaterials, listEdariMaterials, mapEdariToShorjaProduct };
 }
 
 async function getEdariProductImportStatus() {
   const { countEdariMaterials } = loadImportLib();
   const totalInEdari = await countEdariMaterials();
-  return { ok: true, totalInEdari, priceMode: 'half_wholesale' };
+  return { ok: true, totalInEdari, priceMode: 'half_wholesale_sellpr2' };
 }
 
 async function fetchEdariProductImportBatch({ afterSeq = 0, limit = 500 } = {}) {
-  const { listEdariMaterials } = loadImportLib();
+  const { listEdariMaterials, mapEdariToShorjaProduct } = loadImportLib();
   const { rows, lastSeq, hasMore } = await listEdariMaterials({ afterSeq, limit });
   const products = [];
   let skipped = 0;

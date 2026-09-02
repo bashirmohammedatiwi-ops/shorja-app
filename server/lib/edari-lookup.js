@@ -58,16 +58,9 @@ function wholesalePrice(sellPr1, _sellPr2, _sellPr3, sellPr5) {
   return 0;
 }
 
-/** نصف الجملة: SellPr2، أو SellPr4 للمواد القديمة التي لا تحتوي SellPr2. */
-function halfWholesalePrice(sellPr1, sellPr2, _sellPr3, sellPr4, sellPr5) {
-  const pr2 = Number(sellPr2 || 0);
-  if (pr2 > 0) return pr2;
-  const pr4 = Number(sellPr4 || 0);
-  if (pr4 > 0) return pr4;
-  const pr5 = Number(sellPr5 || 0);
-  const wholesale = wholesalePrice(sellPr1, sellPr2, _sellPr3, sellPr5);
-  if (pr5 > 0 && pr5 !== wholesale) return pr5;
-  return wholesale;
+/** نصف الجملة = SellPr2 فقط (عمود نصف الجملة في الإداري). */
+function halfWholesalePrice(_sellPr1, sellPr2) {
+  return Number(sellPr2 || 0);
 }
 
 function retailPrice(sellPr1, sellPr2, sellPr3, sellPr4, sellPr5) {
@@ -84,6 +77,34 @@ function stockQty(inTot, outTot) {
   return Number(inTot || 0) - Number(outTot || 0);
 }
 
+/** يفضّل رقم المادة (Num) عندما يكون باركود EAN طويلاً. */
+function pickProductBarcode(num, barcode) {
+  const n = String(num ?? '').trim();
+  const b = String(barcode ?? '').trim();
+  if (n.length >= 8 && /^\d+$/.test(n)) return n;
+  if (b && b !== '0') return b;
+  return n || b;
+}
+
+function mapEdariToShorjaProduct(material) {
+  if (!material) return null;
+  const halfWholesale = Number(material.halfWholesalePrice ?? material.sellPr2 ?? material.price ?? 0);
+  const num = String(material.num ?? material.Num ?? '').trim();
+  const edariBarcode = String(material.barcode ?? material.Barcode ?? '').trim();
+  const scanCode = pickProductBarcode(num, edariBarcode);
+  return {
+    barcode: scanCode,
+    sku: num || scanCode,
+    name: String(material.name || material.name1 || material.Name1 || '').trim(),
+    unit: String(material.unit || 'قطعة').trim() || 'قطعة',
+    costPrice: 0,
+    price: halfWholesale,
+    stockQty: Number(material.stockQty ?? material.qty ?? 0),
+    category: '',
+    edariSeq: String(material.seq || material.Seq || '')
+  };
+}
+
 function mapMaterialRow(row) {
   if (!row) return null;
   const sellPr1 = Number(row.SellPr1 ?? 0);
@@ -97,12 +118,13 @@ function mapMaterialRow(row) {
   const unitRaw = String(row.Unt1 ?? row.DefUnit ?? '').trim();
   const unit = unitRaw && unitRaw !== '0' ? unitRaw : '';
   const wholesale = wholesalePrice(sellPr1, sellPr2, sellPr3, sellPr5);
-  const halfWholesale = halfWholesalePrice(sellPr1, sellPr2, sellPr3, sellPr4, sellPr5);
+  const halfWholesale = halfWholesalePrice(sellPr1, sellPr2);
   const retail = retailPrice(sellPr1, sellPr2, sellPr3, sellPr4, sellPr5);
+  const scanBarcode = pickProductBarcode(row.Num ?? row.num, row.Barcode ?? row.barcode);
   return {
     seq: String(row.Seq ?? ''),
     num: String(row.Num ?? ''),
-    barcode: String(row.Barcode || row.Num || '').trim(),
+    barcode: scanBarcode,
     name: String(row.Name1 ?? ''),
     name1: String(row.Name1 ?? ''),
     name2: String(row.Name2 ?? ''),
@@ -132,12 +154,9 @@ async function lookupEdariMaterial(code) {
   if (!raw) return null;
 
   const escaped = raw.replace(/'/g, "''");
-  const conditions = [`Num = '${escaped}'`];
+  const conditions = [`Num = '${escaped}'`, `Barcode = '${escaped}'`];
   if (/^\d+$/.test(raw) && raw.length <= 10) {
     conditions.push(`Seq = ${raw}`);
-  }
-  if (!/^\d+$/.test(raw)) {
-    conditions.push(`Barcode = '${escaped}'`);
   }
 
   const sql = `
@@ -189,6 +208,8 @@ module.exports = {
   halfWholesalePrice,
   retailPrice,
   stockQty,
+  pickProductBarcode,
+  mapEdariToShorjaProduct,
   MATERIAL_SELECT,
   resetOdbcBridgeCache
 };
