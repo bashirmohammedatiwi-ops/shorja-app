@@ -21,13 +21,6 @@ function logoMarkup(cls) {
   return `<img class="${cls}" src="${src}" alt="${esc(STORE_NAME)}">`;
 }
 
-function brandOrnament(cls = 'ornament') {
-  return `<svg class="${cls}" viewBox="0 0 220 20" fill="none" aria-hidden="true">
-    <path d="M8 12c24-10 48-10 72-3s48 12 72 3 48-10 60-4" stroke="#000" stroke-width="1.35" stroke-linecap="round"/>
-    <path d="M18 16c22-8 44-8 66-2s44 10 66 2 40-8 52-3" stroke="#000" stroke-width=".7" stroke-linecap="round"/>
-  </svg>`;
-}
-
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -53,14 +46,19 @@ function isAccountCustomer(invoice) {
   return invoice.paymentMethod === 'credit' || invoice.paymentMethod === 'partial';
 }
 
-function invoicePageFoot() {
+function invoicePageFoot(thanksText) {
   return `
     <footer class="page-foot">
-      ${brandOrnament('ornament ornament-foot')}
-      <div class="page-foot-row">
-        <span>مدير مبيعات الجملة <b dir="ltr">07828630399</b></span>
-        <span class="foot-mark">${esc(STORE_NAME)}</span>
-        <span>محل الشورجة <b dir="ltr">07707683512</b></span>
+      <p class="thanks-line">${esc(thanksText || 'شكراً لزيارتكم')}</p>
+      <div class="phone-row">
+        <div class="phone-card">
+          <span class="phone-k">مدير مبيعات الجملة</span>
+          <b dir="ltr">07828630399</b>
+        </div>
+        <div class="phone-card">
+          <span class="phone-k">محل الشورجة</span>
+          <b dir="ltr">07707683512</b>
+        </div>
       </div>
     </footer>`;
 }
@@ -68,8 +66,14 @@ function invoicePageFoot() {
 function invoiceFooterContacts() {
   return `
       <div class="contacts">
-        <div class="contact-row"><span>مدير مبيعات الجملة</span><b dir="ltr">07828630399</b></div>
-        <div class="contact-row"><span>محل الشورجة</span><b dir="ltr">07707683512</b></div>
+        <div class="phone-card">
+          <span class="phone-k">مدير مبيعات الجملة</span>
+          <b dir="ltr">07828630399</b>
+        </div>
+        <div class="phone-card">
+          <span class="phone-k">محل الشورجة</span>
+          <b dir="ltr">07707683512</b>
+        </div>
       </div>`;
 }
 
@@ -174,7 +178,7 @@ function a4TotalsPanel(invoice, accent, debtInfo) {
 function buildA4InvoiceHtml(invoice, branchName, opts) {
   const doc = invoiceDocMeta(invoice);
   const title = doc.title;
-  const footer = opts.footer || `شكراً لزيارتكم — ${STORE_NAME}`;
+  const thanksText = 'شكراً لزيارتكم';
   const debtInfo = opts.debtInfo || null;
   const summary = receiptSummary(invoice);
   const giftTotal = (invoice.lines || []).reduce((s, l) => s + Number(l.giftQty || 0), 0);
@@ -191,20 +195,12 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       <header class="mast">
         <div class="mast-top">
           <span class="copy-mark">${esc(copyLabel)}</span>
+          <span class="inv-mid" dir="ltr">${esc(invoice.invoiceNo)}</span>
           <span class="doc-kind">${esc(title)}</span>
         </div>
-        <div class="brand-row">
+        <div class="brand-center">
           ${logoMarkup('logo-img')}
-          <div class="brand-text">
-            <p class="brand-en">deema alhayat</p>
-            <h1>${esc(STORE_NAME)}</h1>
-            ${brandOrnament()}
-            <p class="brand-sub">${esc(branchName || 'نقطة البيع')} · ${summary.lineCount} صنف · ${soldTotal} قطعة${giftTotal ? ` · ${giftTotal} هدية` : ''}</p>
-          </div>
-          <div class="inv-plate">
-            <span class="inv-k">رقم الفاتورة</span>
-            <span class="inv-no" dir="ltr">${esc(invoice.invoiceNo)}</span>
-          </div>
+          <p class="slogan">simply the best in beauty</p>
         </div>
       </header>
       <div class="info">
@@ -240,19 +236,19 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
         </thead>
         <tbody>${a4LineItems(invoice, { showGifts, showMoney })}</tbody>
       </table>
-      <div class="bottom">
-        <div class="side">
-          ${invoice.notes ? `<div class="notes"><div class="k">ملاحظات</div><div class="v">${esc(invoice.notes)}</div></div>` : `<div class="quiet-card"><div class="k">ملخص الأصناف</div><div class="v">${summary.lineCount} صنف · ${soldTotal} قطعة${giftTotal ? ` · ${giftTotal} هدية` : ''}</div></div>`}
+      <div class="sum-box">
+        <div class="sum-head">ملخص الأصناف</div>
+        <div class="sum-stats">
+          <div><span>الأصناف</span><b dir="ltr">${summary.lineCount}</b></div>
+          <div><span>القطع</span><b dir="ltr">${soldTotal}</b></div>
+          ${giftTotal ? `<div><span>الهدايا</span><b dir="ltr">${giftTotal}</b></div>` : ''}
         </div>
-        ${showMoney ? `<div class="totals">
-          <div class="tot-head">ملخص المبالغ</div>
-          <div class="tot-body">${a4TotalsPanel(invoice, null, debtInfo)}</div>
-        </div>` : `<div class="quiet-card"><div class="k">عدد الأصناف</div><div class="v">${summary.lineCount} صنف · ${soldTotal} قطعة</div></div>`}
       </div>
-      <div class="thanks">
-        ${brandOrnament('ornament ornament-sm')}
-        <p>${esc(footer)}</p>
-      </div>
+      ${showMoney ? `<div class="sum-box totals">
+        <div class="sum-head">ملخص المبالغ</div>
+        <div class="tot-body">${a4TotalsPanel(invoice, null, debtInfo)}</div>
+      </div>` : ''}
+      ${invoice.notes ? `<div class="sum-box notes-box"><div class="sum-head">ملاحظات</div><div class="notes-v">${esc(invoice.notes)}</div></div>` : ''}
     </div>
   </section>`;
 
@@ -264,7 +260,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    @page { size: A4 portrait; margin: 9mm 11mm 20mm 11mm; }
+    @page { size: A4 portrait; margin: 9mm 11mm 28mm 11mm; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'IBM Plex Sans Arabic', Tahoma, Arial, sans-serif;
@@ -279,39 +275,57 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .frame {
       border: 1.8px solid #000;
       box-shadow: inset 0 0 0 3.5px #fff, inset 0 0 0 4.5px #000;
-      padding: 7mm 7mm 6mm;
+      padding: 6mm 7mm 8mm;
     }
     .page-foot {
       position: fixed;
       left: 0;
       right: 0;
       bottom: 0;
-      height: 17mm;
-      padding: 2mm 12mm 3mm;
+      height: 24mm;
+      padding: 2.5mm 10mm 3mm;
       background: #fff;
       text-align: center;
     }
-    .page-foot .ornament-foot { width: 88px; height: 10px; margin: 0 auto 2px; display: block; }
-    .page-foot-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 10px;
-      font-size: 10px;
-      font-weight: 700;
-      border-top: 1.6px solid #000;
-      padding-top: 3mm;
+    .thanks-line {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      margin: 0 0 2.5mm;
+      line-height: 1.3;
     }
-    .page-foot-row b { font-family: Consolas, 'Courier New', monospace; letter-spacing: 0.05em; }
-    .foot-mark { letter-spacing: 0.18em; font-size: 9px; font-weight: 800; }
-    .ornament { width: 118px; height: 14px; display: block; }
-    .ornament-sm { width: 92px; height: 12px; margin: 0 auto 6px; }
-    .mast { margin-bottom: 8px; }
+    .phone-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .phone-card {
+      border: 1.4px solid #000;
+      padding: 3px 8px 4px;
+      text-align: center;
+    }
+    .phone-k {
+      display: block;
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      margin-bottom: 1px;
+    }
+    .phone-card b {
+      display: block;
+      font-family: Consolas, 'Courier New', monospace;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      direction: ltr;
+    }
+    .mast { margin-bottom: 6px; }
     .mast-top {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 10px;
+      gap: 8px;
+      margin-bottom: 8px;
     }
     .copy-mark, .doc-kind {
       font-size: 9px;
@@ -321,57 +335,41 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       padding: 3px 11px;
     }
     .doc-kind { border-width: 1.6px; }
-    .brand-row {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 14px;
-      padding-bottom: 10px;
+    .inv-mid {
+      font-family: Consolas, 'Courier New', monospace;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+    .brand-center {
+      text-align: center;
+      padding: 2px 0 10px;
       border-bottom: 3px double #000;
     }
     .logo-img {
-      height: 64px;
+      display: block;
+      height: 86px;
       width: auto;
-      max-width: 210px;
+      max-width: 280px;
+      margin: 0 auto 6px;
       object-fit: contain;
-      flex-shrink: 0;
-      filter: grayscale(100%) contrast(1.25);
+      filter: grayscale(100%) contrast(1.12);
     }
     .logo-fallback {
-      width: 56px; height: 56px;
+      width: 64px; height: 64px;
+      margin: 0 auto 8px;
       border: 2px solid #000;
-      font-size: 26px;
+      font-size: 28px;
       font-weight: 800;
       display: flex;
       align-items: center;
       justify-content: center;
     }
-    .brand-text { min-width: 0; }
-    .brand-en {
-      font-size: 9px;
-      letter-spacing: 0.28em;
+    .slogan {
+      font-size: 10.5px;
       font-weight: 700;
+      letter-spacing: 0.16em;
       text-transform: lowercase;
-      margin-bottom: 1px;
-    }
-    .brand-text h1 { font-size: 23px; font-weight: 800; line-height: 1.15; }
-    .brand-text .ornament { margin: 4px 0 5px; }
-    .brand-sub { font-size: 10.5px; font-weight: 700; }
-    .inv-plate {
-      text-align: left;
-      min-width: 168px;
-      padding: 8px 12px 9px;
-      border: 1.8px solid #000;
-      box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px #000;
-    }
-    .inv-k { display: block; font-size: 8.5px; font-weight: 800; letter-spacing: 0.12em; margin-bottom: 4px; }
-    .inv-no {
-      display: block;
-      font-family: Consolas, 'Courier New', monospace;
-      font-size: 13.5px;
-      font-weight: 800;
-      direction: ltr;
-      letter-spacing: 0.04em;
     }
     .info {
       display: grid;
@@ -419,40 +417,35 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     }
     .gift-val { display: inline-block; border: 1px solid #000; font-weight: 800; padding: 1px 7px; }
     .was { font-size: 8px; text-decoration: line-through; margin-top: 2px; }
-    .bottom {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 236px;
-      gap: 16px;
-      align-items: start;
+    .sum-box {
+      width: 100%;
+      border: 1.6px solid #000;
+      margin-bottom: 8px;
       page-break-inside: avoid;
     }
-    .side { display: flex; flex-direction: column; gap: 10px; }
-    .notes, .quiet-card {
-      border: 1px solid #000;
-      padding: 10px 12px;
-      min-height: 54px;
-    }
-    .notes .k, .quiet-card .k { font-size: 8.5px; font-weight: 800; letter-spacing: 0.1em; margin-bottom: 5px; }
-    .notes .v, .quiet-card .v { font-size: 11.5px; font-weight: 600; }
-    .totals {
-      border: 1.8px solid #000;
-      box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px #000;
-    }
-    .totals .tot-head {
+    .sum-head {
       text-align: center;
-      padding: 7px 8px;
-      font-size: 9.5px;
+      padding: 6px 8px;
+      font-size: 10px;
       font-weight: 800;
       letter-spacing: 0.14em;
-      border-bottom: 1.4px solid #000;
+      border-bottom: 1.3px solid #000;
     }
-    .totals .tot-body { padding: 8px 12px 11px; }
+    .sum-stats {
+      display: flex;
+      text-align: center;
+    }
+    .sum-stats > div { flex: 1; padding: 8px 6px; border-inline-start: 1px solid #000; }
+    .sum-stats > div:first-child { border-inline-start: 0; }
+    .sum-stats span { display: block; font-size: 8.5px; font-weight: 800; letter-spacing: 0.06em; margin-bottom: 2px; }
+    .sum-stats b { display: block; font-size: 16px; font-weight: 800; }
+    .totals .tot-body { padding: 6px 14px 10px; }
     .tot-line {
       display: flex;
       justify-content: space-between;
       gap: 8px;
-      padding: 5px 0;
-      font-size: 11px;
+      padding: 6px 2px;
+      font-size: 12px;
       border-bottom: 1px dotted #000;
     }
     .tot-line b { white-space: nowrap; font-weight: 800; }
@@ -460,17 +453,16 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .tot-sep { margin: 8px 0 4px; font-size: 9px; font-weight: 800; text-align: center; letter-spacing: 0.08em; }
     .tot-grand {
       display: flex; justify-content: space-between; align-items: center;
-      margin-top: 7px; padding: 9px 10px; border: 1.8px solid #000;
-      font-size: 12px; font-weight: 800;
+      margin-top: 7px; padding: 9px 12px; border: 1.8px solid #000;
+      font-size: 13px; font-weight: 800;
     }
-    .tot-grand b { font-size: 16.5px; }
-    .thanks { margin-top: 14px; text-align: center; }
-    .thanks p { font-size: 11.5px; font-weight: 800; letter-spacing: 0.04em; }
+    .tot-grand b { font-size: 18px; }
+    .notes-box .notes-v { padding: 8px 12px 10px; font-size: 11.5px; font-weight: 600; }
     @media print { .sheet { max-width: 100%; } }
   </style>
 </head>
 <body>
-  ${invoicePageFoot()}
+  ${invoicePageFoot(thanksText)}
   ${sheet('نسخة العميل')}
   ${sheet('نسخة الشركة')}
   <script>window.onload = () => { window.print(); };</script>
@@ -580,10 +572,10 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
       height: auto;
       width: auto;
       max-width: 54mm;
-      max-height: 20mm;
-      margin: 0 auto 4px;
+      max-height: 24mm;
+      margin: 0 auto 5px;
       object-fit: contain;
-      filter: grayscale(100%) contrast(1.3);
+      filter: grayscale(100%) contrast(1.12);
     }
     .logo-fallback {
       width: 40px; height: 40px;
@@ -595,17 +587,12 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
       align-items: center;
       justify-content: center;
     }
-    .store-name {
-      font-size: 17px;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      margin-bottom: 0;
-    }
-    .brand-en {
-      font-size: 8px;
-      letter-spacing: 0.22em;
+    .slogan {
+      font-size: 8.5px;
+      letter-spacing: 0.12em;
       font-weight: 700;
-      margin-bottom: 1px;
+      margin: 2px 0 6px;
+      text-transform: lowercase;
     }
     .doc-badge {
       display: inline-block;
@@ -765,21 +752,28 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     }
     .contacts {
       margin-top: 8px;
-      border: 1px solid #000;
-      padding: 6px 8px;
-      text-align: right;
+      display: grid;
+      gap: 6px;
     }
-    .contact-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 8px;
-      font-size: 9px;
-      font-weight: 700;
-      padding: 2px 0;
+    .contacts .phone-card {
+      border: 1.3px solid #000;
+      padding: 5px 8px;
+      text-align: center;
     }
-    .contact-row + .contact-row { border-top: 1px dotted #000; padding-top: 4px; margin-top: 2px; }
-    .contact-row b { font-family: Consolas, 'Courier New', monospace; font-size: 10px; direction: ltr; }
+    .contacts .phone-k {
+      display: block;
+      font-size: 8px;
+      font-weight: 800;
+      margin-bottom: 2px;
+    }
+    .contacts .phone-card b {
+      display: block;
+      font-family: Consolas, 'Courier New', monospace;
+      font-size: 11px;
+      font-weight: 800;
+      direction: ltr;
+      letter-spacing: 0.04em;
+    }
     .inv-code {
       margin-top: 6px;
       font-family: Consolas, monospace;
@@ -801,11 +795,8 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     <div class="copy-badge">${copyLabel}</div>
     <header class="head">
       ${logoMarkup('logo-img')}
-      <div class="brand-en">deema alhayat</div>
-      <div class="store-name">${esc(STORE_NAME)}</div>
-      ${brandOrnament()}
+      <div class="slogan">simply the best in beauty</div>
       <div class="doc-badge">${title}</div>
-      ${branchName ? `<div class="branch-name">${esc(branchName)}</div>` : ''}
     </header>
 
     <hr class="rule-solid">
@@ -857,8 +848,7 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     <div class="summary-line">${summary.lineCount} بند · ${summary.itemQty} قطعة</div>
 
     <footer class="foot">
-      <div class="foot-msg">${esc(footer)}</div>
-      <div class="foot-brand">${esc(STORE_NAME)}${branchName ? ` — ${esc(branchName)}` : ''}</div>
+      <div class="foot-msg">شكراً لزيارتكم</div>
       ${invoiceFooterContacts()}
       <div class="inv-code">${esc(invoice.invoiceNo)}</div>
     </footer>
