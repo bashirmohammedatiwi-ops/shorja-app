@@ -78,7 +78,9 @@ router.get('/products', (req, res) => {
     q: req.query.q,
     category: req.query.category,
     limit: Number(req.query.limit) || 100,
-    activeOnly: req.query.all !== '1'
+    activeOnly: req.query.all !== '1',
+    stockFilter: ['all', 'in', 'low', 'out'].includes(String(req.query.stock || '')) ? req.query.stock : 'all',
+    lowThreshold: Number(req.query.threshold) || 5
   }) });
 });
 
@@ -497,7 +499,8 @@ router.get('/payments', (req, res) => {
     branchId: req.query.branchId ? Number(req.query.branchId) : null,
     dateFrom: req.query.from,
     dateTo: req.query.to,
-    accountScope: scope === 'warehouse' || scope === 'delegate' ? scope : ''
+    accountScope: scope === 'warehouse' || scope === 'delegate' ? scope : '',
+    limit: Math.min(Number(req.query.limit) || 300, 1000)
   }) });
 });
 
@@ -532,7 +535,9 @@ router.get('/journal', (req, res) => {
     entries: listJournal({
       accountId: req.query.accountId ? Number(req.query.accountId) : null,
       accountScope: scope === 'warehouse' || scope === 'delegate' ? scope : '',
-      limit: Number(req.query.limit) || 200
+      dateFrom: req.query.from || '',
+      dateTo: req.query.to || '',
+      limit: Math.min(Number(req.query.limit) || 400, 1000)
     })
   });
 });

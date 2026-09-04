@@ -238,6 +238,7 @@
     a.click();
     URL.revokeObjectURL(a.href);
   }
+  window.exportTableCsv = exportTableCsv;
 
   function decorateNav() {
     document.querySelectorAll('.nav[data-view]').forEach((btn) => {
@@ -474,9 +475,11 @@
     $('reportKpis').innerHTML = `
       <div class="kpi premium-kpi"><div class="lbl">فواتير البيع</div><div class="val">${r.salesCount || 0}</div></div>
       <div class="kpi premium-kpi"><div class="lbl">إجمالي المبيعات</div><div class="val" dir="ltr">${fmt(r.salesAmount)}</div></div>
+      <div class="kpi premium-kpi"><div class="lbl">عدد المرتجعات</div><div class="val">${r.returnsCount || 0}</div></div>
       <div class="kpi premium-kpi"><div class="lbl">المرتجعات</div><div class="val" dir="ltr">${fmt(r.returnsAmount)}</div></div>
       <div class="kpi premium-kpi accent"><div class="lbl">الصافي</div><div class="val" dir="ltr">${fmt(r.netSales)}</div></div>
-      <div class="kpi premium-kpi"><div class="lbl">المحصّل</div><div class="val" dir="ltr">${fmt(r.collectionsTotal)}</div></div>
+      <div class="kpi premium-kpi"><div class="lbl">المحصّل نقداً</div><div class="val" dir="ltr">${fmt(r.paidAmount)}</div></div>
+      <div class="kpi premium-kpi"><div class="lbl">تحصيلات حسابات</div><div class="val" dir="ltr">${fmt(r.collectionsTotal)}</div></div>
       <div class="kpi premium-kpi warn"><div class="lbl">دين الفترة</div><div class="val" dir="ltr">${fmt(r.dueAmount)}</div></div>`;
 
     const maxPay = Math.max(...(r.byPayment || []).map((x) => x.amount), 1);
@@ -492,7 +495,63 @@
         <li><span>${i + 1}. ${esc(p.name)} <small dir="ltr">${esc(p.barcode)}</small></span><strong dir="ltr">${fmt(p.amount)}</strong></li>
       `).join('') || '<li>لا توجد مبيعات في الفترة</li>'
     }</ul>`;
+
+    const branchEl = $('reportByBranch');
+    if (branchEl) {
+      const rows = r.byBranch || [];
+      branchEl.innerHTML = `
+        <table class="data-table compact" id="reportBranchTable">
+          <thead><tr><th>الفرع</th><th>فواتير</th><th>المبيعات</th><th>مدفوع</th><th>آجل</th><th>مرتجعات</th><th>صافي</th></tr></thead>
+          <tbody>${rows.length ? rows.map((b) => `
+            <tr>
+              <td>${esc(b.name)}</td>
+              <td>${b.count}</td>
+              <td dir="ltr">${fmt(b.amount)}</td>
+              <td dir="ltr">${fmt(b.paid)}</td>
+              <td dir="ltr">${fmt(b.due)}</td>
+              <td dir="ltr">${fmt(b.returnsAmount)}</td>
+              <td dir="ltr"><strong>${fmt(b.net ?? (Number(b.amount||0) - Number(b.returnsAmount||0)))}</strong></td>
+            </tr>
+          `).join('') : '<tr><td colspan="7" class="empty-cell">لا توجد بيانات</td></tr>'}</tbody>
+        </table>`;
+    }
   };
+
+  function isoDay(d = new Date()) {
+    const x = new Date(d);
+    x.setMinutes(x.getMinutes() - x.getTimezoneOffset());
+    return x.toISOString().slice(0, 10);
+  }
+
+  $('reportPresetChips')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-report-preset]');
+    if (!chip) return;
+    const today = isoDay();
+    const y = new Date(); y.setDate(y.getDate() - 1);
+    const week = new Date(); week.setDate(week.getDate() - 6);
+    const month = new Date(); month.setDate(1);
+    const map = {
+      today: [today, today],
+      yesterday: [isoDay(y), isoDay(y)],
+      week: [isoDay(week), today],
+      month: [isoDay(month), today]
+    };
+    const range = map[chip.dataset.reportPreset];
+    if (range) {
+      if ($('reportFrom')) $('reportFrom').value = range[0];
+      if ($('reportTo')) $('reportTo').value = range[1];
+    }
+    $('reportPresetChips').querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
+    loadReports();
+  });
+
+  $('btnExportReport')?.addEventListener('click', () => {
+    const table = $('reportBranchTable');
+    if (table) {
+      exportTableCsv(table, `sales-by-branch-${Date.now()}.csv`);
+      toast('تم تصدير تقرير الفروع');
+    } else toast('اعرض التقرير أولاً');
+  });
 
   $('btnRunReport')?.addEventListener('click', () => loadReports());
   $('reportFrom')?.addEventListener('change', () => loadReports());
@@ -564,7 +623,9 @@
   document.getElementById('invPresetChips')?.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-inv-preset]');
     if (!chip) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = isoDay();
+    const week = new Date(); week.setDate(week.getDate() - 6);
+    const month = new Date(); month.setDate(1);
     if ($('invFrom')) $('invFrom').value = today;
     if ($('invTo')) $('invTo').value = today;
     if ($('invDate')) $('invDate').value = today;
@@ -573,10 +634,13 @@
     if ($('invEdari')) $('invEdari').value = '';
     if ($('invSearch')) $('invSearch').value = '';
     const preset = chip.dataset.invPreset;
+    if (preset === 'week' && $('invFrom')) $('invFrom').value = isoDay(week);
+    if (preset === 'month' && $('invFrom')) $('invFrom').value = isoDay(month);
     if (preset === 'today-credit' && $('invPayment')) $('invPayment').value = 'credit';
     if (preset === 'returns' && $('invKind')) $('invKind').value = 'return';
     if (preset === 'edari-pending' && $('invEdari')) $('invEdari').value = 'pending';
     if (preset === 'edari-error' && $('invEdari')) $('invEdari').value = 'error';
+    $('invPresetChips').querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
     loadInvoices();
   });
 
@@ -733,8 +797,12 @@
     const scopeQ = currentApp === 'warehouse' || currentApp === 'delegate' ? `&scope=${currentApp}` : '';
     updateAccountsBanner();
     const data = await api(`/admin/accounts?q=${encodeURIComponent(q)}${debtQ}${edariQ}${scopeQ}`);
+    const list = data.accounts || [];
+    const debtSum = list.reduce((s, a) => s + Number(a.balance || 0), 0);
+    const debtN = list.filter((a) => Number(a.balance) > 0).length;
+    if ($('accResultCount')) $('accResultCount').textContent = `${list.length} حساب · مدينون ${debtN} · ${fmt(debtSum)}`;
     $('accountTable').innerHTML = `
-      <table>
+      <table id="accountsDataTable">
         <thead><tr><th>الرمز</th><th>الاسم</th><th>الهاتف</th><th>الدين</th><th>حد الائتمان</th><th>الإداري</th><th></th></tr></thead>
         <tbody>${(data.accounts||[]).map((a) => {
           const overLimit = a.creditLimit > 0 && a.balance > a.creditLimit;
@@ -750,7 +818,7 @@
               <button type="button" class="btn btn-danger btn-sm" data-delete-acc="${a.id}">حذف</button>
             </td>
           </tr>`;
-        }).join('') || '<tr><td colspan="7">لا توجد حسابات</td></tr>'}
+        }).join('') || '<tr><td colspan="7" class="empty-cell">لا توجد حسابات مطابقة</td></tr>'}
       </tbody></table>`;
     $('accountTable').querySelectorAll('[data-account-id]').forEach((btn) => {
       btn.addEventListener('click', () => openLedger(Number(btn.dataset.accountId)));
@@ -801,6 +869,19 @@
       c.classList.toggle('active', key && key === accEdariFilter);
     });
     loadAccounts();
+  });
+
+  $('btnExportAccounts')?.addEventListener('click', () => {
+    exportTableCsv($('accountsDataTable'), `accounts-${Date.now()}.csv`);
+    toast('تم تصدير الحسابات');
+  });
+  $('btnExportPayments')?.addEventListener('click', () => {
+    exportTableCsv($('paymentsDataTable'), `payments-${Date.now()}.csv`);
+    toast('تم تصدير التسديدات');
+  });
+  $('btnExportJournal')?.addEventListener('click', () => {
+    exportTableCsv($('journalDataTable'), `journal-${Date.now()}.csv`);
+    toast('تم تصدير القيود');
   });
 
   window.filterEdariSyncByStatus = function filterEdariSyncByStatus(status) {
@@ -1073,6 +1154,11 @@
         if (active === 'dashboard') refreshDashboardLive();
         if (active === 'posMonitor') loadPosMonitor();
         if (active === 'invoices') loadInvoices();
+        if (active === 'payments') loadPayments();
+        if (active === 'journal') loadJournal();
+        if (active === 'accounts') loadAccounts();
+        if (active === 'warehousePrep') loadWarehousePrep();
+        if (active === 'edariSync') loadEdariSync();
       }
       if (rev) lastKnownRevision = rev;
     } catch { /* */ }
@@ -1149,6 +1235,33 @@
   PAGE_TITLES.posMonitor = ['مراقبة نقاط البيع', 'متابعة حية للفروع والفواتير'];
   PAGE_TITLES.warehousePrep = ['تجهيز الشورجة', 'فواتير فروع الشورجة الجاهزة للترحيل'];
   PAGE_TITLES.delegates = ['المندوبين', 'طلبات المندوبين فقط — منفصلة عن الشورجة'];
+  PAGE_TITLES.products = ['المنتجات', 'المخزون والأقسام — بحث وتصدير'];
+  PAGE_TITLES.prices = ['الأسعار', 'رفع المنتجات والأسعار إلى نقاط البيع'];
+  PAGE_TITLES.journal = ['القيود', 'كل الحركات المحلية — الحذف لا يلغي الإداري'];
+  PAGE_TITLES.invoices = ['فواتير الشورجة', 'بحث وفلاتر وتصدير — الحذف محلي فقط'];
+
+  function setupKeyboard() {
+    $('btnKbdHelp')?.addEventListener('click', () => $('kbdHelp')?.showModal());
+    document.addEventListener('keydown', (e) => {
+      const tag = document.activeElement?.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      if (e.key === '?' && !typing && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        $('kbdHelp')?.showModal();
+      }
+      if (e.key === '/' && !typing) {
+        e.preventDefault();
+        const view = document.querySelector('.nav.active')?.dataset.view;
+        const map = {
+          invoices: 'invSearch', products: 'prodSearch', accounts: 'accSearch',
+          payments: 'paySearch', journal: 'journalSearch', posMonitor: 'posMonSearch',
+          warehousePrep: 'warehouseSearch', delegates: 'delegateSearch',
+          prices: 'priceBrowseSearch', edariSync: 'edariSyncSearch'
+        };
+        $(map[view])?.focus();
+      }
+    });
+  }
 
   // ——— Init ———
   function initPremium() {
@@ -1156,6 +1269,7 @@
     setupAppSwitcher();
     setupHeader();
     setupQuickActions();
+    setupKeyboard();
     fetchBranches();
     pollDataRevision();
     if (!revisionPollTimer) revisionPollTimer = setInterval(pollDataRevision, 12000);

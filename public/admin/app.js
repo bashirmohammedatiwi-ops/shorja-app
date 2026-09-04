@@ -10,6 +10,7 @@ let productViewMode = 'grid';
 let allProductsCache = [];
 let categoryCatalog = [];
 let prodActiveCategory = '';
+let prodStockFilter = '';
 let priceBrowseActiveCategory = '';
 let viewingProduct = null;
 
@@ -21,6 +22,7 @@ const CATEGORY_ICONS = {
 };
 
 const PAGE_TITLES = {
+  dashboard: ['لوحة اليوم', 'ملخص مبيعات الفروع والحسابات'],
   posMonitor: ['مراقبة نقاط البيع', 'متابعة حية لفروع الشورجة ونقاط البيع'],
   reports: ['التقارير', 'تحليل المبيعات والمنتجات الأكثر مبيعاً'],
   invoices: ['فواتير الشورجة', 'مبيعات فروع الشورجة فقط — بدون المندوبين'],
@@ -46,7 +48,7 @@ window.viewAllowed = (view) => {
   const fn = window.getAdminAppScope;
   if (!fn) return true;
   const map = {
-    dashboard: 'warehouse', reports: 'warehouse', invoices: 'warehouse',
+    dashboard: 'warehouse', posMonitor: 'warehouse', reports: 'warehouse', invoices: 'warehouse',
     warehousePrep: 'warehouse', products: 'warehouse', prices: 'warehouse',
     journal: 'warehouse', delegates: 'delegate'
   };
@@ -278,6 +280,15 @@ function renderEdariSyncTable() {
     items = items.filter((i) => i.status === window.edariStatusFilter);
   }
   items = filterSyncItemsByApp(items);
+  const q = (document.getElementById('edariSyncSearch')?.value || '').trim().toLowerCase();
+  if (q) {
+    items = items.filter((i) =>
+      String(i.title || '').toLowerCase().includes(q) ||
+      String(i.subtitle || '').toLowerCase().includes(q) ||
+      String(i.refLabel || '').toLowerCase().includes(q) ||
+      String(i.error || '').toLowerCase().includes(q)
+    );
+  }
   if (!items.length) {
     const scopeLabel = adminAppScope() === 'delegate' ? 'المندوبين' : 'الشورجة';
     wrap.innerHTML = `<p style="color:var(--muted);padding:16px">لا توجد عناصر معلّقة في طابور مزامنة ${scopeLabel}.</p>`;
@@ -422,6 +433,7 @@ document.getElementById('edariSyncKindFilter')?.addEventListener('change', () =>
   edariSyncSelected.clear();
   loadEdariSync();
 });
+document.getElementById('edariSyncSearch')?.addEventListener('input', debounce(() => renderEdariSyncTable(), 200));
 document.getElementById('btnEdariSyncRefresh')?.addEventListener('click', () => loadEdariSync());
 document.getElementById('btnEdariSyncSelected')?.addEventListener('click', () => {
   if (!edariSyncSelected.size) return toast('حدد عناصر من الجدول');
@@ -781,9 +793,9 @@ function renderProductTable(products) {
   const el = document.getElementById('productTable');
   if (!el) return;
   el.innerHTML = `
-    <table>
+    <table id="productsDataTable">
       <thead><tr><th>باركود</th><th>الاسم</th><th>السعر</th><th>المخزون</th><th>القسم</th><th></th></tr></thead>
-      <tbody>${products.map((p) => `
+      <tbody>${products.length ? products.map((p) => `
         <tr class="clickable-row" data-barcode="${esc(p.barcode)}">
           <td dir="ltr">${esc(p.barcode)}</td>
           <td>${esc(p.name)}</td>
@@ -794,7 +806,7 @@ function renderProductTable(products) {
             <button type="button" class="btn btn-ghost btn-sm btn-edit-prod" data-barcode="${esc(p.barcode)}">تعديل</button>
             <button type="button" class="btn btn-danger btn-sm btn-delete-prod" data-id="${p.id}">حذف</button>
           </td>
-        </tr>`).join('')}
+        </tr>`).join('') : '<tr><td colspan="6" class="empty-cell">لا توجد منتجات مطابقة</td></tr>'}
       </tbody>
     </table>`;
 
@@ -823,18 +835,21 @@ function renderProductTable(products) {
   });
 }
 
-async function fetchProductsList({ q = '', category = '', limit = 500 } = {}) {
+async function fetchProductsList({ q = '', category = '', limit = 500, stock = '' } = {}) {
+  const params = new URLSearchParams({ q, limit: String(limit) });
+  if (category && category !== '__none__') params.set('category', category);
+  if (stock) params.set('stock', stock);
+  const data = await api(`/admin/products?${params}`);
   if (category === '__none__') {
-    const data = await api(`/admin/products?q=${encodeURIComponent(q)}&limit=${limit}`);
     const products = (data.products || []).filter((p) => !p.category);
     return { products, total: products.length };
   }
-  return api(`/admin/products?q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}&limit=${limit}`);
+  return data;
 }
 
 async function loadProducts() {
   const q = document.getElementById('prodSearch')?.value || '';
-  const data = await fetchProductsList({ q, category: prodActiveCategory, limit: 500 });
+  const data = await fetchProductsList({ q, category: prodActiveCategory, limit: 500, stock: prodStockFilter });
   const products = data.products || [];
   allProductsCache = products;
 
@@ -851,7 +866,9 @@ async function loadProducts() {
     statsEl.innerHTML = `
       <div class="prod-stat">${esc(catLabel)} · معروض <strong>${products.length}</strong></div>
       <div class="prod-stat">الإجمالي <strong>${data.total ?? products.length}</strong></div>
-      <div class="prod-stat">أقسام <strong>${categoryCatalog.length}</strong></div>`;
+      <div class="prod-stat">متوفر <strong>${products.filter((p) => Number(p.stockQty) > 5).length}</strong></div>
+      <div class="prod-stat warn">منخفض <strong>${products.filter((p) => Number(p.stockQty) > 0 && Number(p.stockQty) <= 5).length}</strong></div>
+      <div class="prod-stat danger">نافد <strong>${products.filter((p) => Number(p.stockQty) <= 0).length}</strong></div>`;
   }
 
   renderProductGrid(products, 'prodGrid', { showEdit: true, showDelete: true });
@@ -1130,9 +1147,27 @@ document.getElementById('productForm')?.addEventListener('submit', async (e) => 
 });
 
 document.getElementById('prodSearch')?.addEventListener('input', debounce(loadProducts, 250));
+document.getElementById('prodStockChips')?.addEventListener('click', (e) => {
+  const chip = e.target.closest('[data-prod-stock]');
+  if (!chip) return;
+  prodStockFilter = chip.dataset.prodStock || '';
+  document.querySelectorAll('#prodStockChips .filter-chip').forEach((c) => {
+    c.classList.toggle('active', c === chip);
+  });
+  loadProducts();
+});
 document.getElementById('prodViewToggle')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.view-toggle-btn');
   if (btn) setProductViewMode(btn.dataset.mode);
+});
+document.getElementById('btnExportProducts')?.addEventListener('click', () => {
+  const table = document.getElementById('productsDataTable');
+  if (table && window.exportTableCsv) {
+    window.exportTableCsv(table, `products-${Date.now()}.csv`);
+    toast('تم تصدير المنتجات');
+    return;
+  }
+  toast('لا توجد بيانات للتصدير');
 });
 document.getElementById('btnEditFromView')?.addEventListener('click', () => {
   document.getElementById('productViewModal').close();
@@ -1491,7 +1526,7 @@ async function loadPayments() {
     `<option value="${a.id}">${esc(a.name)} — دين: ${fmt(a.balance)}</option>`
   ).join('');
   document.getElementById('payAcc').innerHTML = opts;
-  const payParams = new URLSearchParams({ limit: '100' });
+  const payParams = new URLSearchParams({ limit: '400' });
   const scope = adminAppScope();
   if (scope === 'warehouse' || scope === 'delegate') payParams.set('scope', scope);
   const from = document.getElementById('payFrom')?.value || '';
@@ -1499,10 +1534,22 @@ async function loadPayments() {
   if (from) payParams.set('from', from);
   if (to) payParams.set('to', to);
   const pays = await api(`/admin/payments?${payParams}`);
+  let rows = pays.payments || [];
+  const q = (document.getElementById('paySearch')?.value || '').trim().toLowerCase();
+  if (q) {
+    rows = rows.filter((p) =>
+      String(p.paymentNo || '').toLowerCase().includes(q) ||
+      String(p.accountName || '').toLowerCase().includes(q) ||
+      String(p.notes || '').toLowerCase().includes(q)
+    );
+  }
+  const countEl = document.getElementById('payResultCount');
+  const totalAmt = rows.reduce((s, p) => s + Number(p.amount || 0), 0);
+  if (countEl) countEl.textContent = `${rows.length} تسديد · ${fmt(totalAmt)}`;
   document.getElementById('paymentsTable').innerHTML = `
-    <table>
+    <table id="paymentsDataTable">
       <thead><tr><th>الرقم</th><th>الحساب</th><th>المبلغ</th><th>التاريخ</th><th>الإداري</th><th>ملاحظات</th><th></th></tr></thead>
-      <tbody>${(pays.payments||[]).map((p) => `
+      <tbody>${rows.map((p) => `
         <tr>
           <td>${esc(p.paymentNo)}</td>
           <td>${esc(p.accountName)}</td>
@@ -1511,7 +1558,7 @@ async function loadPayments() {
           <td>${edariSyncLabel(p.edariSyncStatus, p.edariSyncError)}</td>
           <td>${esc(p.notes)}</td>
           <td><button type="button" class="btn btn-danger btn-sm" data-delete-payment-row="${p.id}">حذف</button></td>
-        </tr>`).join('') || '<tr><td colspan="7">لا توجد تسديدات</td></tr>'}
+        </tr>`).join('') || '<tr><td colspan="7" class="empty-cell">لا توجد تسديدات مطابقة</td></tr>'}
       </tbody>
     </table>`;
   document.getElementById('paymentsTable').querySelectorAll('[data-delete-payment-row]').forEach((btn) => {
@@ -1549,6 +1596,7 @@ document.getElementById('btnPay').addEventListener('click', async () => {
 
 document.getElementById('payFrom')?.addEventListener('change', () => loadPayments());
 document.getElementById('payTo')?.addEventListener('change', () => loadPayments());
+document.getElementById('paySearch')?.addEventListener('input', debounce(loadPayments, 250));
 document.getElementById('btnPayClearDates')?.addEventListener('click', () => {
   const f = document.getElementById('payFrom');
   const t = document.getElementById('payTo');
@@ -1557,24 +1605,55 @@ document.getElementById('btnPayClearDates')?.addEventListener('click', () => {
   loadPayments();
 });
 
+function journalKindLabel(k) {
+  if (k === 'sale') return 'بيع';
+  if (k === 'return') return 'مرتجع';
+  if (k === 'payment') return 'تسديد';
+  if (k === 'adjustment') return 'تسوية';
+  if (k === 'issue') return 'إخراج';
+  return k || '—';
+}
+
 async function loadJournal() {
   const acc = await api(`/admin/accounts?limit=500${scopeQuery()}`);
   document.getElementById('adjAcc').innerHTML = (acc.accounts||[]).map((a) =>
     `<option value="${a.id}">${esc(a.name)} — ${fmt(a.balance)}</option>`
   ).join('');
-  const data = await api(`/admin/journal?limit=100${scopeQuery()}`);
+  const from = document.getElementById('journalFrom')?.value || '';
+  const to = document.getElementById('journalTo')?.value || '';
+  const params = new URLSearchParams({ limit: '400' });
+  const scope = adminAppScope();
+  if (scope === 'warehouse' || scope === 'delegate') params.set('scope', scope);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const data = await api(`/admin/journal?${params}`);
+  let entries = data.entries || [];
+  const kind = document.getElementById('journalKind')?.value || '';
+  const q = (document.getElementById('journalSearch')?.value || '').trim().toLowerCase();
+  if (kind) entries = entries.filter((e) => e.kind === kind);
+  if (q) {
+    entries = entries.filter((e) =>
+      String(e.entryNo || '').toLowerCase().includes(q) ||
+      String(e.description || '').toLowerCase().includes(q) ||
+      String(e.accountName || '').toLowerCase().includes(q)
+    );
+  }
+  const countEl = document.getElementById('journalResultCount');
+  const totalAmt = entries.reduce((s, e) => s + Number(e.amount || 0), 0);
+  if (countEl) countEl.textContent = `${entries.length} قيد · ${fmt(totalAmt)}`;
   document.getElementById('journalTable').innerHTML = `
-    <table>
-      <thead><tr><th>الرقم</th><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th><th></th></tr></thead>
-      <tbody>${(data.entries||[]).map((e) => `
+    <table id="journalDataTable">
+      <thead><tr><th>الرقم</th><th>النوع</th><th>الحساب</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th><th></th></tr></thead>
+      <tbody>${entries.map((e) => `
         <tr>
           <td>${esc(e.entryNo)}</td>
-          <td>${esc(e.kind)}</td>
+          <td>${esc(journalKindLabel(e.kind))}</td>
+          <td>${esc(e.accountName || '—')}</td>
           <td dir="ltr">${fmt(e.amount)}</td>
           <td>${esc(e.description)}</td>
           <td>${esc(e.entryDate)}</td>
           <td><button type="button" class="btn btn-danger btn-sm" data-delete-journal-row="${e.id}">حذف</button></td>
-        </tr>`).join('') || '<tr><td colspan="6">لا توجد قيود</td></tr>'}
+        </tr>`).join('') || '<tr><td colspan="7" class="empty-cell">لا توجد قيود مطابقة</td></tr>'}
       </tbody>
     </table>`;
   document.getElementById('journalTable').querySelectorAll('[data-delete-journal-row]').forEach((btn) => {
@@ -1590,6 +1669,11 @@ async function loadJournal() {
     });
   });
 }
+
+document.getElementById('journalSearch')?.addEventListener('input', debounce(loadJournal, 250));
+document.getElementById('journalKind')?.addEventListener('change', () => loadJournal());
+document.getElementById('journalFrom')?.addEventListener('change', () => loadJournal());
+document.getElementById('journalTo')?.addEventListener('change', () => loadJournal());
 
 document.getElementById('btnAdj')?.addEventListener('click', async () => {
   try {

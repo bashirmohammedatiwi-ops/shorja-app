@@ -580,7 +580,7 @@ function listPayments({ accountId, branchId, dateFrom, dateTo, accountScope = ''
   }));
 }
 
-function listJournal({ accountId, accountScope = '', limit = 100 } = {}) {
+function listJournal({ accountId, accountScope = '', limit = 100, dateFrom, dateTo } = {}) {
   const where = [];
   const params = [];
   if (accountId) {
@@ -591,9 +591,11 @@ function listJournal({ accountId, accountScope = '', limit = 100 } = {}) {
     where.push('a.account_scope = ?');
     params.push(accountScope);
   }
+  if (dateFrom) { where.push('j.entry_date >= ?'); params.push(dateFrom); }
+  if (dateTo) { where.push('j.entry_date <= ?'); params.push(dateTo); }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const rows = db.prepare(`
-    SELECT j.* FROM journal_entries j
+    SELECT j.*, a.name AS account_name FROM journal_entries j
     LEFT JOIN accounts a ON a.id = j.account_id
     ${whereSql}
     ORDER BY j.created_at DESC LIMIT ?
@@ -602,6 +604,7 @@ function listJournal({ accountId, accountScope = '', limit = 100 } = {}) {
     id: r.id,
     entryNo: r.entry_no,
     accountId: r.account_id,
+    accountName: r.account_name || '',
     kind: r.kind,
     amount: Number(r.amount),
     balanceAfter: r.balance_after != null ? Number(r.balance_after) : null,
@@ -702,6 +705,27 @@ function salesReport({ branchId, dateFrom, dateTo, excludePrepModes = ['delegate
       name: r.name,
       qty: Number(r.qty),
       amount: Number(r.amount)
+    })),
+    byBranch: db.prepare(`
+      SELECT b.name,
+        SUM(CASE WHEN i.kind = 'sale' THEN 1 ELSE 0 END) AS count,
+        COALESCE(SUM(CASE WHEN i.kind = 'sale' THEN i.total ELSE 0 END), 0) AS amount,
+        COALESCE(SUM(CASE WHEN i.kind = 'sale' THEN i.paid_amount ELSE 0 END), 0) AS paid,
+        COALESCE(SUM(CASE WHEN i.kind = 'sale' THEN i.due_amount ELSE 0 END), 0) AS due,
+        COALESCE(SUM(CASE WHEN i.kind = 'return' THEN i.total ELSE 0 END), 0) AS returns_amount
+      FROM invoices i
+      JOIN branches b ON b.id = i.branch_id
+      WHERE ${invoiceWhere.join(' AND ')} AND i.kind IN ('sale', 'return')
+      GROUP BY b.id, b.name
+      ORDER BY amount DESC
+    `).all(...params).map((r) => ({
+      name: r.name,
+      count: r.count,
+      amount: Number(r.amount),
+      paid: Number(r.paid),
+      due: Number(r.due),
+      returnsAmount: Number(r.returns_amount),
+      net: Number(r.amount) - Number(r.returns_amount)
     })),
     collectionsTotal: Number(payments.total),
     collectionsCount: payments.count

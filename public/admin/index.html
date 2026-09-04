@@ -7,8 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=9">
-  <link rel="stylesheet" href="premium.css?v=10">
+  <link rel="stylesheet" href="styles.css?v=10">
+  <link rel="stylesheet" href="premium.css?v=12">
+  <link rel="stylesheet" href="official.css?v=2">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -68,22 +69,25 @@
         <small id="sidebarUserRole">مركز التحكم والمزامنة</small>
       </div>
       <nav id="navWarehouse" class="nav-group">
-        <div class="nav-group-label">تطبيق الشورجة</div>
+        <div class="nav-group-label">المتابعة</div>
         <button type="button" class="nav active" data-view="dashboard">لوحة اليوم</button>
         <button type="button" class="nav" data-view="posMonitor">مراقبة نقاط البيع</button>
         <button type="button" class="nav" data-view="reports">التقارير</button>
+        <div class="nav-group-label">العمليات</div>
         <button type="button" class="nav" data-view="invoices">الفواتير</button>
         <button type="button" class="nav" data-view="warehousePrep">تجهيز الشورجة</button>
         <button type="button" class="nav" data-view="products">المنتجات</button>
         <button type="button" class="nav" data-view="prices">الأسعار</button>
+        <div class="nav-group-label">المالية</div>
         <button type="button" class="nav" data-view="accounts">حسابات الشورجة</button>
         <button type="button" class="nav" data-view="payments">تسديدات الشورجة</button>
         <button type="button" class="nav" data-view="journal">القيود</button>
         <button type="button" class="nav nav-edari" data-view="edariSync">مزامنة الإداري</button>
       </nav>
       <nav id="navDelegate" class="nav-group hidden">
-        <div class="nav-group-label">تطبيق المندوبين</div>
+        <div class="nav-group-label">المتابعة</div>
         <button type="button" class="nav" data-view="delegates">فواتير المندوبين</button>
+        <div class="nav-group-label">المالية</div>
         <button type="button" class="nav" data-view="accounts">حسابات المندوبين</button>
         <button type="button" class="nav" data-view="payments">تسديدات المندوبين</button>
         <button type="button" class="nav nav-edari" data-view="edariSync">مزامنة الإداري</button>
@@ -101,6 +105,7 @@
           <span class="clock-pill" id="headerClock">—</span>
           <span class="status-pill ok" id="serverStatus">● السيرفر</span>
           <span class="status-pill warn" id="desktopBadge">التطبيق</span>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnKbdHelp" title="اختصارات">?</button>
           <button type="button" class="btn btn-secondary btn-sm" id="btnGlobalRefresh" title="تحديث">↻ تحديث</button>
         </div>
       </header>
@@ -235,11 +240,18 @@
 
       <section id="viewReports" class="view hidden" data-app-scope="warehouse">
         <div class="section-panel">
-          <div class="toolbar-row">
+          <div class="filter-chips-row" id="reportPresetChips">
+            <button type="button" class="filter-chip active" data-report-preset="today">اليوم</button>
+            <button type="button" class="filter-chip" data-report-preset="yesterday">أمس</button>
+            <button type="button" class="filter-chip" data-report-preset="week">آخر 7 أيام</button>
+            <button type="button" class="filter-chip" data-report-preset="month">هذا الشهر</button>
+          </div>
+          <div class="toolbar-row section-panel-toolbar">
             <label>من <input type="date" id="reportFrom" class="field-date"></label>
             <label>إلى <input type="date" id="reportTo" class="field-date"></label>
             <select id="reportBranch" class="field"><option value="">كل الفروع</option></select>
             <button type="button" class="btn btn-primary btn-sm" id="btnRunReport">عرض التقرير</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnExportReport">تصدير CSV</button>
           </div>
           <div class="kpi-grid premium-kpis" id="reportKpis"></div>
           <div class="dashboard-grid" style="margin-top:18px">
@@ -251,6 +263,12 @@
               <div class="panel-card-head"><h2>أكثر المنتجات مبيعاً</h2></div>
               <div class="panel-card-body" id="reportTopProducts"></div>
             </div>
+            <div class="panel-card panel-span-2">
+              <div class="panel-card-head"><h2>المبيعات حسب الفرع</h2></div>
+              <div class="panel-card-body no-pad">
+                <div class="table-wrap compact-table" id="reportByBranch"></div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -259,6 +277,8 @@
         <div class="section-panel">
           <div class="filter-chips-row" id="invPresetChips">
             <button type="button" class="filter-chip" data-inv-preset="today">اليوم</button>
+            <button type="button" class="filter-chip" data-inv-preset="week">آخر 7 أيام</button>
+            <button type="button" class="filter-chip" data-inv-preset="month">هذا الشهر</button>
             <button type="button" class="filter-chip" data-inv-preset="today-credit">آجل اليوم</button>
             <button type="button" class="filter-chip" data-inv-preset="returns">مرتجعات</button>
             <button type="button" class="filter-chip" data-inv-preset="edari-pending">بانتظار الإداري</button>
@@ -269,7 +289,6 @@
               <span class="search-ico" aria-hidden="true">⌕</span>
               <input type="search" id="invSearch" placeholder="بحث برقم الفاتورة أو العميل...">
             </div>
-            <input type="date" id="invDate" class="field-date">
             <input type="date" id="invFrom" class="field-date" title="من تاريخ">
             <input type="date" id="invTo" class="field-date" title="إلى تاريخ">
             <select id="invBranch" class="field"><option value="">كل الفروع</option></select>
@@ -353,11 +372,18 @@
               <span class="search-ico" aria-hidden="true">⌕</span>
               <input type="search" id="prodSearch" placeholder="بحث بالاسم أو الباركود...">
             </div>
+            <div class="filter-chips-row" id="prodStockChips">
+              <button type="button" class="filter-chip active" data-prod-stock="">كل المخزون</button>
+              <button type="button" class="filter-chip" data-prod-stock="in">متوفر</button>
+              <button type="button" class="filter-chip" data-prod-stock="low">منخفض</button>
+              <button type="button" class="filter-chip" data-prod-stock="out">نافد</button>
+            </div>
             <div class="toolbar-actions">
               <div class="view-toggle" id="prodViewToggle">
                 <button type="button" class="view-toggle-btn active" data-mode="grid">بطاقات</button>
                 <button type="button" class="view-toggle-btn" data-mode="table">جدول</button>
               </div>
+              <button type="button" class="btn btn-secondary" id="btnExportProducts">تصدير CSV</button>
               <button type="button" class="btn btn-primary" id="btnNewProduct">+ منتج جديد</button>
               <button type="button" class="btn btn-primary" data-import-edari-all title="رفع كل مواد Edari دفعة واحدة بسعر نصف الجملة">📦 رفع كل المنتجات من الإداري</button>
               <label class="file-btn btn btn-secondary">استيراد CSV
@@ -485,6 +511,8 @@
               <button type="button" class="filter-chip" data-acc-filter="edari-synced">مرحّل للإداري</button>
               <button type="button" class="filter-chip" data-acc-filter="edari-error">أخطاء الإداري</button>
             </div>
+            <span class="inv-result-count" id="accResultCount"></span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnExportAccounts">تصدير CSV</button>
             <button type="button" class="btn btn-secondary" id="btnNewAccount">+ حساب جديد</button>
           </div>
           <div class="section-panel-body no-pad">
@@ -494,34 +522,66 @@
       </section>
 
       <section id="viewPayments" class="view hidden" data-app-scope="shared">
-        <div class="accounts-scope-banner" id="paymentsScopeBanner"></div>
-        <div class="section-panel-toolbar payments-toolbar">
-          <label>من <input type="date" id="payFrom" class="field-date"></label>
-          <label>إلى <input type="date" id="payTo" class="field-date"></label>
-          <button type="button" class="btn btn-ghost btn-sm" id="btnPayClearDates">كل التواريخ</button>
+        <div class="section-panel">
+          <div class="accounts-scope-banner" id="paymentsScopeBanner"></div>
+          <div class="section-panel-toolbar payments-toolbar">
+            <div class="search-box">
+              <span class="search-ico" aria-hidden="true">⌕</span>
+              <input type="search" id="paySearch" placeholder="بحث بالحساب أو رقم التسديد...">
+            </div>
+            <label>من <input type="date" id="payFrom" class="field-date"></label>
+            <label>إلى <input type="date" id="payTo" class="field-date"></label>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnPayClearDates">كل التواريخ</button>
+            <span class="inv-result-count" id="payResultCount"></span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnExportPayments">تصدير CSV</button>
+          </div>
+          <div class="form-card">
+            <select id="payAcc"></select>
+            <input type="number" id="payAmt" placeholder="المبلغ">
+            <input type="text" id="payNote" placeholder="ملاحظات">
+            <button type="button" class="btn btn-primary" id="btnPay">تسجيل تسديد</button>
+          </div>
+          <div class="section-panel-body no-pad">
+            <div class="table-wrap" id="paymentsTable"></div>
+          </div>
         </div>
-        <div class="form-card">
-          <select id="payAcc"></select>
-          <input type="number" id="payAmt" placeholder="المبلغ">
-          <input type="text" id="payNote" placeholder="ملاحظات">
-          <button type="button" class="btn btn-primary" id="btnPay">تسجيل تسديد</button>
-        </div>
-        <div class="table-wrap" id="paymentsTable"></div>
       </section>
 
       <section id="viewJournal" class="view hidden" data-app-scope="warehouse">
-        <div class="form-card journal-form">
-          <h3>قيد تسوية يدوي</h3>
-          <select id="adjAcc"></select>
-          <input type="number" id="adjAmt" placeholder="المبلغ (+ دين / − خصم)">
-          <input type="text" id="adjDesc" placeholder="الوصف">
-          <button type="button" class="btn btn-secondary" id="btnAdj">تسجيل قيد</button>
+        <div class="section-panel">
+          <div class="section-panel-toolbar">
+            <div class="search-box">
+              <span class="search-ico" aria-hidden="true">⌕</span>
+              <input type="search" id="journalSearch" placeholder="بحث بالوصف أو رقم القيد...">
+            </div>
+            <input type="date" id="journalFrom" class="field-date" title="من تاريخ">
+            <input type="date" id="journalTo" class="field-date" title="إلى تاريخ">
+            <select id="journalKind" class="field">
+              <option value="">كل الأنواع</option>
+              <option value="sale">بيع</option>
+              <option value="return">مرتجع</option>
+              <option value="payment">تسديد</option>
+              <option value="adjustment">تسوية</option>
+              <option value="issue">إخراج</option>
+            </select>
+            <span class="inv-result-count" id="journalResultCount"></span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnExportJournal">تصدير CSV</button>
+          </div>
+          <div class="form-card journal-form">
+            <h3>قيد تسوية يدوي</h3>
+            <select id="adjAcc"></select>
+            <input type="number" id="adjAmt" placeholder="المبلغ (+ دين / − خصم)">
+            <input type="text" id="adjDesc" placeholder="الوصف">
+            <button type="button" class="btn btn-secondary" id="btnAdj">تسجيل قيد</button>
+          </div>
+          <div class="section-panel-body no-pad">
+            <div class="table-wrap" id="journalTable"></div>
+          </div>
         </div>
-        <div class="table-wrap" id="journalTable"></div>
       </section>
 
       <section id="viewEdariSync" class="view hidden" data-app-scope="shared">
-        <div class="edari-sync-panel">
+        <div class="edari-sync-panel section-panel">
           <div class="accounts-scope-banner" id="edariScopeBanner"></div>
           <div class="edari-parent-card" id="edariParentPanel"></div>
           <div class="edari-sync-alert" id="edariSyncAlert">
@@ -531,6 +591,10 @@
           </div>
           <div class="edari-sync-stats" id="edariSyncStats"></div>
           <div class="toolbar edari-sync-toolbar">
+            <div class="search-box">
+              <span class="search-ico" aria-hidden="true">⌕</span>
+              <input type="search" id="edariSyncSearch" placeholder="بحث في الطابور...">
+            </div>
             <div class="filter-chip-row" id="edariStatusFilters">
               <button type="button" class="filter-chip active" data-edari-status="">الكل</button>
               <button type="button" class="filter-chip" data-edari-status="pending">معلّق</button>
@@ -648,8 +712,21 @@
     </div>
   </dialog>
 
+  <dialog id="kbdHelp" class="modal-dialog kbd-help-dialog">
+    <h2>اختصارات لوحة التحكم</h2>
+    <ul class="kbd-list">
+      <li><kbd>?</kbd> عرض هذا الدليل</li>
+      <li><kbd>/</kbd> التركيز على بحث الصفحة الحالية</li>
+      <li><kbd>Esc</kbd> إغلاق النوافذ</li>
+      <li>↻ في الأعلى يحدّث الصفحة الحالية</li>
+    </ul>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-primary" data-close>إغلاق</button>
+    </div>
+  </dialog>
+
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=27"></script>
-  <script src="premium.js?v=11"></script>
+  <script src="app.js?v=29"></script>
+  <script src="premium.js?v=13"></script>
 </body>
 </html>
