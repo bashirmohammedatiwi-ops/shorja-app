@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=10">
   <link rel="stylesheet" href="premium.css?v=12">
-  <link rel="stylesheet" href="official.css?v=2">
+  <link rel="stylesheet" href="official.css?v=3">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -102,7 +102,11 @@
           <p id="pageSubtitle">ملخص مبيعات الفروع والحسابات</p>
         </div>
         <div class="page-top-actions">
+          <div class="header-jump">
+            <input type="search" id="headerJump" placeholder="انتقال سريع — Ctrl+K" autocomplete="off" readonly>
+          </div>
           <span class="clock-pill" id="headerClock">—</span>
+          <span class="status-pill muted" id="dataRevPill" title="مراجعة البيانات">rev —</span>
           <span class="status-pill ok" id="serverStatus">● السيرفر</span>
           <span class="status-pill warn" id="desktopBadge">التطبيق</span>
           <button type="button" class="btn btn-ghost btn-sm" id="btnKbdHelp" title="اختصارات">?</button>
@@ -277,6 +281,7 @@
         <div class="section-panel">
           <div class="filter-chips-row" id="invPresetChips">
             <button type="button" class="filter-chip" data-inv-preset="today">اليوم</button>
+            <button type="button" class="filter-chip" data-inv-preset="yesterday">أمس</button>
             <button type="button" class="filter-chip" data-inv-preset="week">آخر 7 أيام</button>
             <button type="button" class="filter-chip" data-inv-preset="month">هذا الشهر</button>
             <button type="button" class="filter-chip" data-inv-preset="today-credit">آجل اليوم</button>
@@ -333,6 +338,7 @@
               <button type="button" class="filter-chip" data-warehouse-filter="pending">بانتظار الإداري</button>
               <button type="button" class="filter-chip" data-warehouse-filter="synced">مرحّلة</button>
               <button type="button" class="btn btn-primary btn-sm" id="btnQueueAllWarehouse">ترحيل الكل للإداري</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnExportWarehouse">تصدير CSV</button>
             </div>
           </div>
           <p class="hint warehouse-hint">فواتير فروع الشورجة بعد «تم التجهيز» من المستودع — منفصلة عن طلبات المندوبين.</p>
@@ -356,6 +362,7 @@
               <button type="button" class="filter-chip" data-delegate-filter="pending">بانتظار الإداري</button>
               <button type="button" class="filter-chip" data-delegate-filter="synced">مرحّلة</button>
               <button type="button" class="btn btn-primary btn-sm" id="btnQueueAllDelegates">ترحيل الكل للإداري</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnExportDelegates">تصدير CSV</button>
             </div>
           </div>
           <p class="hint delegate-hint">طلبات المندوبين فقط بعد «تم التجهيز» — منفصلة عن فروع الشورجة.</p>
@@ -532,6 +539,12 @@
             <label>من <input type="date" id="payFrom" class="field-date"></label>
             <label>إلى <input type="date" id="payTo" class="field-date"></label>
             <button type="button" class="btn btn-ghost btn-sm" id="btnPayClearDates">كل التواريخ</button>
+            <select id="payMethodFilter" class="field">
+              <option value="">كل الطرق</option>
+              <option value="cash">نقدي</option>
+              <option value="transfer">تحويل</option>
+              <option value="check">شيك</option>
+            </select>
             <span class="inv-result-count" id="payResultCount"></span>
             <button type="button" class="btn btn-secondary btn-sm" id="btnExportPayments">تصدير CSV</button>
           </div>
@@ -607,6 +620,7 @@
               <option value="payment">تسديدات وقيود</option>
             </select>
             <button type="button" class="btn btn-ghost btn-sm" id="btnEdariSyncRefresh">تحديث</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnEdariSelectPending">تحديد المعلّق</button>
             <span class="edari-sync-spacer"></span>
             <button type="button" class="btn btn-sm" id="btnEdariSyncAccounts" disabled>ترحيل الحسابات</button>
             <button type="button" class="btn btn-sm" id="btnEdariSyncInvoices" disabled>ترحيل الفواتير</button>
@@ -716,7 +730,8 @@
     <h2>اختصارات لوحة التحكم</h2>
     <ul class="kbd-list">
       <li><kbd>?</kbd> عرض هذا الدليل</li>
-      <li><kbd>/</kbd> التركيز على بحث الصفحة الحالية</li>
+      <li><kbd>Ctrl</kbd>+<kbd>K</kbd> الانتقال السريع بين الصفحات</li>
+      <li><kbd>/</kbd> أو <kbd>F2</kbd> بحث الصفحة الحالية</li>
       <li><kbd>Esc</kbd> إغلاق النوافذ</li>
       <li>↻ في الأعلى يحدّث الصفحة الحالية</li>
     </ul>
@@ -725,8 +740,14 @@
     </div>
   </dialog>
 
+  <dialog id="cmdPalette" class="modal-dialog cmd-palette">
+    <h2>الانتقال السريع</h2>
+    <input type="search" id="cmdPaletteInput" class="field" placeholder="اكتب اسم الصفحة..." autocomplete="off">
+    <div id="cmdPaletteList" class="cmd-list"></div>
+  </dialog>
+
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=29"></script>
-  <script src="premium.js?v=13"></script>
+  <script src="app.js?v=30"></script>
+  <script src="premium.js?v=14"></script>
 </body>
 </html>

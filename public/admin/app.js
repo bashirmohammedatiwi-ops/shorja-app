@@ -434,6 +434,14 @@ document.getElementById('edariSyncKindFilter')?.addEventListener('change', () =>
   loadEdariSync();
 });
 document.getElementById('edariSyncSearch')?.addEventListener('input', debounce(() => renderEdariSyncTable(), 200));
+document.getElementById('btnEdariSelectPending')?.addEventListener('click', () => {
+  edariSyncSelected.clear();
+  filterSyncItemsByApp(edariSyncItems).forEach((i) => {
+    if (i.status === 'pending' || i.status === 'error') edariSyncSelected.add(i.id);
+  });
+  renderEdariSyncTable();
+  toast(`تم تحديد ${edariSyncSelected.size} عنصر`);
+});
 document.getElementById('btnEdariSyncRefresh')?.addEventListener('click', () => loadEdariSync());
 document.getElementById('btnEdariSyncSelected')?.addEventListener('click', () => {
   if (!edariSyncSelected.size) return toast('حدد عناصر من الجدول');
@@ -1196,12 +1204,15 @@ document.getElementById('csvImport')?.addEventListener('change', async (e) => {
 
 async function loadPrices() {
   const data = await api('/admin/prices/packages');
-  document.getElementById('packagesList').innerHTML = (data.packages||[]).map((p) => `
-    <div class="branch-row">
-      <span>إصدار <strong>v${p.version}</strong> — ${p.itemCount} منتج</span>
-      <span style="color:var(--muted)">${esc(p.createdAt)} · ${esc(p.branchName || 'الإدارة')}</span>
-    </div>
-  `).join('') || '<p style="color:var(--muted)">لا توجد حزم بعد</p>';
+  document.getElementById('packagesList').innerHTML = (data.packages||[]).length
+    ? `<div class="packages-list">${(data.packages || []).map((p) => `
+        <div class="package-row">
+          <strong>v${p.version}</strong>
+          <span>${p.itemCount} منتج</span>
+          <span class="muted">${esc(p.createdAt || '')}</span>
+          <span class="muted">${esc(p.branchName || 'الإدارة')}</span>
+        </div>`).join('')}</div>`
+    : '<p class="empty-cell">لا توجد حزم أسعار بعد — ارفع منتجات للفروع من الأعلى</p>';
   renderPriceSelection();
   await loadPriceBrowse();
   document.getElementById('priceBarcode')?.focus();
@@ -1543,6 +1554,8 @@ async function loadPayments() {
       String(p.notes || '').toLowerCase().includes(q)
     );
   }
+  const method = document.getElementById('payMethodFilter')?.value || '';
+  if (method) rows = rows.filter((p) => p.method === method);
   const countEl = document.getElementById('payResultCount');
   const totalAmt = rows.reduce((s, p) => s + Number(p.amount || 0), 0);
   if (countEl) countEl.textContent = `${rows.length} تسديد · ${fmt(totalAmt)}`;
@@ -1597,6 +1610,7 @@ document.getElementById('btnPay').addEventListener('click', async () => {
 document.getElementById('payFrom')?.addEventListener('change', () => loadPayments());
 document.getElementById('payTo')?.addEventListener('change', () => loadPayments());
 document.getElementById('paySearch')?.addEventListener('input', debounce(loadPayments, 250));
+document.getElementById('payMethodFilter')?.addEventListener('change', () => loadPayments());
 document.getElementById('btnPayClearDates')?.addEventListener('click', () => {
   const f = document.getElementById('payFrom');
   const t = document.getElementById('payTo');

@@ -109,6 +109,30 @@
     return scope === currentApp;
   }
 
+  function goToView(view) {
+    if (!viewAllowed(view)) {
+      toast('هذا القسم غير متاح في التطبيق الحالي');
+      return;
+    }
+    const root = currentApp === 'delegate' ? '#navDelegate' : '#navWarehouse';
+    const btn = document.querySelector(`${root} .nav[data-view="${view}"]`)
+      || document.querySelector(`.nav[data-view="${view}"]`);
+    btn?.click();
+  }
+
+  function bindKpiLinks(root = $('kpiGrid')) {
+    root?.querySelectorAll('[data-goto]').forEach((el) => {
+      el.addEventListener('click', () => goToView(el.dataset.goto));
+    });
+  }
+
+  const PAGE_SEARCH_MAP = {
+    invoices: 'invSearch', products: 'prodSearch', accounts: 'accSearch',
+    payments: 'paySearch', journal: 'journalSearch', posMonitor: 'posMonSearch',
+    warehousePrep: 'warehouseSearch', delegates: 'delegateSearch',
+    prices: 'priceBrowseSearch', edariSync: 'edariSyncSearch'
+  };
+
   function applyAppContext() {
     const meta = APP_META[currentApp];
     const appEl = $('app');
@@ -418,19 +442,39 @@
     });
 
     $('kpiGrid').className = 'kpi-grid premium-kpis';
-    if (currentApp !== 'warehouse') return;
+    if (currentApp !== 'warehouse') {
+      $('kpiGrid').innerHTML = `
+        <div class="kpi premium-kpi kpi-link" data-goto="accounts"><div class="lbl">حسابات المندوبين</div><div class="val">${accStats.total || 0}</div></div>
+        <div class="kpi premium-kpi warn kpi-link" data-goto="accounts"><div class="lbl">ديون المندوبين</div><div class="val" dir="ltr">${fmt(accStats.totalDebt)}</div></div>
+        <div class="kpi premium-kpi kpi-link" data-goto="delegates"><div class="lbl">جاهزة للترحيل</div><div class="val">${delegate.pending || 0}</div></div>
+        <div class="kpi premium-kpi kpi-link" data-goto="delegates"><div class="lbl">مرحّلة</div><div class="val">${delegate.synced || 0}</div></div>
+        <div class="kpi premium-kpi${edariPending ? ' warn' : ''} kpi-link" data-goto="edariSync"><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>
+        <div class="kpi premium-kpi kpi-link" data-goto="payments"><div class="lbl">تسديدات</div><div class="val">←</div></div>`;
+      bindKpiLinks();
+      const hub = $('delegateHubPanel');
+      if (hub) {
+        hub.innerHTML = `
+          <div class="dash-row"><span>حسابات</span><strong>${accStats.total || 0}</strong></div>
+          <div class="dash-row"><span>مدينون</span><strong>${accStats.withDebt || 0}</strong></div>
+          <div class="dash-row"><span>إجمالي الدين</span><strong dir="ltr">${fmt(accStats.totalDebt)}</strong></div>
+          <div class="dash-row"><span>طلبات بانتظار الترحيل</span><strong>${delegate.pending || 0}</strong></div>
+          <p class="hint" style="margin-top:10px">طلبات المندوبين منفصلة تماماً عن فروع الشورجة ونقاط البيع.</p>`;
+      }
+      return;
+    }
 
     $('kpiGrid').innerHTML = `
-        <div class="kpi premium-kpi"><div class="ico">🧾</div><div class="lbl">فواتير اليوم</div><div class="val">${t.salesCount}</div></div>
-        <div class="kpi premium-kpi"><div class="ico">💵</div><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmt(t.salesAmount)}</div></div>
-        <div class="kpi premium-kpi"><div class="ico">↩️</div><div class="lbl">مرتجعات</div><div class="val" dir="ltr">${fmt(t.returnsAmount)}</div></div>
-        <div class="kpi premium-kpi accent"><div class="ico">📈</div><div class="lbl">صافي اليوم</div><div class="val" dir="ltr">${fmt(t.netSales)}</div></div>
-        <div class="kpi premium-kpi"><div class="ico">👥</div><div class="lbl">حسابات الشورجة</div><div class="val">${accStats.total || 0}</div></div>
-        <div class="kpi premium-kpi warn"><div class="ico">💳</div><div class="lbl">ديون الشورجة</div><div class="val" dir="ltr">${fmt(accStats.totalDebt)}</div></div>
-        <div class="kpi premium-kpi warehouse"><div class="ico">🏪</div><div class="lbl">تجهيز للترحيل</div><div class="val">${warehouse.pending || 0}</div></div>
-        <div class="kpi premium-kpi${edariPending ? ' warn' : ''}"><div class="ico">🔄</div><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>
-        <div class="kpi premium-kpi"><div class="ico">📦</div><div class="lbl">منتجات</div><div class="val">${data.products.total}</div></div>
-        <div class="kpi premium-kpi"><div class="ico">🏷️</div><div class="lbl">إصدار الأسعار</div><div class="val">v${data.priceVersion || 0}</div></div>`;
+        <div class="kpi premium-kpi kpi-link" data-goto="invoices"><div class="ico">🧾</div><div class="lbl">فواتير اليوم</div><div class="val">${t.salesCount}</div></div>
+        <div class="kpi premium-kpi kpi-link" data-goto="reports"><div class="ico">💵</div><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmt(t.salesAmount)}</div></div>
+        <div class="kpi premium-kpi kpi-link" data-goto="invoices"><div class="ico">↩️</div><div class="lbl">مرتجعات</div><div class="val" dir="ltr">${fmt(t.returnsAmount)}</div></div>
+        <div class="kpi premium-kpi accent kpi-link" data-goto="posMonitor"><div class="ico">📈</div><div class="lbl">صافي اليوم</div><div class="val" dir="ltr">${fmt(t.netSales)}</div></div>
+        <div class="kpi premium-kpi kpi-link" data-goto="accounts"><div class="ico">👥</div><div class="lbl">حسابات الشورجة</div><div class="val">${accStats.total || 0}</div></div>
+        <div class="kpi premium-kpi warn kpi-link" data-goto="accounts"><div class="ico">💳</div><div class="lbl">ديون الشورجة</div><div class="val" dir="ltr">${fmt(accStats.totalDebt)}</div></div>
+        <div class="kpi premium-kpi warehouse kpi-link" data-goto="warehousePrep"><div class="ico">🏪</div><div class="lbl">تجهيز للترحيل</div><div class="val">${warehouse.pending || 0}</div></div>
+        <div class="kpi premium-kpi${edariPending ? ' warn' : ''} kpi-link" data-goto="edariSync"><div class="ico">🔄</div><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>
+        <div class="kpi premium-kpi kpi-link" data-goto="products"><div class="ico">📦</div><div class="lbl">منتجات</div><div class="val">${data.products.total}</div></div>
+        <div class="kpi premium-kpi kpi-link" data-goto="prices"><div class="ico">🏷️</div><div class="lbl">إصدار الأسعار</div><div class="val">v${data.priceVersion || 0}</div></div>`;
+    bindKpiLinks();
 
     try {
       const { monitor } = await fetchPosMonitor();
@@ -455,6 +499,10 @@
             </div>
           </article>`;
         }).join('') || '<p style="color:var(--muted)">لا توجد فروع</p>'}</div>`;
+    $('branchesList')?.querySelectorAll('.branch-card').forEach((card) => {
+      card.style.cursor = 'pointer';
+      card.addEventListener('click', () => goToView('posMonitor'));
+    });
 
     const syncBar = $('edariSyncBar');
     if (syncBar) syncBar.hidden = true;
@@ -480,6 +528,7 @@
       <div class="kpi premium-kpi accent"><div class="lbl">الصافي</div><div class="val" dir="ltr">${fmt(r.netSales)}</div></div>
       <div class="kpi premium-kpi"><div class="lbl">المحصّل نقداً</div><div class="val" dir="ltr">${fmt(r.paidAmount)}</div></div>
       <div class="kpi premium-kpi"><div class="lbl">تحصيلات حسابات</div><div class="val" dir="ltr">${fmt(r.collectionsTotal)}</div></div>
+      <div class="kpi premium-kpi"><div class="lbl">متوسط الفاتورة</div><div class="val" dir="ltr">${fmt(r.salesCount ? r.salesAmount / r.salesCount : 0)}</div></div>
       <div class="kpi premium-kpi warn"><div class="lbl">دين الفترة</div><div class="val" dir="ltr">${fmt(r.dueAmount)}</div></div>`;
 
     const maxPay = Math.max(...(r.byPayment || []).map((x) => x.amount), 1);
@@ -583,9 +632,10 @@
     if (countEl) countEl.textContent = `${data.total ?? (data.invoices || []).length} نتيجة`;
     $('invoiceTable').innerHTML = `
       <table id="invoicesDataTable">
-        <thead><tr><th>الرقم</th><th>الفرع</th><th>النوع</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>مدفوع</th><th>متبقي</th><th>الدفع</th><th>الإداري</th><th></th></tr></thead>
-        <tbody>${(data.invoices||[]).map((i) => `
+        <thead><tr><th>الوقت</th><th>الرقم</th><th>الفرع</th><th>النوع</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>مدفوع</th><th>متبقي</th><th>الدفع</th><th>الإداري</th><th></th></tr></thead>
+        <tbody>${(data.invoices||[]).length ? (data.invoices||[]).map((i) => `
           <tr class="clickable-row" data-invoice-id="${i.id}">
+            <td>${esc((i.createdAt || '').slice(11, 16) || '—')}</td>
             <td>${esc(i.invoiceNo)}</td>
             <td>${esc(i.branchName || branchesCache.find((b) => b.id === i.branchId)?.name || '—')}</td>
             <td>${kindBadgeHtml(i.kind)}</td>
@@ -596,14 +646,30 @@
             <td dir="ltr">${fmt(i.dueAmount)}</td>
             <td>${payMethodLabel(i.paymentMethod)}</td>
             <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}</td>
-            <td><button type="button" class="btn btn-danger btn-sm" data-delete-invoice="${i.id}">حذف</button></td>
-          </tr>`).join('') || '<tr><td colspan="11">لا توجد فواتير</td></tr>'}
+            <td class="row-actions">
+              <button type="button" class="btn btn-ghost btn-sm" data-print-invoice="${i.id}">طباعة</button>
+              <button type="button" class="btn btn-danger btn-sm" data-delete-invoice="${i.id}">حذف</button>
+            </td>
+          </tr>`).join('') : '<tr><td colspan="12" class="empty-cell">لا توجد فواتير مطابقة</td></tr>'}
         </tbody>
       </table>`;
     $('invoiceTable').querySelectorAll('[data-invoice-id]').forEach((row) => {
       row.addEventListener('click', (e) => {
-        if (e.target.closest('[data-delete-invoice]')) return;
+        if (e.target.closest('[data-delete-invoice], [data-print-invoice]')) return;
         openInvoice(Number(row.dataset.invoiceId));
+      });
+    });
+    $('invoiceTable').querySelectorAll('[data-print-invoice]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fetch(`/api/admin/invoices/${btn.dataset.printInvoice}/print`, { headers: { Authorization: `Bearer ${token}` } })
+          .then((r) => r.text())
+          .then((html) => {
+            const w = window.open('', '_blank');
+            w.document.write(html);
+            w.document.close();
+          })
+          .catch(() => toast('تعذّرت الطباعة'));
       });
     });
     $('invoiceTable').querySelectorAll('[data-delete-invoice]').forEach((btn) => {
@@ -634,6 +700,12 @@
     if ($('invEdari')) $('invEdari').value = '';
     if ($('invSearch')) $('invSearch').value = '';
     const preset = chip.dataset.invPreset;
+    const yest = new Date(); yest.setDate(yest.getDate() - 1);
+    if (preset === 'yesterday') {
+      const y = isoDay(yest);
+      if ($('invFrom')) $('invFrom').value = y;
+      if ($('invTo')) $('invTo').value = y;
+    }
     if (preset === 'week' && $('invFrom')) $('invFrom').value = isoDay(week);
     if (preset === 'month' && $('invFrom')) $('invFrom').value = isoDay(month);
     if (preset === 'today-credit' && $('invPayment')) $('invPayment').value = 'credit';
@@ -657,11 +729,11 @@
 
   function renderPrepTablePremium(tableEl, rows, { labelHeader, labelFn, badgeClass }) {
     tableEl.innerHTML = `
-      <table>
+      <table id="prepDataTable">
         <thead><tr>
           <th>${labelHeader}</th><th>الفاتورة</th><th>طلب التجهيز</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>الإداري</th><th></th>
         </tr></thead>
-        <tbody>${rows.map((i) => `
+          <tbody>${rows.length ? rows.map((i) => `
           <tr>
             <td><span class="badge-pill ${badgeClass}">${esc(labelFn(i))}</span></td>
             <td><button type="button" class="linkish" data-invoice-id="${i.id}">${esc(i.invoiceNo)}</button></td>
@@ -671,7 +743,7 @@
             <td dir="ltr">${fmt(i.total)}</td>
             <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}</td>
             <td class="row-actions">${i.edariSyncStatus === 'synced' ? '✓' : `<button type="button" class="btn btn-secondary btn-sm" data-queue-edari="${i.id}">ترحيل</button>`}</td>
-          </tr>`).join('') || '<tr><td colspan="8">لا توجد فواتير</td></tr>'}
+          </tr>`).join('') : '<tr><td colspan="8" class="empty-cell">لا توجد فواتير</td></tr>'}
         </tbody>
       </table>`;
     tableEl.querySelectorAll('[data-invoice-id]').forEach((btn) => {
@@ -739,6 +811,14 @@
     } catch (err) { toast(err.message); }
   });
 
+  $('btnExportWarehouse')?.addEventListener('click', () => {
+    exportTableCsv($('prepDataTable'), `warehouse-prep-${Date.now()}.csv`);
+    toast('تم التصدير');
+  });
+  $('btnExportDelegates')?.addEventListener('click', () => {
+    exportTableCsv($('prepDataTable'), `delegates-${Date.now()}.csv`);
+    toast('تم التصدير');
+  });
   $('warehouseDate')?.addEventListener('change', loadWarehousePrep);
   $('warehouseSearch')?.addEventListener('input', debounce(loadWarehousePrep, 250));
 
@@ -1161,6 +1241,8 @@
         if (active === 'edariSync') loadEdariSync();
       }
       if (rev) lastKnownRevision = rev;
+      const pill = $('dataRevPill');
+      if (pill && rev) pill.textContent = `rev ${rev}`;
     } catch { /* */ }
   }
 
@@ -1242,23 +1324,67 @@
 
   function setupKeyboard() {
     $('btnKbdHelp')?.addEventListener('click', () => $('kbdHelp')?.showModal());
+
+    const paletteViews = () => {
+      const names = currentApp === 'delegate'
+        ? [['delegates', 'فواتير المندوبين'], ['accounts', 'حسابات المندوبين'], ['payments', 'تسديدات'], ['edariSync', 'مزامنة الإداري']]
+        : [['dashboard', 'لوحة اليوم'], ['posMonitor', 'مراقبة نقاط البيع'], ['reports', 'التقارير'], ['invoices', 'الفواتير'], ['warehousePrep', 'تجهيز الشورجة'], ['products', 'المنتجات'], ['prices', 'الأسعار'], ['accounts', 'الحسابات'], ['payments', 'التسديدات'], ['journal', 'القيود'], ['edariSync', 'مزامنة الإداري']];
+      return names;
+    };
+
+    function renderPalette(q = '') {
+      const list = $('cmdPaletteList');
+      if (!list) return;
+      const query = q.trim();
+      const items = paletteViews().filter(([, label]) => !query || label.includes(query) || label.toLowerCase().includes(query.toLowerCase()));
+      list.innerHTML = items.map(([view, label], i) =>
+        `<button type="button" class="cmd-item${i === 0 ? ' active' : ''}" data-view="${view}">${label}</button>`
+      ).join('') || '<p class="empty-cell">لا توجد صفحة مطابقة</p>';
+      list.querySelectorAll('[data-view]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          $('cmdPalette')?.close();
+          goToView(btn.dataset.view);
+        });
+      });
+    }
+
+    function openPalette() {
+      renderPalette();
+      $('cmdPalette')?.showModal();
+      const inp = $('cmdPaletteInput');
+      if (inp) { inp.value = ''; inp.focus(); }
+    }
+
+    $('cmdPaletteInput')?.addEventListener('input', () => renderPalette($('cmdPaletteInput').value));
+    $('cmdPaletteInput')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        $('cmdPaletteList')?.querySelector('.cmd-item')?.click();
+      }
+      if (e.key === 'Escape') $('cmdPalette')?.close();
+    });
+    $('headerJump')?.addEventListener('focus', openPalette);
+    $('headerJump')?.addEventListener('click', openPalette);
+
     document.addEventListener('keydown', (e) => {
       const tag = document.activeElement?.tagName;
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        openPalette();
+        return;
+      }
       if (e.key === '?' && !typing && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         $('kbdHelp')?.showModal();
       }
-      if (e.key === '/' && !typing) {
+      if ((e.key === '/' || e.key === 'F2') && !typing) {
         e.preventDefault();
         const view = document.querySelector('.nav.active')?.dataset.view;
-        const map = {
-          invoices: 'invSearch', products: 'prodSearch', accounts: 'accSearch',
-          payments: 'paySearch', journal: 'journalSearch', posMonitor: 'posMonSearch',
-          warehousePrep: 'warehouseSearch', delegates: 'delegateSearch',
-          prices: 'priceBrowseSearch', edariSync: 'edariSyncSearch'
-        };
-        $(map[view])?.focus();
+        $(PAGE_SEARCH_MAP[view])?.focus();
+      }
+      if (e.key === 'Escape') {
+        document.querySelectorAll('dialog[open]').forEach((d) => d.close());
       }
     });
   }
