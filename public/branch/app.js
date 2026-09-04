@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '37';
+const APP_VERSION = '38';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -563,7 +563,16 @@ document.getElementById('jumpList')?.addEventListener('click', (e) => {
 });
 
 function focusBarcode() {
-  setTimeout(() => document.getElementById('barcodeInput')?.focus(), 100);
+  const el = document.getElementById('barcodeInput');
+  if (el) {
+    el.value = '';
+    setTimeout(() => el.focus(), 50);
+  }
+}
+
+function clearBarcodeField() {
+  const el = document.getElementById('barcodeInput');
+  if (el) el.value = '';
 }
 
 // ── Login ──
@@ -910,8 +919,10 @@ const onProductSearchInput = debounce(async () => {
 
 // ── Cart ──
 async function addToCart(barcode, qty = 1) {
+  clearBarcodeField();
   if (state.invoiceType === 'return' && state.returnParent) {
     toast('فك الربط بفاتورة أصلية لإضافة منتجات يدوياً', 'warn');
+    focusBarcode();
     return;
   }
   const product = await resolveProduct(barcode);
@@ -935,6 +946,7 @@ async function addToCart(barcode, qty = 1) {
   if (product.stockQty > 0 && totalPieces > product.stockQty) {
     if (getSettings().blockOverStock) {
       toast(`المخزون المتاح ${product.stockQty} قطعة فقط`, 'warn');
+      focusBarcode();
       return;
     }
   }
@@ -958,7 +970,6 @@ async function addToCart(barcode, qty = 1) {
   flashScan();
   showLastScan(product, existing ? existing.qty : qty);
   renderCart();
-  document.getElementById('barcodeInput').value = '';
   hideSearchDropdown();
   focusBarcode();
 }
@@ -1455,7 +1466,9 @@ barcodeInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
     const code = barcodeInput.value.trim();
+    barcodeInput.value = '';
     if (code) addToCart(code);
+    else focusBarcode();
   }
 });
 
@@ -1565,7 +1578,7 @@ document.addEventListener('keydown', (e) => {
     clearTimeout(barcodeTimer);
     barcodeTimer = setTimeout(() => {
       if (barcodeBuffer.length >= 4) {
-        barcodeInput.value = barcodeBuffer;
+        barcodeInput.value = '';
         addToCart(barcodeBuffer);
       }
       barcodeBuffer = '';
