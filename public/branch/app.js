@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '36';
+const APP_VERSION = '37';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -29,7 +29,7 @@ const PAGE_TITLES = {
   held: ['فواتير معلّقة', 'استئناف البيع على هذا الجهاز'],
   accounts: ['حسابات العملاء', 'الديون والأرصدة وكشف الحساب'],
   payments: ['تسديد الحسابات', 'تسجيل دفعات العملاء'],
-  stock: ['استعلام منتج', 'تفاصيل المنتج بالباركود'],
+  stock: ['استعلام باركود', 'امسح الباركود لعرض تفاصيل المنتج'],
   reports: ['التقارير', 'مبيعات وتحصيلات حسب الفترة'],
   settings: ['الإعدادات', 'سلوك نقطة البيع والطباعة والمزامنة']
 };
@@ -2107,7 +2107,6 @@ async function loadDashboard() {
       <div class="kpi-card clickable" data-goto="accounts"><div class="kpi-lbl">آجل / دين جديد</div><div class="kpi-val" dir="ltr">${fmt(s.dueAmount)}</div></div>
       <div class="kpi-card"><div class="kpi-lbl">متوسط الفاتورة</div><div class="kpi-val" dir="ltr">${fmt(s.salesCount ? s.salesAmount / s.salesCount : 0)}</div></div>
       <div class="kpi-card clickable" data-goto="held"><div class="kpi-lbl">فواتير معلّقة</div><div class="kpi-val">${getHeld().length}</div></div>
-      <div class="kpi-card clickable" data-goto="stock"><div class="kpi-lbl">مخزون منخفض</div><div class="kpi-val">${document.getElementById('stockBadge')?.textContent || '—'}</div></div>
       <div class="kpi-card"><div class="kpi-lbl">بانتظار الرفع</div><div class="kpi-val">${getOutbox().length}</div></div>`;
     const stamp = document.getElementById('dashUpdated');
     if (stamp) stamp.textContent = `آخر تحديث ${new Date().toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })}`;
@@ -2155,20 +2154,6 @@ async function loadTodaySummary() {
     const data = await api('/branch/summary/today');
     const s = data.summary;
     updateDayStatsDisplay(s.salesCount, s.netSales);
-  } catch { /* */ }
-}
-
-async function updateStockBadge() {
-  try {
-    const threshold = getSettings().lowStockThreshold || 5;
-    const data = await api(`/branch/products?summary=1&limit=1&stock=low&threshold=${threshold}`);
-    const summary = data.summary;
-    const n = summary ? Number(summary.low) + Number(summary.out) : (data.products || []).length;
-    const el = document.getElementById('stockBadge');
-    if (el) {
-      el.textContent = n;
-      el.classList.toggle('hidden', !n);
-    }
   } catch { /* */ }
 }
 
@@ -2330,7 +2315,6 @@ async function lookupStockProduct(code, force = false) {
     }
     stockState.lastProduct = product;
     mergeProductIntoState(product);
-    pushStockRecent(product);
     renderStockProductDetail(product);
   } catch {
     toast('تعذّر جلب المنتج', 'err');
@@ -2340,11 +2324,8 @@ async function lookupStockProduct(code, force = false) {
 }
 
 function loadStockView() {
-  renderStockRecentList();
-  loadLowStockList();
   if (stockState.lastProduct) renderStockProductDetail(stockState.lastProduct);
   else renderStockProductDetail(null);
-  updateStockBadge();
   setTimeout(() => document.getElementById('stockBarcodeInput')?.focus(), 80);
 }
 
@@ -2363,40 +2344,9 @@ function bindStockFilters() {
   document.getElementById('btnStockClear')?.addEventListener('click', () => {
     stockState.lastProduct = null;
     if (input) input.value = '';
-    const name = document.getElementById('stockNameSearch');
-    if (name) name.value = '';
     renderStockProductDetail(null);
     input?.focus();
   });
-
-  document.getElementById('stockNameSearch')?.addEventListener('input', debounce((e) => {
-    const q = String(e.target.value || '').trim().toLowerCase();
-    const hitsEl = document.getElementById('stockNameHits');
-    if (!hitsEl) return;
-    if (q.length < 2) {
-      hitsEl.classList.add('hidden');
-      hitsEl.innerHTML = '';
-      return;
-    }
-    const hits = allProducts().filter((p) =>
-      String(p.name || '').toLowerCase().includes(q) || String(p.barcode || '').includes(q)
-    ).slice(0, 12);
-    hitsEl.classList.remove('hidden');
-    hitsEl.innerHTML = hits.length
-      ? hits.map((p) => `
-        <button type="button" class="stock-recent-item" data-barcode="${esc(p.barcode)}">
-          <strong>${esc(p.name)}</strong>
-          <small dir="ltr">${esc(p.barcode)} · ${fmt(p.stockQty)}</small>
-        </button>`).join('')
-      : '<p class="hint">لا توجد نتائج</p>';
-    hitsEl.querySelectorAll('[data-barcode]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        if (input) input.value = btn.dataset.barcode;
-        hitsEl.classList.add('hidden');
-        lookupStockProduct(btn.dataset.barcode);
-      });
-    });
-  }, 220));
 }
 
 bindStockFilters();
@@ -2419,8 +2369,7 @@ async function checkDataRevision() {
       if (active === 'accounts') loadAccounts();
       if (active === 'payments') loadPaymentsView();
       if (active === 'dashboard') loadDashboard();
-      if (active === 'stock') { loadLowStockList(); renderStockRecentList(); }
-      updateStockBadge();
+      if (active === 'stock') loadStockView();
     } else if (!stored && rev) {
       localStorage.setItem(DATA_REV_KEY, String(rev));
     }
@@ -2566,7 +2515,6 @@ document.getElementById('btnSaveSettings')?.addEventListener('click', async () =
     state.settings = { ...DEFAULT_SETTINGS, ...data.settings };
     saveLocalSettings(state.settings);
     toast('تم حفظ الإعدادات');
-    updateStockBadge();
   } catch (err) { toast(err.message, 'err'); }
 });
 
@@ -3146,12 +3094,10 @@ async function initApp() {
   updateCachedProductCount();
   renderCart();
   loadTodaySummary();
-  updateStockBadge();
   checkPriceUpdate();
   flushOutbox();
   setInterval(flushOutbox, 30000);
   setInterval(checkPriceUpdate, 60000);
-  setInterval(updateStockBadge, 120000);
   setInterval(checkDataRevision, 30000);
   try {
     const hb = await api('/branch/heartbeat', { method: 'POST' });

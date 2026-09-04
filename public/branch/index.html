@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=36">
-  <link rel="stylesheet" href="official.css?v=36">
+  <link rel="stylesheet" href="styles.css?v=37">
+  <link rel="stylesheet" href="official.css?v=37">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -82,7 +82,6 @@
         <button type="button" class="nav-item" data-view="stock">
           <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></span>
           <span class="nav-label">استعلام</span>
-          <span class="nav-badge hidden" id="stockBadge">0</span>
         </button>
         <button type="button" class="nav-item" data-view="reports">
           <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-6 4 3 5-8"/></svg></span>
@@ -450,7 +449,7 @@
 
       <!-- Stock — استعلام منتج بالباركود -->
       <main id="viewStock" class="view hidden">
-        <div class="stock-lookup-panel">
+        <div class="stock-lookup-panel stock-lookup-only">
           <div class="stock-lookup-bar">
             <div class="pos-scan-field stock-barcode-field">
               <span class="pos-scan-ico" aria-hidden="true">
@@ -459,25 +458,13 @@
               <input type="text" id="stockBarcodeInput" class="pos-scan-input" placeholder="امسح أو أدخل الباركود..." autocomplete="off">
               <button type="button" class="btn-fetch-barcode" id="btnStockLookup" title="بحث">↵</button>
             </div>
-            <input type="search" id="stockNameSearch" class="field" placeholder="بحث بالاسم..." autocomplete="off">
             <button type="button" class="btn btn-secondary btn-sm" id="btnStockClear">مسح</button>
           </div>
-          <div id="stockNameHits" class="stock-name-hits hidden"></div>
-          <p class="hint stock-lookup-hint">اعرض تفاصيل منتج واحد بالباركود — مع قائمة المخزون المنخفض</p>
+          <p class="hint stock-lookup-hint">امسح الباركود لعرض اسم المنتج والسعر والكمية المتوفرة</p>
           <div id="stockProductDetail" class="stock-product-detail">
             <div class="stock-lookup-empty" id="stockLookupEmpty">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.3"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
               <p>امسح باركود المنتج لعرض التفاصيل</p>
-            </div>
-          </div>
-          <div class="stock-side-panels">
-            <div class="panel-card stock-recent-panel">
-              <h3>آخر الاستعلامات</h3>
-              <div id="stockRecentList" class="stock-recent-list"></div>
-            </div>
-            <div class="panel-card stock-low-panel">
-              <h3>مخزون منخفض / نافد</h3>
-              <div id="stockLowList" class="stock-low-list"></div>
             </div>
           </div>
         </div>
@@ -660,6 +647,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=36"></script>
+  <script src="app.js?v=37"></script>
 </body>
 </html>

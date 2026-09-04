@@ -134,7 +134,10 @@
   font-size: 0.85rem;
 }
 .account-card .acc-pay-btn { margin-top: 8px; width: 100%; }
-.stock-lookup-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.stock-lookup-only .stock-barcode-field {
+  flex: 1;
+  max-width: none;
+}
 .stock-name-hits {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
