@@ -48,7 +48,7 @@ window.viewAllowed = (view) => {
   const fn = window.getAdminAppScope;
   if (!fn) return true;
   const map = {
-    dashboard: 'warehouse', posMonitor: 'warehouse', reports: 'warehouse', invoices: 'warehouse',
+    posMonitor: 'warehouse', reports: 'warehouse', invoices: 'warehouse',
     warehousePrep: 'warehouse', products: 'warehouse', prices: 'warehouse',
     journal: 'warehouse', delegates: 'delegate'
   };
@@ -480,10 +480,11 @@ function edariSyncLabel(status, error = '') {
 }
 
 async function loadInvoices() {
-  const date = document.getElementById('invDate').value || new Date().toISOString().slice(0, 10);
-  document.getElementById('invDate').value = date;
-  const q = document.getElementById('invSearch').value || '';
-  const data = await api(`/admin/invoices?from=${date}&to=${date}&q=${encodeURIComponent(q)}`);
+  const today = new Date().toISOString().slice(0, 10);
+  const from = document.getElementById('invFrom')?.value || document.getElementById('invDate')?.value || today;
+  const to = document.getElementById('invTo')?.value || from;
+  const q = document.getElementById('invSearch')?.value || '';
+  const data = await api(`/admin/invoices?from=${from}&to=${to}&q=${encodeURIComponent(q)}`);
   document.getElementById('invoiceTable').innerHTML = `
     <table>
       <thead><tr><th>الرقم</th><th>النوع</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>مدفوع</th><th>متبقي</th><th>الإداري</th></tr></thead>
@@ -594,10 +595,18 @@ async function openInvoice(id) {
     activeInvoiceId = id;
     document.getElementById('invoiceDetail').innerHTML = `
       <h2>فاتورة ${esc(inv.invoiceNo)}</h2>
-      <p style="color:var(--muted);font-size:0.88rem;margin-bottom:12px">
-        ${inv.kind === 'return' ? 'مرتجع' : 'بيع'} · ${esc(inv.invoiceDate)} · ${esc(inv.customerName || 'نقدي')}
-        · إجمالي: <strong dir="ltr">${fmt(inv.total)}</strong>
-      </p>
+      <div class="ledger-summary inv-meta-grid">
+        <span>النوع: <strong>${inv.kind === 'return' ? 'مرتجع' : inv.kind === 'issue' ? 'إخراج' : 'بيع'}</strong></span>
+        <span>التاريخ: <strong>${esc(inv.invoiceDate)}</strong></span>
+        <span>الوقت: <strong>${esc((inv.createdAt || '').slice(11, 16) || '—')}</strong></span>
+        <span>العميل: <strong>${esc(inv.customerName || 'نقدي')}</strong></span>
+        <span>الدفع: <strong>${esc(inv.paymentMethod === 'credit' ? 'آجل' : inv.paymentMethod === 'partial' ? 'جزئي' : 'نقدي')}</strong></span>
+        <span>الإجمالي: <strong dir="ltr">${fmt(inv.total)}</strong></span>
+        <span>مدفوع: <strong dir="ltr">${fmt(inv.paidAmount)}</strong></span>
+        <span>متبقي: <strong dir="ltr">${fmt(inv.dueAmount)}</strong></span>
+        <span>الإداري: ${edariSyncLabel(inv.edariSyncStatus, inv.edariSyncError)}</span>
+        ${inv.notes ? `<span>ملاحظات: <strong>${esc(inv.notes)}</strong></span>` : ''}
+      </div>
       <div class="invoice-lines">
         <table>
           <thead><tr><th>المنتج</th><th>الباركود</th><th>الكمية</th><th>هدايا</th><th>السعر</th><th>المجموع</th></tr></thead>
@@ -859,6 +868,12 @@ async function loadProducts() {
   const q = document.getElementById('prodSearch')?.value || '';
   const data = await fetchProductsList({ q, category: prodActiveCategory, limit: 500, stock: prodStockFilter });
   const products = data.products || [];
+  const sort = document.getElementById('prodSort')?.value || 'name';
+  products.sort((a, b) => {
+    if (sort === 'stock') return Number(a.stockQty || 0) - Number(b.stockQty || 0);
+    if (sort === 'price') return Number(b.price || 0) - Number(a.price || 0);
+    return String(a.name || '').localeCompare(String(b.name || ''), 'ar');
+  });
   allProductsCache = products;
 
   if (!q) await loadCategoryCatalog();
@@ -1168,6 +1183,7 @@ document.getElementById('prodViewToggle')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.view-toggle-btn');
   if (btn) setProductViewMode(btn.dataset.mode);
 });
+document.getElementById('prodSort')?.addEventListener('change', () => loadProducts());
 document.getElementById('btnExportProducts')?.addEventListener('click', () => {
   const table = document.getElementById('productsDataTable');
   if (table && window.exportTableCsv) {
@@ -1441,7 +1457,7 @@ async function openLedger(id) {
           <tbody>${entries.length ? entries.map((e) => `
             <tr>
               <td>${esc(e.entryNo)}</td>
-              <td>${esc(e.kind)}</td>
+              <td>${esc(journalKindLabel(e.kind))}</td>
               <td dir="ltr">${fmt(e.amount)}</td>
               <td>${esc(e.description)}</td>
               <td>${esc(e.entryDate)}</td>
@@ -1534,7 +1550,7 @@ document.getElementById('accountForm')?.addEventListener('submit', async (e) => 
 async function loadPayments() {
   const acc = await api(`/admin/accounts?limit=500${scopeQuery()}`);
   const opts = (acc.accounts||[]).map((a) =>
-    `<option value="${a.id}">${esc(a.name)} — دين: ${fmt(a.balance)}</option>`
+    `<option value="${a.id}" data-balance="${a.balance}">${esc(a.name)} — دين: ${fmt(a.balance)}</option>`
   ).join('');
   document.getElementById('payAcc').innerHTML = opts;
   const payParams = new URLSearchParams({ limit: '400' });
@@ -1611,6 +1627,12 @@ document.getElementById('payFrom')?.addEventListener('change', () => loadPayment
 document.getElementById('payTo')?.addEventListener('change', () => loadPayments());
 document.getElementById('paySearch')?.addEventListener('input', debounce(loadPayments, 250));
 document.getElementById('payMethodFilter')?.addEventListener('change', () => loadPayments());
+document.getElementById('btnPayFillDebt')?.addEventListener('click', () => {
+  const opt = document.getElementById('payAcc')?.selectedOptions?.[0];
+  const bal = Number(opt?.dataset.balance || 0);
+  if (bal <= 0) { toast('لا يوجد دين على هذا الحساب'); return; }
+  document.getElementById('payAmt').value = String(bal);
+});
 document.getElementById('btnPayClearDates')?.addEventListener('click', () => {
   const f = document.getElementById('payFrom');
   const t = document.getElementById('payTo');

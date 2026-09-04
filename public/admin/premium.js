@@ -51,7 +51,7 @@
   let clockTimer = null;
 
   const VIEW_SCOPE = {
-    dashboard: 'warehouse',
+    dashboard: 'shared',
     posMonitor: 'warehouse',
     reports: 'warehouse',
     invoices: 'warehouse',
@@ -126,6 +126,11 @@
     });
   }
 
+  function stampDashboard() {
+    const stamp = $('dashUpdated');
+    if (stamp) stamp.textContent = `آخر تحديث: ${new Date().toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+  }
+
   const PAGE_SEARCH_MAP = {
     invoices: 'invSearch', products: 'prodSearch', accounts: 'accSearch',
     payments: 'paySearch', journal: 'journalSearch', posMonitor: 'posMonSearch',
@@ -172,7 +177,9 @@
       ? 'زبائن فروع الشورجة — منفصلون عن المندوبين'
       : 'زبائن المندوبين فقط'];
     PAGE_TITLES.payments = [meta.paymentsLabel, 'تسجيل دفعات العملاء'];
-    PAGE_TITLES.dashboard = ['لوحة الشورجة', 'ملخص مبيعات الفروع والمخزن'];
+    PAGE_TITLES.dashboard = currentApp === 'warehouse'
+      ? ['لوحة الشورجة', 'ملخص مبيعات الفروع والمخزن']
+      : ['لوحة المندوبين', 'حسابات وطلبات المندوبين — منفصلة عن الشورجة'];
     PAGE_TITLES.delegates = ['فواتير المندوبين', 'طلبات المندوبين الجاهزة للترحيل'];
     PAGE_TITLES.edariSync = currentApp === 'warehouse'
       ? ['مزامنة الإداري — الشورجة', 'ترحيل حسابات وفواتير الشورجة فقط']
@@ -220,7 +227,7 @@
       window.loadEdariSync();
       return;
     }
-    const homeView = app === 'delegate' ? 'delegates' : 'dashboard';
+    const homeView = 'dashboard';
     const navRoot = app === 'delegate' ? '#navDelegate' : '#navWarehouse';
     document.querySelector(`${navRoot} .nav[data-view="${homeView}"]`)?.click();
   }
@@ -451,6 +458,7 @@
         <div class="kpi premium-kpi${edariPending ? ' warn' : ''} kpi-link" data-goto="edariSync"><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>
         <div class="kpi premium-kpi kpi-link" data-goto="payments"><div class="lbl">تسديدات</div><div class="val">←</div></div>`;
       bindKpiLinks();
+      stampDashboard();
       const hub = $('delegateHubPanel');
       if (hub) {
         hub.innerHTML = `
@@ -475,6 +483,7 @@
         <div class="kpi premium-kpi kpi-link" data-goto="products"><div class="ico">📦</div><div class="lbl">منتجات</div><div class="val">${data.products.total}</div></div>
         <div class="kpi premium-kpi kpi-link" data-goto="prices"><div class="ico">🏷️</div><div class="lbl">إصدار الأسعار</div><div class="val">v${data.priceVersion || 0}</div></div>`;
     bindKpiLinks();
+    stampDashboard();
 
     try {
       const { monitor } = await fetchPosMonitor();
@@ -601,6 +610,14 @@
       toast('تم تصدير تقرير الفروع');
     } else toast('اعرض التقرير أولاً');
   });
+  $('btnPrintReport')?.addEventListener('click', () => {
+    const body = $('viewReports');
+    if (!body) return;
+    const w = window.open('', '_blank');
+    w.document.write(`<html dir="rtl"><head><meta charset="utf-8"><title>تقرير</title></head><body>${$('reportKpis')?.outerHTML || ''}${$('reportByBranch')?.innerHTML || ''}</body></html>`);
+    w.document.close();
+    w.print();
+  });
 
   $('btnRunReport')?.addEventListener('click', () => loadReports());
   $('reportFrom')?.addEventListener('change', () => loadReports());
@@ -716,6 +733,18 @@
     loadInvoices();
   });
 
+  $('btnResetInvFilters')?.addEventListener('click', () => {
+    const today = isoDay();
+    if ($('invFrom')) $('invFrom').value = today;
+    if ($('invTo')) $('invTo').value = today;
+    if ($('invSearch')) $('invSearch').value = '';
+    if ($('invKind')) $('invKind').value = '';
+    if ($('invPayment')) $('invPayment').value = '';
+    if ($('invEdari')) $('invEdari').value = '';
+    if ($('invBranch')) $('invBranch').value = '';
+    $('invPresetChips')?.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
+    loadInvoices();
+  });
   $('btnExportInvoices')?.addEventListener('click', () => {
     exportTableCsv($('invoicesDataTable'), `invoices-${Date.now()}.csv`);
     toast('تم تصدير CSV');
@@ -1278,7 +1307,7 @@
 
     $('posMonCount').textContent = `${recent.length} فاتورة`;
     $('posMonInvoiceTable').innerHTML = `
-      <table class="data-table striped">
+      <table class="data-table striped" id="posMonInvoicesTable">
         <thead><tr>
           <th>الوقت</th><th>الفرع</th><th>الرقم</th><th>النوع</th><th>العميل</th><th>الكاشير</th><th>الدفع</th><th>الإجمالي</th><th>الإداري</th>
         </tr></thead>
@@ -1306,6 +1335,10 @@
   };
 
   $('btnPosMonRefresh')?.addEventListener('click', () => loadPosMonitor());
+  $('btnExportPosMon')?.addEventListener('click', () => {
+    exportTableCsv($('posMonInvoicesTable'), `pos-live-${Date.now()}.csv`);
+    toast('تم تصدير سجل نقاط البيع');
+  });
   $('posMonBranch')?.addEventListener('change', () => loadPosMonitor());
   $('posMonKind')?.addEventListener('change', () => loadPosMonitor());
   $('posMonPayment')?.addEventListener('change', () => loadPosMonitor());
@@ -1327,7 +1360,7 @@
 
     const paletteViews = () => {
       const names = currentApp === 'delegate'
-        ? [['delegates', 'فواتير المندوبين'], ['accounts', 'حسابات المندوبين'], ['payments', 'تسديدات'], ['edariSync', 'مزامنة الإداري']]
+        ? [['dashboard', 'لوحة المندوبين'], ['delegates', 'فواتير المندوبين'], ['accounts', 'حسابات المندوبين'], ['payments', 'تسديدات'], ['edariSync', 'مزامنة الإداري']]
         : [['dashboard', 'لوحة اليوم'], ['posMonitor', 'مراقبة نقاط البيع'], ['reports', 'التقارير'], ['invoices', 'الفواتير'], ['warehousePrep', 'تجهيز الشورجة'], ['products', 'المنتجات'], ['prices', 'الأسعار'], ['accounts', 'الحسابات'], ['payments', 'التسديدات'], ['journal', 'القيود'], ['edariSync', 'مزامنة الإداري']];
       return names;
     };
@@ -1411,7 +1444,7 @@
         currentUser = d.user;
         $('sidebarUserName').textContent = currentUser?.fullName || 'مدير';
       }).catch(() => {});
-      const homeView = currentApp === 'delegate' ? 'delegates' : 'dashboard';
+      const homeView = 'dashboard';
       const navRoot = currentApp === 'delegate' ? '#navDelegate' : '#navWarehouse';
       setTimeout(() => {
         document.querySelector(`${navRoot} .nav[data-view="${homeView}"]`)?.click();

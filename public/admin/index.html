@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=10">
   <link rel="stylesheet" href="premium.css?v=12">
-  <link rel="stylesheet" href="official.css?v=3">
+  <link rel="stylesheet" href="official.css?v=4">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -17,7 +17,7 @@
       <div class="login-brand">
         <div class="logo-mark">د</div>
         <h1>ديما الحياة</h1>
-        <p>لوحة إدارة المبيعات والفروع</p>
+        <p>لوحة تحكم الشورجة والمندوبين — تقارير · ترحيل الإداري</p>
       </div>
       <form id="loginForm">
         <label>اسم المستخدم</label>
@@ -86,6 +86,7 @@
       </nav>
       <nav id="navDelegate" class="nav-group hidden">
         <div class="nav-group-label">المتابعة</div>
+        <button type="button" class="nav" data-view="dashboard">لوحة المندوبين</button>
         <button type="button" class="nav" data-view="delegates">فواتير المندوبين</button>
         <div class="nav-group-label">المالية</div>
         <button type="button" class="nav" data-view="accounts">حسابات المندوبين</button>
@@ -132,6 +133,7 @@
           <button type="button" class="quick-action" data-goto="edariSync">🔄 مزامنة الإداري</button>
         </div>
         <div id="dashboardAlerts"></div>
+        <p class="dash-updated" id="dashUpdated"></p>
         <div id="posLiveStrip" class="pos-live-strip wh-only"></div>
         <div id="edariSyncBar" class="edari-sync-bar" hidden></div>
         <div class="kpi-grid" id="kpiGrid"></div>
@@ -212,6 +214,7 @@
               <option value="60">تحديث كل دقيقة</option>
             </select>
             <button type="button" class="btn btn-primary btn-sm" id="btnPosMonRefresh">↻ تحديث الآن</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnExportPosMon">تصدير CSV</button>
             <span class="pos-mon-updated" id="posMonUpdated">—</span>
           </div>
           <div class="dashboard-grid pos-monitor-grid">
@@ -256,6 +259,7 @@
             <select id="reportBranch" class="field"><option value="">كل الفروع</option></select>
             <button type="button" class="btn btn-primary btn-sm" id="btnRunReport">عرض التقرير</button>
             <button type="button" class="btn btn-secondary btn-sm" id="btnExportReport">تصدير CSV</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnPrintReport">طباعة</button>
           </div>
           <div class="kpi-grid premium-kpis" id="reportKpis"></div>
           <div class="dashboard-grid" style="margin-top:18px">
@@ -316,6 +320,7 @@
               <option value="error">خطأ</option>
             </select>
             <span class="inv-result-count" id="invResultCount"></span>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnResetInvFilters">مسح الفلاتر</button>
             <button type="button" class="btn btn-secondary btn-sm" id="btnExportInvoices">تصدير CSV</button>
           </div>
           <div class="section-panel-body no-pad">
@@ -390,6 +395,11 @@
                 <button type="button" class="view-toggle-btn active" data-mode="grid">بطاقات</button>
                 <button type="button" class="view-toggle-btn" data-mode="table">جدول</button>
               </div>
+              <select id="prodSort" class="field">
+                <option value="name">ترتيب: الاسم</option>
+                <option value="stock">ترتيب: المخزون</option>
+                <option value="price">ترتيب: السعر</option>
+              </select>
               <button type="button" class="btn btn-secondary" id="btnExportProducts">تصدير CSV</button>
               <button type="button" class="btn btn-primary" id="btnNewProduct">+ منتج جديد</button>
               <button type="button" class="btn btn-primary" data-import-edari-all title="رفع كل مواد Edari دفعة واحدة بسعر نصف الجملة">📦 رفع كل المنتجات من الإداري</button>
@@ -550,6 +560,7 @@
           </div>
           <div class="form-card">
             <select id="payAcc"></select>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnPayFillDebt" title="ملء مبلغ الدين">الدين كاملاً</button>
             <input type="number" id="payAmt" placeholder="المبلغ">
             <input type="text" id="payNote" placeholder="ملاحظات">
             <button type="button" class="btn btn-primary" id="btnPay">تسجيل تسديد</button>
@@ -747,7 +758,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=30"></script>
-  <script src="premium.js?v=14"></script>
+  <script src="app.js?v=31"></script>
+  <script src="premium.js?v=15"></script>
 </body>
 </html>

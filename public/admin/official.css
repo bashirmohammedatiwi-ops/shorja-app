@@ -189,7 +189,8 @@ kbd {
 .clickable-row { cursor: pointer; }
 .clickable-row:hover { background: #f4f7fb; }
 
-.page-top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dash-updated { font-size: 0.72rem; color: var(--muted); margin: 0 0 8px; }
+.inv-meta-grid { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 12px; font-size: 0.82rem; }
 
 .header-jump input {
   height: 32px;
