@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=43">
-  <link rel="stylesheet" href="official.css?v=43">
+  <link rel="stylesheet" href="styles.css?v=44">
+  <link rel="stylesheet" href="official.css?v=44">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -19,13 +19,9 @@
           <h1>ديما الحياة</h1>
           <p>نقطة البيع — مسح · بيع · تسديد</p>
         </div>
-        <form id="loginForm" class="login-form" novalidate autocomplete="off">
-          <label>اسم المستخدم</label>
-          <input type="text" id="loginUser" class="login-latin" dir="ltr" lang="en" name="pos-user" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="branch">
-          <label>كلمة المرور</label>
-          <input type="password" id="loginPass" class="login-latin" dir="ltr" lang="en" name="pos-pass" autocomplete="new-password" spellcheck="false" value="branch123">
-          <button type="submit" class="btn btn-primary btn-block" id="btnPosLogin">دخول الكاشير</button>
-          <p class="login-hint">اضغط الدخول مباشرة — الحساب جاهز: branch / branch123</p>
+        <form id="loginForm" class="login-form" autocomplete="off" onsubmit="return false;">
+          <p class="login-hint" id="loginStatus">جاري فتح نقطة البيع...</p>
+          <button type="button" class="btn btn-primary btn-block" id="btnPosLogin">فتح نقطة البيع</button>
           <p class="login-error hidden" id="loginError"></p>
         </form>
       </div>
@@ -648,6 +644,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=43"></script>
+  <script src="app.js?v=44"></script>
 </body>
 </html>

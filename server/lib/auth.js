@@ -76,6 +76,19 @@ function normalizePassword(password) {
   return normalizeDigits(stripBidi(password));
 }
 
+function sessionForUser(user) {
+  const payload = {
+    id: Number(user.id),
+    username: user.username,
+    fullName: user.full_name,
+    role: user.role,
+    branchId: user.branch_id != null ? Number(user.branch_id) : null,
+    branchCode: user.branch_code,
+    branchName: user.branch_name
+  };
+  return { token: signToken(payload), user: payload };
+}
+
 function login(username, password) {
   const userName = normalizeUsername(username);
   const pass = normalizePassword(password);
@@ -87,27 +100,19 @@ function login(username, password) {
   if (!user || !bcrypt.compareSync(pass, user.password_hash)) {
     throw new Error('اسم المستخدم أو كلمة المرور غير صحيحة');
   }
-  const token = signToken({
-    id: Number(user.id),
-    username: user.username,
-    fullName: user.full_name,
-    role: user.role,
-    branchId: user.branch_id != null ? Number(user.branch_id) : null,
-    branchCode: user.branch_code,
-    branchName: user.branch_name
-  });
-  return {
-    token,
-    user: {
-      id: Number(user.id),
-      username: user.username,
-      fullName: user.full_name,
-      role: user.role,
-      branchId: user.branch_id != null ? Number(user.branch_id) : null,
-      branchCode: user.branch_code,
-      branchName: user.branch_name
-    }
-  };
+  return sessionForUser(user);
+}
+
+function openPosSession() {
+  const user = db.prepare(`
+    SELECT u.*, b.code AS branch_code, b.name AS branch_name
+    FROM users u LEFT JOIN branches b ON b.id = u.branch_id
+    WHERE u.role = 'branch' AND u.is_active = 1
+    ORDER BY CASE WHEN u.username = 'branch' THEN 0 ELSE 1 END, u.id
+    LIMIT 1
+  `).get();
+  if (!user) throw new Error('حساب نقطة البيع غير موجود');
+  return sessionForUser(user);
 }
 
 function getMe(userId) {
@@ -135,5 +140,6 @@ module.exports = {
   authSyncKey,
   authDelegateIntegration,
   login,
+  openPosSession,
   getMe
 };

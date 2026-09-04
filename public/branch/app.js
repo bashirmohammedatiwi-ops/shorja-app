@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '43';
+const APP_VERSION = '44';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -589,59 +589,48 @@ function clearBarcodeField() {
 }
 
 // ── Login ──
-const POS_USER = 'branch';
-const POS_PASS = 'branch123';
-
-function fillPosLogin() {
-  const userEl = document.getElementById('loginUser');
-  const passEl = document.getElementById('loginPass');
-  if (userEl) userEl.value = POS_USER;
-  if (passEl) passEl.value = POS_PASS;
-}
-
-async function loginToPos(username, password) {
+async function enterPos() {
   const errEl = document.getElementById('loginError');
+  const statusEl = document.getElementById('loginStatus');
   const btn = document.getElementById('btnPosLogin');
-  errEl.classList.add('hidden');
+  if (errEl) errEl.classList.add('hidden');
+  if (statusEl) statusEl.textContent = 'جاري فتح نقطة البيع...';
   if (btn) btn.disabled = true;
   try {
-    const data = await api('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({
-        username: username || POS_USER,
-        password: password || POS_PASS
-      })
-    });
+    let data;
+    try {
+      data = await api('/auth/pos-open', { method: 'POST' });
+    } catch {
+      data = await api('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username: 'branch', password: 'branch123' })
+      });
+    }
+    if (!data?.token || !data.user) throw new Error('تعذر فتح نقطة البيع');
     if (data.user.role !== 'branch' && data.user.role !== 'admin') {
-      throw new Error('حساب الفرع فقط — افتح تطبيق نقطة البيع وليس الإدارة');
+      throw new Error('افتح تطبيق نقطة البيع وليس الإدارة');
     }
     state.token = data.token;
     state.user = data.user;
     saveSession();
     showApp();
-    try {
-      await initApp();
-    } catch (bootErr) {
-      toast(bootErr.message || 'تعذر تحميل نقطة البيع', 'err');
-    }
+    await initApp();
   } catch (err) {
-    errEl.textContent = err.message === 'Failed to fetch'
-      ? 'لا يوجد اتصال بالسيرفر'
-      : (err.message || 'فشل تسجيل الدخول');
-    errEl.classList.remove('hidden');
-  } finally {
+    if (statusEl) statusEl.textContent = 'اضغط الزر لفتح نقطة البيع';
+    if (errEl) {
+      errEl.textContent = err.message === 'Failed to fetch'
+        ? 'لا يوجد اتصال بالسيرفر'
+        : (err.message || 'فشل فتح نقطة البيع');
+      errEl.classList.remove('hidden');
+    }
     if (btn) btn.disabled = false;
   }
 }
 
-fillPosLogin();
-setTimeout(fillPosLogin, 300);
-
-document.getElementById('loginForm').addEventListener('submit', async (e) => {
+document.getElementById('btnPosLogin')?.addEventListener('click', () => { enterPos(); });
+document.getElementById('loginForm')?.addEventListener('submit', (e) => {
   e.preventDefault();
-  const username = document.getElementById('loginUser').value.trim() || POS_USER;
-  const password = document.getElementById('loginPass').value.trim() || POS_PASS;
-  await loginToPos(username, password);
+  enterPos();
 });
 
 document.getElementById('btnLogout').addEventListener('click', () => {
@@ -1823,7 +1812,7 @@ async function submitIssue() {
       paymentMethod: 'issue',
       paidAmount: 0,
       notes
-    };
+    });
     const data = await api('/branch/invoices', { method: 'POST', body: JSON.stringify(payload) });
     toast(`✓ تم الإخراج — ${data.invoice.invoiceNo}`);
     state.lastInvoiceId = data.invoice.id;
@@ -1863,7 +1852,7 @@ async function submitReturnFromPos() {
     customerName: state.customer?.name || '',
     discount: state.discount,
     notes: state.returnParent ? `مرتجع عن ${state.returnParent.invoiceNo}` : ''
-  };
+  });
 
   try {
     if (confirmBtn) confirmBtn.disabled = true;
@@ -2041,7 +2030,7 @@ async function submitSale() {
       customerName: state.customer?.name || '',
       notes: document.getElementById('checkoutNotes').value || '',
       prepFromWarehouse: !!document.getElementById('prepFromWarehouse')?.checked
-    };
+    });
 
     const clearCart = () => {
       state.cart = [];
@@ -3178,11 +3167,14 @@ window.addEventListener('offline', () => {
 });
 
 loadSession();
-if (state.token) {
-  validateSession().then((ok) => {
+(async function bootPos() {
+  if (state.token) {
+    const ok = await validateSession();
     if (ok) {
       showApp();
-      initApp();
+      await initApp();
+      return;
     }
-  });
-}
+  }
+  await enterPos();
+})();

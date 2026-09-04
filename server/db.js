@@ -235,13 +235,15 @@ function initSchema() {
   }
 
   const branchUser = 'branch';
+  const branchPass = process.env.BRANCH_PASS || 'branch123';
+  const branchHash = bcrypt.hashSync(branchPass, 10);
   const existingBranchUser = db.prepare('SELECT id, branch_id FROM users WHERE username = ?').get(branchUser);
   if (!existingBranchUser) {
-    const hash = bcrypt.hashSync('branch123', 10);
     db.prepare('INSERT INTO users (username, password_hash, full_name, role, branch_id) VALUES (?, ?, ?, ?, ?)')
-      .run(branchUser, hash, 'كاشير الفرع', 'branch', branchId);
-  } else if (!existingBranchUser.branch_id) {
-    db.prepare('UPDATE users SET branch_id = ? WHERE username = ?').run(branchId, branchUser);
+      .run(branchUser, branchHash, 'كاشير الفرع', 'branch', branchId);
+  } else {
+    db.prepare('UPDATE users SET password_hash = ?, full_name = ?, role = ?, is_active = 1, branch_id = COALESCE(branch_id, ?) WHERE username = ?')
+      .run(branchHash, 'كاشير الفرع', 'branch', branchId, branchUser);
   }
 
   seedDemoProducts();

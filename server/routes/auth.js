@@ -1,5 +1,5 @@
 const express = require('express');
-const { login, authRequired, getMe } = require('../lib/auth');
+const { login, openPosSession, authRequired, getMe } = require('../lib/auth');
 
 const router = express.Router();
 
@@ -19,6 +19,15 @@ router.post('/login', (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     res.status(401).json({ ok: false, error: err.message });
+  }
+});
+
+router.post('/pos-open', (_req, res) => {
+  try {
+    const result = openPosSession();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(401).json({ ok: false, error: err.message || 'تعذر فتح نقطة البيع' });
   }
 });
 
