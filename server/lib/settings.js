@@ -8,7 +8,8 @@ const DEFAULTS = {
   blockOverStock: true,
   allowPriceEdit: true,
   receiptFooter: `شكراً لزيارتكم — ${STORE_NAME}`,
-  thermalPrint: false
+  thermalPrint: false,
+  scanSound: true
 };
 
 function key(branchId) {

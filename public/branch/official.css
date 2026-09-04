@@ -104,7 +104,44 @@
   min-width: 64px;
   padding: 4px 8px;
   border-radius: 6px;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
 }
+.btn-reprint-last {
+  background: rgba(201, 162, 39, 0.16);
+  color: #fde68a;
+  border: 1px solid rgba(201, 162, 39, 0.4);
+}
+.sync-status { cursor: pointer; }
+.dash-updated {
+  margin: 0 0 10px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.kpi-card.clickable { cursor: pointer; }
+.pay-amount-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.pay-amount-row .field { flex: 1; }
+.inv-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+}
+.account-card .acc-pay-btn { margin-top: 8px; width: 100%; }
+.stock-lookup-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.stock-name-hits {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+.stock-name-hits.hidden { display: none; }
 .topbar-stats .stat-pill .lbl { font-size: 0.56rem; }
 .topbar-stats .stat-pill strong { font-size: 0.8rem; }
 .topbar-stats .stat-pill.accent {

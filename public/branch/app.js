@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '34';
+const APP_VERSION = '35';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -17,7 +17,8 @@ const DEFAULT_SETTINGS = {
   blockOverStock: true,
   allowPriceEdit: true,
   receiptFooter: 'شكراً لزيارتكم — ديما الحياة',
-  thermalPrint: false
+  thermalPrint: false,
+  scanSound: true
 };
 
 const PAGE_TITLES = {
@@ -55,6 +56,8 @@ const state = {
   returnMode: false,
   activeAccount: null,
   lastInvoiceId: null,
+  lastScan: null,
+  pendingPayAccountId: null,
   settings: { ...DEFAULT_SETTINGS },
   viewCache: {},
   cartRenderQueued: false,
@@ -352,6 +355,7 @@ function flashScan() {
     bar.classList.add('scan-success');
     setTimeout(() => bar.classList.remove('scan-success'), 350);
   }
+  if (getSettings().scanSound === false) return;
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const o = ctx.createOscillator();
@@ -371,14 +375,20 @@ function newPosSession() {
 function showLastScan(product, qty = 1) {
   const el = document.getElementById('lastScanPreview');
   if (!el || !product) return;
+  state.lastScan = { barcode: product.barcode, name: product.name };
   el.innerHTML = `
     <span class="scan-check">✓</span>
     <div class="scan-info">
       <strong>${esc(product.name)}</strong>
     <span>باركود: ${esc(product.barcode)} · كمية: ${qty}${product.stockQty != null ? ` · مخزون ${fmt(product.stockQty)}` : ''}</span>
     </div>
-    <span class="scan-price" dir="ltr">${fmt(product.price)}</span>`;
+    <span class="scan-price" dir="ltr">${fmt(product.price)}</span>
+    <button type="button" class="btn btn-sm btn-secondary" id="btnLastScanAgain" title="إضافة وحدة أخرى">+1</button>`;
   el.classList.remove('hidden');
+  document.getElementById('btnLastScanAgain')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (state.lastScan?.barcode) addToCart(state.lastScan.barcode, 1);
+  });
 }
 
 function setPosMode(active) {
@@ -442,7 +452,21 @@ function showApp() {
   document.getElementById('branchBadge').textContent = state.user?.branchName || 'الفرع';
   const cashier = document.getElementById('cashierBadge');
   if (cashier) cashier.textContent = state.user?.fullName || state.user?.username || '';
+  updateReprintHeader();
   focusBarcode();
+}
+
+function updateReprintHeader() {
+  const btn = document.getElementById('btnReprintLastHeader');
+  if (!btn) return;
+  btn.classList.toggle('hidden', !state.lastInvoiceId);
+}
+
+function gotoView(view, invType = '') {
+  const nav = invType
+    ? document.querySelector(`.nav-item[data-view="${view}"][data-inv-type="${invType}"]`)
+    : document.querySelector(`.nav-item[data-view="${view}"]:not([data-inv-type])`) || document.querySelector(`[data-view="${view}"]`);
+  nav?.click();
 }
 
 function focusBarcode() {
@@ -495,7 +519,10 @@ document.getElementById('mainNav').addEventListener('click', (e) => {
   if (el) el.classList.remove('hidden');
   setPosMode(view === 'pos');
   setPageTitle(view);
-  if (view === 'pos' && invType) setInvoiceType(invType, { force: true });
+  if (view === 'pos') {
+    if (invType) setInvoiceType(invType, { force: true });
+    else if (state.invoiceType !== 'sale') setInvoiceType('sale');
+  }
   const loaders = {
     pos: () => focusBarcode(),
     dashboard: loadDashboard,
@@ -519,12 +546,32 @@ document.getElementById('invoiceTypeTabs')?.addEventListener('click', (e) => {
 document.getElementById('dashboardActions')?.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-goto]');
   if (!btn) return;
-  const goto = btn.dataset.goto;
-  const invType = btn.dataset.invType;
-  const nav = invType
-    ? document.querySelector(`.nav-item[data-view="${goto}"][data-inv-type="${invType}"]`)
-    : document.querySelector(`.nav-item[data-view="${goto}"]:not([data-inv-type])`) || document.querySelector(`[data-view="${goto}"]`);
-  if (nav) nav.click();
+  gotoView(btn.dataset.goto, btn.dataset.invType || '');
+});
+
+document.getElementById('headerStats')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-goto]');
+  if (!btn) return;
+  gotoView(btn.dataset.goto);
+});
+
+document.getElementById('dashboardKpis')?.addEventListener('click', (e) => {
+  const card = e.target.closest('[data-goto]');
+  if (!card) return;
+  gotoView(card.dataset.goto, card.dataset.invType || '');
+});
+
+document.getElementById('syncPill')?.addEventListener('click', async () => {
+  if (!getOutbox().length) {
+    toast(state.online ? 'لا توجد فواتير بانتظار الرفع' : 'الجهاز غير متصل');
+    return;
+  }
+  await flushOutbox();
+  toast('تم محاولة رفع الفواتير المعلّقة');
+});
+
+document.getElementById('btnReprintLastHeader')?.addEventListener('click', () => {
+  if (state.lastInvoiceId) printInvoice(state.lastInvoiceId);
 });
 
 // ── Products (cache for barcode + search) ──
@@ -1368,14 +1415,29 @@ document.addEventListener('keydown', (e) => {
     document.getElementById('keyboardHelpModal')?.showModal();
     return;
   }
+  if (e.key === 'F1') {
+    e.preventDefault();
+    gotoView('dashboard');
+    return;
+  }
   if (e.key === 'F4') {
     e.preventDefault();
-    document.querySelector('.nav-item[data-view="invoices"]')?.click();
+    gotoView('invoices');
+    return;
+  }
+  if (e.key === 'F5') {
+    e.preventDefault();
+    gotoView('stock');
     return;
   }
   if (e.key === 'F7') {
     e.preventDefault();
-    document.querySelector('.nav-item[data-view="payments"]')?.click();
+    gotoView('payments');
+    return;
+  }
+  if (e.key === 'F10') {
+    e.preventDefault();
+    gotoView('reports');
     return;
   }
   const posVisible = !document.getElementById('viewPos').classList.contains('hidden');
@@ -1525,6 +1587,26 @@ document.getElementById('btnConfirmSale')?.addEventListener('click', () => {
   submitSale().catch((err) => toast(err.message || 'فشل إتمام البيع', 'err'));
 });
 
+function checkoutGrand() {
+  return Math.max(0, state.cart.reduce((s, l) => s + l.lineTotal, 0) - state.discount);
+}
+
+document.getElementById('btnPaidHalf')?.addEventListener('click', () => {
+  document.getElementById('paidNow').value = Math.round(checkoutGrand() / 2) || 0;
+});
+document.getElementById('btnPaidAll')?.addEventListener('click', () => {
+  document.getElementById('paidNow').value = checkoutGrand();
+});
+
+document.getElementById('checkoutModal')?.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const tag = e.target.tagName;
+  if (tag === 'TEXTAREA') return;
+  if (e.target.id === 'checkoutNotes') return;
+  e.preventDefault();
+  document.getElementById('btnConfirmSale')?.click();
+});
+
 function printHtml(html) {
   const clean = String(html)
     .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -1590,6 +1672,7 @@ async function submitIssue() {
     toast(`✓ تم الإخراج — ${data.invoice.invoiceNo}`);
     state.lastInvoiceId = data.invoice.id;
     localStorage.setItem(LAST_INV_KEY, String(data.invoice.id));
+    updateReprintHeader();
     state.cart = [];
     document.getElementById('issueReason').value = '';
     newPosSession();
@@ -1653,6 +1736,7 @@ async function submitReturnFromPos() {
     toast(`✓ تم المرتجع — ${data.invoice.invoiceNo}${state.customer ? ' · خُصم من الدين' : ''}`);
     state.lastInvoiceId = data.invoice.id;
     localStorage.setItem(LAST_INV_KEY, String(data.invoice.id));
+    updateReprintHeader();
     setInvoiceType('return', { force: true });
     printInvoice(data.invoice.id);
     loadTodaySummary();
@@ -1832,6 +1916,7 @@ async function submitSale() {
       }
       state.lastInvoiceId = data.invoice.id;
       localStorage.setItem(LAST_INV_KEY, String(data.invoice.id));
+      updateReprintHeader();
       document.getElementById('checkoutModal').close();
       clearCart();
       printInvoice(data.invoice.id);
@@ -1916,16 +2001,18 @@ async function loadDashboard() {
     const s = sumData.summary;
     const r = repData.report || {};
     document.getElementById('dashboardKpis').innerHTML = `
-      <div class="kpi-card"><div class="kpi-lbl">فواتير البيع</div><div class="kpi-val">${s.salesCount}</div></div>
-      <div class="kpi-card"><div class="kpi-lbl">إجمالي المبيعات</div><div class="kpi-val" dir="ltr">${fmt(s.salesAmount)}</div></div>
-      <div class="kpi-card danger"><div class="kpi-lbl">المرتجعات</div><div class="kpi-val" dir="ltr">${fmt(s.returnsAmount)}</div></div>
-      <div class="kpi-card highlight"><div class="kpi-lbl">صافي اليوم</div><div class="kpi-val" dir="ltr">${fmt(s.netSales)}</div></div>
-      <div class="kpi-card"><div class="kpi-lbl">نقدي محصّل</div><div class="kpi-val" dir="ltr">${fmt(s.paidAmount)}</div></div>
-      <div class="kpi-card"><div class="kpi-lbl">آجل / دين جديد</div><div class="kpi-val" dir="ltr">${fmt(s.dueAmount)}</div></div>
+      <div class="kpi-card clickable" data-goto="invoices"><div class="kpi-lbl">فواتير البيع</div><div class="kpi-val">${s.salesCount}</div></div>
+      <div class="kpi-card clickable" data-goto="invoices"><div class="kpi-lbl">إجمالي المبيعات</div><div class="kpi-val" dir="ltr">${fmt(s.salesAmount)}</div></div>
+      <div class="kpi-card danger clickable" data-goto="pos" data-inv-type="return"><div class="kpi-lbl">المرتجعات</div><div class="kpi-val" dir="ltr">${fmt(s.returnsAmount)}</div></div>
+      <div class="kpi-card highlight clickable" data-goto="reports"><div class="kpi-lbl">صافي اليوم</div><div class="kpi-val" dir="ltr">${fmt(s.netSales)}</div></div>
+      <div class="kpi-card clickable" data-goto="payments"><div class="kpi-lbl">نقدي محصّل</div><div class="kpi-val" dir="ltr">${fmt(s.paidAmount)}</div></div>
+      <div class="kpi-card clickable" data-goto="accounts"><div class="kpi-lbl">آجل / دين جديد</div><div class="kpi-val" dir="ltr">${fmt(s.dueAmount)}</div></div>
       <div class="kpi-card"><div class="kpi-lbl">متوسط الفاتورة</div><div class="kpi-val" dir="ltr">${fmt(s.salesCount ? s.salesAmount / s.salesCount : 0)}</div></div>
-      <div class="kpi-card"><div class="kpi-lbl">فواتير معلّقة</div><div class="kpi-val">${getHeld().length}</div></div>
-      <div class="kpi-card"><div class="kpi-lbl">مخزون منخفض</div><div class="kpi-val">${document.getElementById('stockBadge')?.textContent || '—'}</div></div>
+      <div class="kpi-card clickable" data-goto="held"><div class="kpi-lbl">فواتير معلّقة</div><div class="kpi-val">${getHeld().length}</div></div>
+      <div class="kpi-card clickable" data-goto="stock"><div class="kpi-lbl">مخزون منخفض</div><div class="kpi-val">${document.getElementById('stockBadge')?.textContent || '—'}</div></div>
       <div class="kpi-card"><div class="kpi-lbl">بانتظار الرفع</div><div class="kpi-val">${getOutbox().length}</div></div>`;
+    const stamp = document.getElementById('dashUpdated');
+    if (stamp) stamp.textContent = `آخر تحديث ${new Date().toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })}`;
     document.getElementById('dashboardDetail').innerHTML = `
       <div class="dash-row"><span>تاريخ</span><strong>${esc(s.date)}</strong></div>
       <div class="dash-row"><span>عدد المرتجعات</span><strong>${s.returnsCount}</strong></div>
@@ -2117,7 +2204,7 @@ function renderStockProductDetail(product) {
     </article>`;
   document.getElementById('btnStockAddToCart')?.addEventListener('click', async () => {
     await addToCart(product.barcode, 1);
-    document.querySelector('[data-view="pos"]')?.click();
+    gotoView('pos');
   });
   document.getElementById('btnStockRefresh')?.addEventListener('click', () => lookupStockProduct(product.barcode, true));
 }
@@ -2178,9 +2265,40 @@ function bindStockFilters() {
   document.getElementById('btnStockClear')?.addEventListener('click', () => {
     stockState.lastProduct = null;
     if (input) input.value = '';
+    const name = document.getElementById('stockNameSearch');
+    if (name) name.value = '';
     renderStockProductDetail(null);
     input?.focus();
   });
+
+  document.getElementById('stockNameSearch')?.addEventListener('input', debounce((e) => {
+    const q = String(e.target.value || '').trim().toLowerCase();
+    const hitsEl = document.getElementById('stockNameHits');
+    if (!hitsEl) return;
+    if (q.length < 2) {
+      hitsEl.classList.add('hidden');
+      hitsEl.innerHTML = '';
+      return;
+    }
+    const hits = allProducts().filter((p) =>
+      String(p.name || '').toLowerCase().includes(q) || String(p.barcode || '').includes(q)
+    ).slice(0, 12);
+    hitsEl.classList.remove('hidden');
+    hitsEl.innerHTML = hits.length
+      ? hits.map((p) => `
+        <button type="button" class="stock-recent-item" data-barcode="${esc(p.barcode)}">
+          <strong>${esc(p.name)}</strong>
+          <small dir="ltr">${esc(p.barcode)} · ${fmt(p.stockQty)}</small>
+        </button>`).join('')
+      : '<p class="hint">لا توجد نتائج</p>';
+    hitsEl.querySelectorAll('[data-barcode]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (input) input.value = btn.dataset.barcode;
+        hitsEl.classList.add('hidden');
+        lookupStockProduct(btn.dataset.barcode);
+      });
+    });
+  }, 220));
 }
 
 bindStockFilters();
@@ -2272,8 +2390,21 @@ document.getElementById('reportPresetChips')?.addEventListener('click', (e) => {
 });
 document.getElementById('btnPrintReport')?.addEventListener('click', () => {
   const el = document.getElementById('reportBody');
+  const from = document.getElementById('reportFrom')?.value || '';
+  const to = document.getElementById('reportTo')?.value || '';
   const w = window.open('', '_blank');
-  w.document.write(`<html dir="rtl"><head><meta charset="utf-8"><title>تقرير</title></head><body>${el.innerHTML}</body></html>`);
+  w.document.write(`<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>تقرير الفرع</title>
+    <style>
+      body{font-family:Tahoma,sans-serif;padding:24px;color:#0f172a}
+      h1{font-size:1.1rem} table{width:100%;border-collapse:collapse;margin-top:12px}
+      th,td{border:1px solid #ddd;padding:6px 8px;text-align:right;font-size:0.85rem}
+      .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
+      .kpi-card{border:1px solid #ddd;padding:10px;border-radius:8px}
+      .kpi-val{font-size:1.2rem;font-weight:800}
+    </style></head><body>
+    <h1>ديما الحياة — تقرير الفرع</h1>
+    <p>${esc(from)} إلى ${esc(to)}</p>
+    ${el.innerHTML}</body></html>`);
   w.document.close();
   w.print();
 });
@@ -2284,7 +2415,8 @@ function loadSettingsView() {
   document.getElementById('setBlockZero').checked = !!s.blockZeroStock;
   document.getElementById('setBlockOver').checked = s.blockOverStock !== false;
   document.getElementById('setAllowPrice').checked = s.allowPriceEdit !== false;
-  document.getElementById('setThermal').checked = s.thermalPrint !== false;
+  document.getElementById('setScanSound') && (document.getElementById('setScanSound').checked = s.scanSound !== false);
+  document.getElementById('setThermal').checked = !!s.thermalPrint;
   document.getElementById('setReceiptFooter').value = s.receiptFooter || '';
   const verEl = document.getElementById('setAppVersion');
   const priceEl = document.getElementById('setPriceVersion');
@@ -2302,6 +2434,7 @@ document.getElementById('btnSaveSettings')?.addEventListener('click', async () =
     blockZeroStock: document.getElementById('setBlockZero').checked,
     blockOverStock: document.getElementById('setBlockOver').checked,
     allowPriceEdit: document.getElementById('setAllowPrice').checked,
+    scanSound: document.getElementById('setScanSound')?.checked !== false,
     thermalPrint: document.getElementById('setThermal').checked,
     receiptFooter: document.getElementById('setReceiptFooter').value || ''
   };
@@ -2346,7 +2479,7 @@ function renderInvoiceList(el, invs, { returnMode = false } = {}) {
   el.innerHTML = `
     <table class="data-table invoices-table">
       <thead><tr>
-        <th>الوقت</th><th>الرقم</th><th>النوع</th><th>العميل</th><th>الدفع</th><th>الإجمالي</th>
+        <th>الوقت</th><th>الرقم</th><th>النوع</th><th>العميل</th><th>الدفع</th><th>المدفوع</th><th>الإجمالي</th>
       </tr></thead>
       <tbody>${invs.map((i) => `
         <tr class="click-row${i.kind === 'return' ? ' kind-return' : i.kind === 'issue' ? ' kind-issue' : ''}" data-id="${i.id}">
@@ -2355,6 +2488,7 @@ function renderInvoiceList(el, invs, { returnMode = false } = {}) {
           <td><span class="kind-badge ${kindBadgeClass(i.kind)}">${kindLabel(i.kind)}</span></td>
           <td>${esc(i.customerName || (i.kind === 'issue' ? '—' : 'نقدي'))}</td>
           <td>${payLabel(i.paymentMethod, i)}</td>
+          <td dir="ltr">${i.kind === 'issue' ? '—' : fmt(i.paidAmount)}</td>
           <td dir="ltr" class="inv-amt ${i.kind === 'return' ? 'neg' : ''}">${i.kind === 'issue' ? '—' : fmt(i.total)}</td>
         </tr>`).join('')}
       </tbody>
@@ -2396,6 +2530,19 @@ document.getElementById('invoiceFrom')?.addEventListener('change', loadInvoices)
 document.getElementById('invoiceTo')?.addEventListener('change', loadInvoices);
 document.getElementById('invoiceKind')?.addEventListener('change', loadInvoices);
 document.getElementById('invoicePayment')?.addEventListener('change', loadInvoices);
+document.getElementById('btnResetInvFilters')?.addEventListener('click', () => {
+  const [from, to] = rangeForPreset('today');
+  const search = document.getElementById('invoiceSearch');
+  if (search) search.value = '';
+  if (document.getElementById('invoiceFrom')) document.getElementById('invoiceFrom').value = from;
+  if (document.getElementById('invoiceTo')) document.getElementById('invoiceTo').value = to;
+  if (document.getElementById('invoiceKind')) document.getElementById('invoiceKind').value = '';
+  if (document.getElementById('invoicePayment')) document.getElementById('invoicePayment').value = '';
+  document.getElementById('invPresetChips')?.querySelectorAll('.filter-chip').forEach((c) => {
+    c.classList.toggle('active', c.dataset.invRange === 'today');
+  });
+  loadInvoices();
+});
 document.getElementById('invPresetChips')?.addEventListener('click', (e) => {
   const chip = e.target.closest('[data-inv-range]');
   if (!chip) return;
@@ -2416,11 +2563,12 @@ async function openInvoiceModal(id, returnMode = false) {
     document.getElementById('invoiceModalTitle').textContent =
       returnMode ? `مرتجع — ${inv.invoiceNo}` : inv.invoiceNo;
     document.getElementById('invoiceModalBody').innerHTML = `
-      <div class="inv-detail-meta">
+      <div class="inv-detail-meta inv-meta-grid">
         <div><b>العميل:</b> ${esc(inv.customerName || 'نقدي')}</div>
-        <div><b>التاريخ:</b> ${esc(inv.invoiceDate)} · <b>الوقت:</b> ${esc((inv.createdAt || '').slice(11, 16) || '—')} · <b>النوع:</b> ${kindLabel(inv.kind)}</div>
-        <div><b>طريقة الدفع:</b> ${payLabel(inv.paymentMethod, inv)}</div>
-        <div><b>الصافي:</b> <strong dir="ltr">${fmt(inv.total)}</strong></div>
+        <div><b>التاريخ:</b> ${esc(inv.invoiceDate)} · <b>الوقت:</b> ${esc((inv.createdAt || '').slice(11, 16) || '—')}</div>
+        <div><b>النوع:</b> ${kindLabel(inv.kind)} · <b>الدفع:</b> ${payLabel(inv.paymentMethod, inv)}</div>
+        <div><b>الصافي:</b> <strong dir="ltr">${fmt(inv.total)}</strong>${inv.kind !== 'issue' ? ` · <b>مدفوع:</b> <span dir="ltr">${fmt(inv.paidAmount)}</span> · <b>متبقي:</b> <span dir="ltr">${fmt(inv.dueAmount)}</span>` : ''}</div>
+        ${inv.cashierName || inv.createdByName ? `<div><b>الكاشير:</b> ${esc(inv.cashierName || inv.createdByName)}</div>` : ''}
         ${inv.notes ? `<div><b>ملاحظات:</b> ${esc(inv.notes)}</div>` : ''}
       </div>
       <table class="inv-detail-table">
@@ -2559,10 +2707,20 @@ async function loadAccounts() {
         <div class="name">${esc(a.name)}</div>
         <div class="code">${esc(a.code)}${a.phone ? ` · ${esc(a.phone)}` : ''}</div>
         <div class="debt" dir="ltr">${fmt(a.balance)}</div>
+        ${Number(a.balance) > 0 ? `<button type="button" class="btn btn-sm btn-secondary acc-pay-btn" data-pay="${a.id}">تسديد</button>` : ''}
       </div>
     `).join('') : emptyState('لا توجد حسابات', 'أضف حساباً من النموذج أو ألغِ فلتر المدينين');
     grid.querySelectorAll('.account-card').forEach((card) => {
-      card.addEventListener('click', () => openAccountModal(Number(card.dataset.id)));
+      card.addEventListener('click', (e) => {
+        const payBtn = e.target.closest('[data-pay]');
+        if (payBtn) {
+          e.stopPropagation();
+          state.pendingPayAccountId = Number(payBtn.dataset.pay);
+          gotoView('payments');
+          return;
+        }
+        openAccountModal(Number(card.dataset.id));
+      });
     });
   } catch { toast('تعذّر تحميل الحسابات', 'err'); }
 }
@@ -2606,11 +2764,8 @@ async function openAccountModal(id) {
 document.getElementById('btnPayFromAccount').addEventListener('click', () => {
   if (!state.activeAccount) return;
   document.getElementById('accountModal').close();
-  document.querySelector('[data-view="payments"]').click();
-  setTimeout(() => {
-    document.getElementById('payAccount').value = state.activeAccount.id;
-    document.getElementById('payAmount').focus();
-  }, 200);
+  state.pendingPayAccountId = state.activeAccount.id;
+  gotoView('payments');
 });
 
 document.getElementById('accountSearch').addEventListener('input', () => {
@@ -2630,6 +2785,26 @@ document.getElementById('btnClearHeld')?.addEventListener('click', () => {
   toast('تم تفريغ المعلّق');
 });
 
+function updatePayBalanceHint() {
+  const sel = document.getElementById('payAccount');
+  const hint = document.getElementById('payBalanceHint');
+  if (!sel || !hint) return;
+  const opt = sel.selectedOptions[0];
+  const bal = Number(opt?.dataset.balance || 0);
+  hint.textContent = opt ? `الدين الحالي: ${fmt(bal)}` : 'اختر حساباً لعرض الدين';
+}
+
+function fillPayDebt() {
+  const sel = document.getElementById('payAccount');
+  const opt = sel?.selectedOptions[0];
+  const bal = Number(opt?.dataset.balance || 0);
+  if (bal <= 0) { toast('لا يوجد دين على هذا الحساب', 'warn'); return; }
+  document.getElementById('payAmount').value = bal;
+}
+
+document.getElementById('payAccount')?.addEventListener('change', updatePayBalanceHint);
+document.getElementById('btnPayFillDebt')?.addEventListener('click', fillPayDebt);
+
 // ── Payments ──
 async function loadPaymentsView() {
   try {
@@ -2640,8 +2815,17 @@ async function loadPaymentsView() {
     const sel = document.getElementById('payAccount');
     const accounts = (accData.accounts || []).sort((a, b) => b.balance - a.balance);
     sel.innerHTML = accounts.map((a) =>
-      `<option value="${a.id}">${esc(a.name)} — دين: ${fmt(a.balance)}</option>`
+      `<option value="${a.id}" data-balance="${Number(a.balance) || 0}">${esc(a.name)} — دين: ${fmt(a.balance)}</option>`
     ).join('');
+    if (state.pendingPayAccountId) {
+      sel.value = String(state.pendingPayAccountId);
+      state.pendingPayAccountId = null;
+      updatePayBalanceHint();
+      fillPayDebt();
+      document.getElementById('payAmount')?.focus();
+    } else {
+      updatePayBalanceHint();
+    }
     const pays = payData.payments || [];
     const q = (document.getElementById('paySearch')?.value || '').trim().toLowerCase();
     const filtered = q
@@ -2652,11 +2836,12 @@ async function loadPaymentsView() {
       <div class="pay-summary">إجمالي المعروض: <strong dir="ltr">${fmt(todayTotal)}</strong> (${filtered.length})</div>
       ${filtered.length ? `
       <table class="data-table">
-        <thead><tr><th>الرقم</th><th>الحساب</th><th>المبلغ</th><th>التاريخ</th></tr></thead>
+        <thead><tr><th>الرقم</th><th>الحساب</th><th>الطريقة</th><th>المبلغ</th><th>التاريخ</th></tr></thead>
         <tbody>${filtered.map((p) => `
           <tr>
             <td>${esc(p.paymentNo)}</td>
             <td>${esc(p.accountName)}</td>
+            <td>${esc(p.method === 'transfer' ? 'تحويل' : p.method === 'check' ? 'شيك' : 'نقدي')}</td>
             <td dir="ltr">${fmt(p.amount)}</td>
             <td>${esc(p.paymentDate)}</td>
           </tr>`).join('')}
@@ -2753,6 +2938,7 @@ async function initApp() {
     updateReturnCustomerHint();
   });
   window._setCustomerAccounts = (list) => { customerAccounts = list; };
+  updateReprintHeader();
   await loadSettings();
   await loadProducts();
   updateCachedProductCount();
