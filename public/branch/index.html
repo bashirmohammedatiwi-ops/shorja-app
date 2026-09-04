@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=41">
-  <link rel="stylesheet" href="official.css?v=41">
+  <link rel="stylesheet" href="styles.css?v=42">
+  <link rel="stylesheet" href="official.css?v=42">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -21,10 +21,11 @@
         </div>
         <form id="loginForm" class="login-form">
           <label>اسم المستخدم</label>
-          <input type="text" id="loginUser" autocomplete="username" placeholder="اسم المستخدم" required>
+          <input type="text" id="loginUser" class="login-latin" dir="ltr" lang="en" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="branch" required>
           <label>كلمة المرور</label>
-          <input type="password" id="loginPass" autocomplete="current-password" placeholder="••••••••" required>
+          <input type="password" id="loginPass" class="login-latin" dir="ltr" lang="en" autocomplete="current-password" spellcheck="false" placeholder="branch123" required>
           <button type="submit" class="btn btn-primary btn-block">دخول إلى نقطة البيع</button>
+          <p class="login-hint">اكتب بالإنجليزية: branch / branch123</p>
           <p class="login-error hidden" id="loginError"></p>
         </form>
       </div>
@@ -647,6 +648,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=41"></script>
+  <script src="app.js?v=42"></script>
 </body>
 </html>

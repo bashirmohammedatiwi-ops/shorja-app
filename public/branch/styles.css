@@ -152,6 +152,22 @@ body {
   transition: border 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
+.login-form input.login-latin,
+.login-latin {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+  letter-spacing: 0.04em;
+}
+
+.login-hint {
+  margin: 12px 0 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .login-form input:focus {
   outline: none;
   border-color: var(--primary);

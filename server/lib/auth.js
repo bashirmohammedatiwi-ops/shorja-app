@@ -50,13 +50,41 @@ function authDelegateIntegration(req, res, next) {
   return res.status(403).json({ ok: false, error: 'مفتاح التكامل غير صحيح' });
 }
 
+function stripBidi(value) {
+  return String(value || '')
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g, '')
+    .replace(/[\u00A0\u202F]/g, ' ')
+    .trim();
+}
+
+function normalizeDigits(value) {
+  return String(value || '').replace(/[٠-٩۰-۹]/g, (ch) => {
+    const arabic = '٠١٢٣٤٥٦٧٨٩';
+    const persian = '۰۱۲۳۴۵۶۷۸۹';
+    const i = arabic.indexOf(ch);
+    if (i >= 0) return String(i);
+    const j = persian.indexOf(ch);
+    return j >= 0 ? String(j) : ch;
+  });
+}
+
+function normalizeUsername(username) {
+  return stripBidi(username).toLowerCase();
+}
+
+function normalizePassword(password) {
+  return normalizeDigits(stripBidi(password));
+}
+
 function login(username, password) {
+  const userName = normalizeUsername(username);
+  const pass = normalizePassword(password);
   const user = db.prepare(`
     SELECT u.*, b.code AS branch_code, b.name AS branch_name
     FROM users u LEFT JOIN branches b ON b.id = u.branch_id
-    WHERE u.username = ? AND u.is_active = 1
-  `).get(username);
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+    WHERE lower(u.username) = ? AND u.is_active = 1
+  `).get(userName);
+  if (!user || !bcrypt.compareSync(pass, user.password_hash)) {
     throw new Error('اسم المستخدم أو كلمة المرور غير صحيحة');
   }
   const token = signToken({

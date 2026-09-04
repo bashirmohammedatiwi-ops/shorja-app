@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '41';
+const APP_VERSION = '42';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -597,8 +597,8 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     const data = await api('/auth/login', {
       method: 'POST',
       body: JSON.stringify({
-        username: document.getElementById('loginUser').value,
-        password: document.getElementById('loginPass').value
+        username: document.getElementById('loginUser').value.trim(),
+        password: document.getElementById('loginPass').value.trim()
       })
     });
     if (data.user.role !== 'branch' && data.user.role !== 'admin') {
