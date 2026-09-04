@@ -7,6 +7,7 @@ const { checkPriceUpdate, applyPricePackage } = require('../lib/prices');
 const { invoicePrintHtml } = require('../lib/export');
 const { getBranchSettings, saveBranchSettings } = require('../lib/settings');
 const { getDataRevision } = require('../lib/data-revision');
+const { localStamp } = require('../lib/datetime');
 const db = require('../db');
 
 const router = express.Router();
@@ -217,7 +218,7 @@ router.post('/payments', (req, res) => {
 });
 
 router.get('/payments', (req, res) => {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localStamp().date;
   res.json({
     ok: true,
     payments: listPayments({

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { STORE_NAME } = require('./config');
+const { formatEnglishDateTime } = require('./datetime');
 
 let cachedLogoUri = null;
 function logoDataUri() {
@@ -39,6 +40,22 @@ function payLabel(method) {
   return 'نقدي';
 }
 
+function isAccountCustomer(invoice) {
+  if (!invoice || invoice.kind === 'issue') return false;
+  if (invoice.accountId) return true;
+  return invoice.paymentMethod === 'credit' || invoice.paymentMethod === 'partial';
+}
+
+function invoicePageFoot() {
+  return `
+    <footer class="page-foot">
+      <div class="page-foot-row">
+        <span>مدير مبيعات الجملة <b dir="ltr">07828630399</b></span>
+        <span>محل الشورجة <b dir="ltr">07707683512</b></span>
+      </div>
+    </footer>`;
+}
+
 function invoiceFooterContacts() {
   return `
       <div class="contacts">
@@ -54,17 +71,7 @@ function invoiceDocMeta(invoice) {
 }
 
 function formatReceiptDateTime(invoice) {
-  const date = invoice.invoiceDate || '';
-  let time = '';
-  if (invoice.createdAt) {
-    try {
-      const d = new Date(invoice.createdAt);
-      if (!Number.isNaN(d.getTime())) {
-        time = d.toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' });
-      }
-    } catch { /* ignore */ }
-  }
-  return time ? `${date} · ${time}` : date;
+  return formatEnglishDateTime(invoice);
 }
 
 function receiptSummary(invoice) {
@@ -133,19 +140,24 @@ function a4TotalsPanel(invoice, accent, debtInfo) {
   if (Number(invoice.paidAmount)) {
     html += `<div class="tot-line paid"><span>المدفوع</span><b dir="ltr">${fmt(invoice.paidAmount)}</b></div>`;
   }
-  if (debtInfo && (debtInfo.previousDebt > 0 || debtInfo.invoiceDue > 0)) {
-    html += `<div class="tot-sep">حساب العميل</div>`;
-    if (debtInfo.previousDebt > 0) {
-      html += `<div class="tot-line debt-prev"><span>دين سابق على الحساب</span><b dir="ltr">${fmt(debtInfo.previousDebt)}</b></div>`;
-    }
-    if (debtInfo.invoiceDue > 0) {
-      html += `<div class="tot-line due"><span>دين هذه الفاتورة</span><b dir="ltr">${fmt(debtInfo.invoiceDue)}</b></div>`;
-      if (debtInfo.totalDebt > 0) {
-        html += `<div class="tot-line debt-total"><span>إجمالي الدين على الحساب</span><b dir="ltr">${fmt(debtInfo.totalDebt)}</b></div>`;
+  if (isAccountCustomer(invoice)) {
+    const prev = Number(debtInfo?.previousDebt || 0);
+    const due = Number(debtInfo?.invoiceDue || invoice.dueAmount || 0);
+    const total = Number(debtInfo?.totalDebt || 0);
+    if (prev > 0 || due > 0) {
+      html += `<div class="tot-sep">حساب العميل</div>`;
+      if (prev > 0) {
+        html += `<div class="tot-line debt-prev"><span>ديون سابقة</span><b dir="ltr">${fmtMoney(prev)}</b></div>`;
+      }
+      if (due > 0) {
+        html += `<div class="tot-line due"><span>دين هذه الفاتورة</span><b dir="ltr">${fmtMoney(due)}</b></div>`;
+      }
+      if (total > 0 && prev > 0) {
+        html += `<div class="tot-line debt-total"><span>إجمالي الدين</span><b dir="ltr">${fmtMoney(total)}</b></div>`;
       }
     }
   } else if (Number(invoice.dueAmount)) {
-    html += `<div class="tot-line due"><span>المتبقي</span><b dir="ltr">${fmt(invoice.dueAmount)}</b></div>`;
+    html += `<div class="tot-line due"><span>المتبقي</span><b dir="ltr">${fmtMoney(invoice.dueAmount)}</b></div>`;
   }
   return html;
 }
@@ -164,6 +176,66 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   const showGifts = !isIssue && giftTotal > 0;
   const showMoney = !isIssue;
   const nameWidth = showMoney ? (showGifts ? '46%' : '54%') : '72%';
+  const sheet = (copyLabel) => `
+  <section class="sheet">
+    <div class="copy-badge">${esc(copyLabel)}</div>
+    <header class="hdr">
+      <div class="hdr-brand">
+        ${logoMarkup('logo-img')}
+        <div class="hdr-store">
+          <h1>${esc(STORE_NAME)}</h1>
+          <p>${esc(branchName || 'نقطة البيع')} · ${summary.lineCount} صنف · ${soldTotal} قطعة${giftTotal ? ` · ${giftTotal} هدية` : ''}</p>
+        </div>
+      </div>
+      <div class="hdr-doc">
+        <span class="type">${title}</span>
+        <span class="no">${esc(invoice.invoiceNo)}</span>
+      </div>
+    </header>
+    <div class="info">
+      <div class="info-cell">
+        <span class="k">التاريخ والوقت</span>
+        <span class="v ltr">${esc(dateTime)}</span>
+      </div>
+      <div class="info-cell">
+        <span class="k">العميل</span>
+        <span class="v">${esc(customer)}</span>
+      </div>
+      <div class="info-cell">
+        <span class="k">${isIssue ? 'النوع' : 'طريقة الدفع'}</span>
+        <span class="v">${esc(isIssue ? title : payLabel(invoice.paymentMethod))}</span>
+      </div>
+    </div>
+    <table class="tbl">
+      <colgroup>
+        <col style="width:6%">
+        <col style="width:${nameWidth}">
+        <col style="width:10%">
+        ${showGifts ? '<col style="width:10%">' : ''}
+        ${showMoney ? '<col style="width:14%"><col style="width:16%">' : ''}
+      </colgroup>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th class="th-name">المنتج</th>
+          <th>الكمية</th>
+          ${showGifts ? '<th>هدايا</th>' : ''}
+          ${showMoney ? '<th>السعر</th><th>الإجمالي</th>' : ''}
+        </tr>
+      </thead>
+      <tbody>${a4LineItems(invoice, { showGifts, showMoney })}</tbody>
+    </table>
+    <div class="bottom">
+      <div class="side">
+        ${invoice.notes ? `<div class="notes"><div class="k">ملاحظات</div><div class="v">${esc(invoice.notes)}</div></div>` : ''}
+      </div>
+      ${showMoney ? `<div class="totals">
+        <div class="tot-head">ملخص المبالغ</div>
+        <div class="tot-body">${a4TotalsPanel(invoice, null, debtInfo)}</div>
+      </div>` : `<div class="notes"><div class="k">عدد الأصناف</div><div class="v">${summary.lineCount} صنف · ${soldTotal} قطعة</div></div>`}
+    </div>
+    <p class="thanks">${esc(footer)}</p>
+  </section>`;
 
   return `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -173,7 +245,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
-    @page { size: A4 portrait; margin: 0; }
+    @page { size: A4 portrait; margin: 10mm 12mm 20mm 12mm; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'IBM Plex Sans Arabic', Tahoma, Arial, sans-serif;
@@ -183,7 +255,34 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       line-height: 1.45;
     }
     img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .inv { width: 100%; max-width: 190mm; margin: 0 auto; padding: 8mm 10mm 10mm; }
+    .sheet { width: 100%; max-width: 190mm; margin: 0 auto; padding-bottom: 4mm; page-break-after: always; }
+    .sheet:last-of-type { page-break-after: auto; }
+    .copy-badge {
+      display: inline-block;
+      border: 1px solid #000;
+      padding: 2px 10px;
+      font-size: 10px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+    .page-foot {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 16mm;
+      padding: 3mm 12mm 4mm;
+      border-top: 2px solid #000;
+      background: #fff;
+    }
+    .page-foot-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .page-foot-row b { font-family: Consolas, 'Courier New', monospace; letter-spacing: 0.04em; }
     .hdr {
       display: flex;
       align-items: center;
@@ -276,20 +375,14 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .was { font-size: 8px; color: #000; text-decoration: line-through; margin-top: 2px; }
     .bottom {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 210px;
+      grid-template-columns: minmax(0, 1fr) 230px;
       gap: 14px;
       page-break-inside: avoid;
     }
     .side { display: flex; flex-direction: column; gap: 10px; }
-    .notes { border: 1px solid #000; padding: 10px 12px; min-height: 56px; }
+    .notes { border: 1px solid #000; padding: 10px 12px; min-height: 48px; }
     .notes .k { font-size: 9px; font-weight: 800; color: #000; margin-bottom: 4px; }
     .notes .v { font-size: 11px; color: #000; }
-    .signs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .sign {
-      border: 1px dashed #000; padding: 10px 8px 16px;
-      text-align: center; font-size: 10px; font-weight: 800; color: #000;
-    }
-    .sign span { display: block; margin-top: 22px; border-top: 1px solid #000; padding-top: 6px; font-weight: 600; font-size: 9px; }
     .totals { border: 2px solid #000; }
     .totals .tot-head { text-align: center; padding: 7px; font-size: 10px; font-weight: 800; border-bottom: 1px solid #000; }
     .totals .tot-body { padding: 8px 12px 10px; }
@@ -304,99 +397,14 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       font-size: 12px; font-weight: 800; color: #000;
     }
     .tot-grand b { font-size: 16px; color: #000; }
-    .foot { margin-top: 14px; padding-top: 10px; border-top: 2px solid #000; text-align: center; }
-    .foot .msg { font-size: 12px; font-weight: 800; color: #000; margin-bottom: 4px; }
-    .foot .sub { font-size: 9px; color: #000; }
-    .foot .copy { font-size: 9px; font-weight: 800; color: #000; margin-top: 6px; letter-spacing: 0.12em; }
-    .contacts {
-      margin: 8px auto 0;
-      max-width: 280px;
-      border: 1px solid #000;
-      padding: 6px 10px;
-      text-align: right;
-    }
-    .contact-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 12px;
-      font-size: 10px;
-      font-weight: 700;
-      padding: 2px 0;
-    }
-    .contact-row + .contact-row { border-top: 1px dotted #000; padding-top: 4px; margin-top: 2px; }
-    .contact-row b { font-family: Consolas, 'Courier New', monospace; font-size: 11px; letter-spacing: 0.04em; }
-    @media print { @page { margin: 0; } .inv { max-width: 100%; padding: 9mm 10mm; } }
+    .thanks { margin-top: 12px; text-align: center; font-size: 11px; font-weight: 800; }
+    @media print { .sheet { max-width: 100%; } }
   </style>
 </head>
 <body>
-  <div class="inv">
-    <header class="hdr">
-      <div class="hdr-brand">
-        ${logoMarkup('logo-img')}
-        <div class="hdr-store">
-          <h1>${esc(STORE_NAME)}</h1>
-          <p>${esc(branchName || 'نقطة البيع')} · ${summary.lineCount} صنف · ${soldTotal} قطعة${giftTotal ? ` · ${giftTotal} هدية` : ''}</p>
-        </div>
-      </div>
-      <div class="hdr-doc">
-        <span class="type">${title}</span>
-        <span class="no">${esc(invoice.invoiceNo)}</span>
-      </div>
-    </header>
-    <div class="info">
-      <div class="info-cell">
-        <span class="k">التاريخ والوقت</span>
-        <span class="v ltr">${esc(dateTime)}</span>
-      </div>
-      <div class="info-cell">
-        <span class="k">العميل</span>
-        <span class="v">${esc(customer)}</span>
-      </div>
-      <div class="info-cell">
-        <span class="k">${isIssue ? 'النوع' : 'طريقة الدفع'}</span>
-        <span class="v">${esc(isIssue ? title : payLabel(invoice.paymentMethod))}</span>
-      </div>
-    </div>
-    <table class="tbl">
-      <colgroup>
-        <col style="width:6%">
-        <col style="width:${nameWidth}">
-        <col style="width:10%">
-        ${showGifts ? '<col style="width:10%">' : ''}
-        ${showMoney ? '<col style="width:14%"><col style="width:16%">' : ''}
-      </colgroup>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th class="th-name">المنتج</th>
-          <th>الكمية</th>
-          ${showGifts ? '<th>هدايا</th>' : ''}
-          ${showMoney ? '<th>السعر</th><th>الإجمالي</th>' : ''}
-        </tr>
-      </thead>
-      <tbody>${a4LineItems(invoice, { showGifts, showMoney })}</tbody>
-    </table>
-    <div class="bottom">
-      <div class="side">
-        ${invoice.notes ? `<div class="notes"><div class="k">ملاحظات</div><div class="v">${esc(invoice.notes)}</div></div>` : ''}
-        <div class="signs">
-          <div class="sign">المستلم<span>التوقيع</span></div>
-          <div class="sign">البائع<span>التوقيع</span></div>
-        </div>
-      </div>
-      ${showMoney ? `<div class="totals">
-        <div class="tot-head">ملخص المبالغ</div>
-        <div class="tot-body">${a4TotalsPanel(invoice, null, debtInfo)}</div>
-      </div>` : `<div class="notes"><div class="k">عدد الأصناف</div><div class="v">${summary.lineCount} صنف · ${soldTotal} قطعة</div></div>`}
-    </div>
-    <footer class="foot">
-      <div class="msg">${esc(footer)}</div>
-      <div class="sub">${esc(STORE_NAME)}${branchName ? ` — ${esc(branchName)}` : ''} · ${esc(invoice.invoiceNo)}</div>
-      ${invoiceFooterContacts()}
-      <div class="copy">أصل للعميل</div>
-    </footer>
-  </div>
+  ${invoicePageFoot()}
+  ${sheet('نسخة العميل')}
+  ${sheet('نسخة الشركة')}
   <script>window.onload = () => { window.print(); };</script>
 </body>
 </html>`;
@@ -412,15 +420,20 @@ function totalsBlock(invoice, { compact = false, debtInfo = null } = {}) {
   if (Number(invoice.paidAmount)) {
     rows.push(`<div class="total-row paid"><span>المبلغ المدفوع</span><span dir="ltr">${fmt(invoice.paidAmount)}</span></div>`);
   }
-  if (debtInfo && (debtInfo.previousDebt > 0 || debtInfo.invoiceDue > 0)) {
-    rows.push(`<div class="total-row debt-sep"><span>حساب العميل</span><span></span></div>`);
-    if (debtInfo.previousDebt > 0) {
-      rows.push(`<div class="total-row debt-prev"><span>دين سابق على الحساب</span><span dir="ltr">${fmt(debtInfo.previousDebt)}</span></div>`);
-    }
-    if (debtInfo.invoiceDue > 0) {
-      rows.push(`<div class="total-row due"><span>دين هذه الفاتورة</span><span dir="ltr">${fmt(debtInfo.invoiceDue)}</span></div>`);
-      if (debtInfo.totalDebt > 0) {
-        rows.push(`<div class="total-row debt-total"><span>إجمالي الدين على الحساب</span><span dir="ltr">${fmt(debtInfo.totalDebt)}</span></div>`);
+  if (isAccountCustomer(invoice)) {
+    const prev = Number(debtInfo?.previousDebt || 0);
+    const due = Number(debtInfo?.invoiceDue || invoice.dueAmount || 0);
+    const total = Number(debtInfo?.totalDebt || 0);
+    if (prev > 0 || due > 0) {
+      rows.push(`<div class="total-row debt-sep"><span>حساب العميل</span><span></span></div>`);
+      if (prev > 0) {
+        rows.push(`<div class="total-row debt-prev"><span>ديون سابقة</span><span dir="ltr">${fmtMoney(prev)}</span></div>`);
+      }
+      if (due > 0) {
+        rows.push(`<div class="total-row due"><span>دين هذه الفاتورة</span><span dir="ltr">${fmtMoney(due)}</span></div>`);
+      }
+      if (total > 0 && prev > 0) {
+        rows.push(`<div class="total-row debt-total"><span>إجمالي الدين</span><span dir="ltr">${fmtMoney(total)}</span></div>`);
       }
     }
   } else if (Number(invoice.dueAmount)) {
@@ -458,7 +471,22 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
       line-height: 1.45;
     }
     img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .receipt { width: 100%; }
+    .receipt { width: 100%; page-break-after: always; }
+    .receipt:last-of-type { page-break-after: auto; }
+    .copy-badge {
+      display: block;
+      text-align: center;
+      border: 1px solid #000;
+      padding: 3px 8px;
+      font-size: 10px;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+    .cut {
+      border: none;
+      border-top: 1px dashed #000;
+      margin: 14px 0;
+    }
 
     .rule {
       border: none;
@@ -687,12 +715,13 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     @media print {
       @page { margin: 0; }
       body { width: 72mm; padding: 0; margin: 4mm auto; }
-      .receipt { page-break-inside: avoid; }
     }
   </style>
 </head>
 <body>
+  ${['نسخة العميل', 'نسخة الشركة'].map((copyLabel) => `
   <div class="receipt">
+    <div class="copy-badge">${copyLabel}</div>
     <header class="head">
       ${logoMarkup('logo-img')}
       <div class="store-name">${esc(STORE_NAME)}</div>
@@ -754,7 +783,7 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
       ${invoiceFooterContacts()}
       <div class="inv-code">${esc(invoice.invoiceNo)}</div>
     </footer>
-  </div>
+  </div>`).join('<hr class="cut">')}
   <script>window.onload = () => { window.print(); };</script>
 </body>
 </html>`;

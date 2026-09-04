@@ -14,6 +14,7 @@ services:
       DATABASE_PATH: /app/data/shorja.db
       NODE_ENV: production
       NODE_OPTIONS: --experimental-sqlite
+      TZ: Asia/Baghdad
     volumes:
       - shorja_data:/app/data
     healthcheck:

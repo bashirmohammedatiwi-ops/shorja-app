@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '39';
+const APP_VERSION = '41';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -300,6 +300,18 @@ function isoDay(d = new Date()) {
   const x = new Date(d);
   x.setMinutes(x.getMinutes() - x.getTimezoneOffset());
   return x.toISOString().slice(0, 10);
+}
+
+function localInvoiceStamp(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return {
+    invoiceDate: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    createdAt: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  };
+}
+
+function withLocalStamp(payload) {
+  return { ...localInvoiceStamp(), ...payload };
 }
 
 function rangeForPreset(key) {
@@ -1750,9 +1762,6 @@ function printHtml(html) {
     if (!win || !doc) return;
     try {
       doc.title = ' ';
-      const reinforce = doc.createElement('style');
-      reinforce.textContent = '@page{margin:0!important}';
-      doc.head.appendChild(reinforce);
       win.focus();
       win.print();
     } catch {
@@ -1774,7 +1783,7 @@ async function submitIssue() {
 
   try {
     if (confirmBtn) confirmBtn.disabled = true;
-    const payload = {
+    const payload = withLocalStamp({
       kind: 'issue',
       localId: newLocalId(),
       lines: state.cart.map((l) => ({
@@ -1820,7 +1829,7 @@ async function submitReturnFromPos() {
   }));
   if (!lines.length) { toast('حدد كميات المرتجع', 'err'); return; }
 
-  const payload = {
+  const payload = withLocalStamp({
     accountId: state.customer?.id || null,
     customerName: state.customer?.name || '',
     discount: state.discount,
@@ -1868,7 +1877,7 @@ async function submitReturnFromPos() {
 
 async function loadPosReturnCandidates() {
   const q = document.getElementById('posReturnSearch')?.value || '';
-  const today = new Date().toISOString().slice(0, 10);
+  const today = isoDay();
   const fromEl = document.getElementById('posReturnDateFrom');
   const toEl = document.getElementById('posReturnDateTo');
   if (fromEl && !fromEl.value) fromEl.value = today;
@@ -1991,7 +2000,7 @@ async function submitSale() {
       accountId = state.customer.id;
     }
 
-    const payload = {
+    const payload = withLocalStamp({
       localId: newLocalId(),
       lines: state.cart.map((l) => ({
         productId: l.productId, barcode: l.barcode, name: l.name,
@@ -2041,7 +2050,7 @@ async function submitSale() {
     } catch (err) {
       if (navigator.onLine) throw err;
       const outbox = getOutbox();
-      outbox.push({ ...payload, syncStatus: 'pending', createdAt: new Date().toISOString() });
+      outbox.push({ ...payload, syncStatus: 'pending' });
       saveOutbox(outbox);
       updateSyncPill();
       toast('حُفظت محلياً — ستُرفع عند الاتصال', 'warn');
@@ -2105,7 +2114,7 @@ function renderBranchPaymentBars(el, byPayment) {
 }
 
 async function loadDashboard() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = isoDay();
   try {
     const [sumData, invData, repData, allInvData] = await Promise.all([
       api('/branch/summary/today'),
@@ -2394,7 +2403,7 @@ async function checkDataRevision() {
 }
 
 function initReportDates() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = isoDay();
   const from = document.getElementById('reportFrom');
   const to = document.getElementById('reportTo');
   if (from && !from.value) from.value = today;
@@ -2589,7 +2598,7 @@ function renderInvoiceList(el, invs, { returnMode = false } = {}) {
 
 async function loadReturnCandidates() {
   const q = document.getElementById('returnSearch')?.value || '';
-  const today = new Date().toISOString().slice(0, 10);
+  const today = isoDay();
   const from = document.getElementById('returnDateFrom')?.value || today;
   const to = document.getElementById('returnDateTo')?.value || today;
   if (document.getElementById('returnDateFrom') && !document.getElementById('returnDateFrom').value) {
@@ -2777,7 +2786,7 @@ document.getElementById('btnReturnAll').addEventListener('click', async () => {
   const lines = state.activeInvoice.lines.map((l) => ({ barcode: l.barcode, qty: l.qty }));
   try {
     const data = await api(`/branch/invoices/${state.activeInvoice.id}/return`, {
-      method: 'POST', body: JSON.stringify({ lines })
+      body: JSON.stringify(withLocalStamp({ lines }))
     });
     toast(`تم المرتجع — ${data.invoice.invoiceNo}`);
     document.getElementById('invoiceModal').close();
@@ -2795,7 +2804,7 @@ document.getElementById('btnConfirmReturn').addEventListener('click', async () =
   if (!lines.length) { toast('حدد كمية المرتجع', 'warn'); return; }
   try {
     const data = await api(`/branch/invoices/${state.activeInvoice.id}/return`, {
-      method: 'POST', body: JSON.stringify({ lines })
+      body: JSON.stringify(withLocalStamp({ lines }))
     });
     toast(`تم المرتجع — ${data.invoice.invoiceNo}`);
     document.getElementById('invoiceModal').close();

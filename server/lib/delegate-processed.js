@@ -5,6 +5,7 @@ const db = require('../db');
 const { getAccount, updateBalance } = require('./accounts');
 const { loadInvoice, addJournalEntry } = require('./invoices');
 const { queueInvoiceEdariSync } = require('./edari-sync');
+const { localStamp } = require('./datetime');
 
 const DELEGATE_BRANCH_CODE = 'DELEGATE';
 
@@ -165,9 +166,9 @@ function createDelegateInvoiceFromOrder(data) {
       INSERT INTO invoices
         (invoice_no, branch_id, cashier_id, account_id, customer_name, kind, status,
          subtotal, discount, total, paid_amount, due_amount, payment_method, notes,
-         sync_status, invoice_date, prep_mode, prep_order_id, prep_order_no, prep_status,
+         sync_status, invoice_date, created_at, prep_mode, prep_order_id, prep_order_no, prep_status,
          edari_sync_status, edari_sync_error)
-      VALUES (?, ?, NULL, ?, ?, 'sale', 'posted', ?, 0, ?, ?, ?, ?, ?, 'synced', ?, 'delegate', ?, ?, 'processing', 'pending', 'جاهز للترحيل')
+      VALUES (?, ?, NULL, ?, ?, 'sale', 'posted', ?, 0, ?, ?, ?, ?, ?, 'synced', ?, ?, 'delegate', ?, ?, 'processing', 'pending', 'جاهز للترحيل')
       RETURNING id
     `).get(
       invoiceNo,
@@ -180,7 +181,8 @@ function createDelegateInvoiceFromOrder(data) {
       dueAmount,
       paymentMethod,
       noteParts.join('\n'),
-      new Date().toISOString().slice(0, 10),
+      localStamp().date,
+      localStamp().datetime,
       orderId,
       String(data.orderNo || '')
     );

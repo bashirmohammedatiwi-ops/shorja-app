@@ -4,9 +4,10 @@ const { adjustStock, getByBarcode } = require('./products');
 const { getBranchSettings } = require('./settings');
 const { queueInvoiceEdariSync, queuePaymentEdariSync } = require('./edari-sync');
 const { submitWarehousePrepOrder } = require('./warehouse-prep');
+const { localStamp, resolveInvoiceStamp } = require('./datetime');
 
-function nextInvoiceNo(branchId) {
-  const prefix = `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
+function nextInvoiceNo(branchId, dateStr) {
+  const prefix = `INV-${String(dateStr || localStamp().date).replace(/-/g, '')}`;
   const last = db.prepare(`
     SELECT invoice_no FROM invoices WHERE invoice_no LIKE ? ORDER BY id DESC LIMIT 1
   `).get(`${prefix}-%`);
@@ -18,8 +19,8 @@ function nextInvoiceNo(branchId) {
   return `${prefix}-${String(seq).padStart(4, '0')}`;
 }
 
-function nextReturnNo() {
-  const prefix = `RET-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
+function nextReturnNo(dateStr) {
+  const prefix = `RET-${String(dateStr || localStamp().date).replace(/-/g, '')}`;
   const last = db.prepare(`
     SELECT invoice_no FROM invoices WHERE invoice_no LIKE ? ORDER BY id DESC LIMIT 1
   `).get(`${prefix}-%`);
@@ -31,8 +32,8 @@ function nextReturnNo() {
   return `${prefix}-${String(seq).padStart(4, '0')}`;
 }
 
-function nextIssueNo() {
-  const prefix = `OUT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
+function nextIssueNo(dateStr) {
+  const prefix = `OUT-${String(dateStr || localStamp().date).replace(/-/g, '')}`;
   const last = db.prepare(`
     SELECT invoice_no FROM invoices WHERE invoice_no LIKE ? ORDER BY id DESC LIMIT 1
   `).get(`${prefix}-%`);
@@ -250,8 +251,9 @@ async function createInvoice(data, user) {
     if (dup) return loadInvoice(dup.id);
   }
 
+  const stamp = resolveInvoiceStamp(data);
   const invoiceNo = data.invoiceNo || (
-    kind === 'return' ? nextReturnNo() : kind === 'issue' ? nextIssueNo() : nextInvoiceNo(branchId)
+    kind === 'return' ? nextReturnNo(stamp.date) : kind === 'issue' ? nextIssueNo(stamp.date) : nextInvoiceNo(branchId, stamp.date)
   );
   const account = data.accountId ? getAccount(data.accountId) : null;
   const customerName = data.customerName || account?.name || '';
@@ -261,14 +263,14 @@ async function createInvoice(data, user) {
       INSERT INTO invoices
         (local_id, invoice_no, branch_id, cashier_id, account_id, customer_name, kind,
          parent_invoice_id, status, subtotal, discount, total, paid_amount, due_amount,
-         payment_method, notes, sync_status, invoice_date, prep_mode)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         payment_method, notes, sync_status, invoice_date, created_at, prep_mode)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING id
     `).get(
       localId, invoiceNo, branchId, user.id, data.accountId || null, customerName, kind,
       data.parentInvoiceId || null, subtotal, discount, total, paidAmount, dueAmount,
       paymentMethod, data.notes || '', data.syncStatus || 'synced',
-      data.invoiceDate || new Date().toISOString().slice(0, 10),
+      stamp.date, stamp.datetime,
       prepMode
     );
     const invoiceId = Number(row.id);
@@ -407,7 +409,7 @@ async function createReturn(parentId, data, user) {
 
   return await createInvoice({
     kind: 'return',
-    invoiceNo: nextReturnNo(),
+    invoiceNo: nextReturnNo(resolveInvoiceStamp(data).date),
     parentInvoiceId: parent.id,
     accountId: data.accountId != null ? data.accountId : parent.accountId,
     customerName: data.customerName || parent.customerName,
@@ -415,7 +417,9 @@ async function createReturn(parentId, data, user) {
     paidAmount: 0,
     lines: returnLines,
     notes: data.notes || `مرتجع عن ${parent.invoiceNo}`,
-    discount: Number(data.discount || 0)
+    discount: Number(data.discount || 0),
+    invoiceDate: data.invoiceDate,
+    createdAt: data.createdAt
   }, user);
 }
 
@@ -465,7 +469,7 @@ function listInvoices({ branchId, dateFrom, dateTo, q, kind, paymentMethod, edar
 }
 
 function dailySummary({ branchId, date, excludePrepModes = ['delegate'] } = {}) {
-  const d = date || new Date().toISOString().slice(0, 10);
+  const d = date || localStamp().date;
   const where = ['invoice_date = ?'];
   const params = [d];
   if (branchId) { where.push('branch_id = ?'); params.push(branchId); }
@@ -634,7 +638,7 @@ function createAdjustment({ accountId, amount, description, createdBy, branchId 
 }
 
 function salesReport({ branchId, dateFrom, dateTo, excludePrepModes = ['delegate'] } = {}) {
-  const from = dateFrom || new Date().toISOString().slice(0, 10);
+  const from = dateFrom || localStamp().date;
   const to = dateTo || from;
   const where = ['invoice_date >= ?', 'invoice_date <= ?'];
   const params = [from, to];

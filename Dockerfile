@@ -16,6 +16,7 @@ ENV NODE_OPTIONS=--experimental-sqlite
 ENV PORT=5007
 ENV HOST=0.0.0.0
 ENV DATABASE_PATH=/app/data/shorja.db
+ENV TZ=Asia/Baghdad
 
 EXPOSE 5007
 
