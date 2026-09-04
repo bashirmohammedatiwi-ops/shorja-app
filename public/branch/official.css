@@ -436,6 +436,52 @@ select.field {
   background: linear-gradient(180deg, #1e3a5f, #0f2744) !important;
 }
 
+.cashier-line {
+  display: block;
+  font-size: 0.62rem !important;
+  color: rgba(226, 232, 240, 0.75) !important;
+  font-weight: 600;
+}
+.filter-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.filter-chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--primary);
+}
+.filter-chip.active {
+  background: #0f2744;
+  border-color: #0f2744;
+  color: #fff;
+}
+.result-count { font-size: 0.76rem; color: var(--text-muted); margin-inline-start: auto; }
+.table-wrap.no-pad { padding: 0; overflow: auto; }
+.invoices-table { width: 100%; }
+.click-row { cursor: pointer; }
+.click-row:hover { background: #f7f8fb; }
+.inv-amt.neg { color: var(--danger); font-weight: 800; }
+.empty-block { text-align: center; padding: 28px 12px; color: var(--text-muted); }
+.empty-block .empty-title { font-weight: 800; color: var(--primary); margin: 0 0 4px; }
+.empty-block .empty-sub { margin: 0; font-size: 0.8rem; }
+.held-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.held-meta { display: block; font-size: 0.76rem; color: var(--text-muted); margin-top: 2px; }
+.held-time { font-size: 0.74rem; color: var(--text-muted); margin-top: 2px; }
+.held-actions { display: flex; align-items: center; gap: 8px; }
+.held-amt { font-weight: 800; color: var(--primary); }
+.account-card.has-debt { border-color: #f1c4c4; background: #fffafa; }
+.qa-btn.primary { background: #0f2744; color: #fff; border-color: #0f2744; }
+.panel-card.no-pad { padding: 0 !important; overflow: hidden; }
+
 @media (max-width: 1100px) {
   .nav-item .nav-label { display: none; }
   .nav-cluster.primary .nav-label { display: inline; }

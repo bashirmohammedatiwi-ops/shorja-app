@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=33">
-  <link rel="stylesheet" href="official.css?v=33">
+  <link rel="stylesheet" href="styles.css?v=34">
+  <link rel="stylesheet" href="official.css?v=34">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -38,6 +38,7 @@
         <div class="topbar-brand-text">
           <strong>ديما الحياة</strong>
           <small id="branchBadge">الفرع</small>
+          <small class="cashier-line" id="cashierBadge"></small>
         </div>
       </div>
 
@@ -289,10 +290,13 @@
       <!-- Dashboard -->
       <main id="viewDashboard" class="view hidden">
         <div class="quick-actions" id="dashboardActions">
-          <button type="button" class="qa-btn" data-goto="pos">فاتورة جديدة</button>
+          <button type="button" class="qa-btn primary" data-goto="pos">فاتورة جديدة</button>
+          <button type="button" class="qa-btn" data-goto="pos" data-inv-type="return">مرتجع</button>
           <button type="button" class="qa-btn" data-goto="held">فواتير معلّقة</button>
           <button type="button" class="qa-btn" data-goto="invoices">فواتير اليوم</button>
           <button type="button" class="qa-btn" data-goto="payments">تسديد حساب</button>
+          <button type="button" class="qa-btn" data-goto="stock">استعلام باركود</button>
+          <button type="button" class="qa-btn" data-goto="reports">تقرير الفترة</button>
         </div>
         <div class="kpi-grid" id="dashboardKpis"></div>
         <div class="dash-panels dash-panels-triple">
@@ -317,17 +321,31 @@
 
       <!-- Invoices -->
       <main id="viewInvoices" class="view hidden">
+        <div class="filter-chips-row" id="invPresetChips">
+          <button type="button" class="filter-chip active" data-inv-range="today">اليوم</button>
+          <button type="button" class="filter-chip" data-inv-range="yesterday">أمس</button>
+          <button type="button" class="filter-chip" data-inv-range="week">آخر 7 أيام</button>
+        </div>
         <div class="toolbar">
-          <input type="search" id="invoiceSearch" class="field" placeholder="بحث برقم الفاتورة أو العميل...">
-          <input type="date" id="invoiceDate" class="field field-date">
+          <input type="search" id="invoiceSearch" class="field" placeholder="بحث برقم الفاتورة أو العميل أو الباركود...">
+          <input type="date" id="invoiceFrom" class="field field-date" title="من">
+          <input type="date" id="invoiceTo" class="field field-date" title="إلى">
+          <input type="date" id="invoiceDate" class="field field-date hidden" aria-hidden="true">
           <select id="invoiceKind" class="field">
             <option value="">كل الأنواع</option>
             <option value="sale">مبيعات</option>
             <option value="return">مرتجعات</option>
             <option value="issue">إخراج مخزون</option>
           </select>
+          <select id="invoicePayment" class="field">
+            <option value="">كل الدفع</option>
+            <option value="cash">نقدي</option>
+            <option value="credit">آجل</option>
+            <option value="partial">جزئي</option>
+          </select>
+          <span class="result-count" id="invoiceResultCount"></span>
         </div>
-        <div class="list-cards" id="invoiceList"></div>
+        <div class="table-wrap panel-card no-pad" id="invoiceList"></div>
       </main>
 
       <!-- Returns -->
@@ -343,7 +361,10 @@
 
       <!-- Held -->
       <main id="viewHeld" class="view hidden">
-        <p class="hint">فواتير معلّقة محفوظة على هذا الجهاز — اضغط لاستئناف البيع</p>
+        <div class="toolbar held-toolbar">
+          <p class="hint" style="margin:0">فواتير معلّقة على هذا الجهاز فقط — اضغط لاستئناف البيع</p>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnClearHeld" hidden>حذف الكل</button>
+        </div>
         <div class="list-cards" id="heldList"></div>
       </main>
 
@@ -371,6 +392,7 @@
             <div class="toolbar" style="margin-bottom:12px">
               <input type="search" id="accountSearch" class="field" placeholder="بحث بالاسم أو الرقم...">
               <label class="check-label"><input type="checkbox" id="debtOnly"> مديونون فقط</label>
+              <span class="result-count" id="accountResultCount"></span>
             </div>
             <div class="account-grid" id="accountGrid"></div>
           </div>
@@ -400,7 +422,10 @@
             </div>
           </div>
           <div class="panel-card flex-grow">
-            <h3>آخر التسديدات</h3>
+            <div class="toolbar" style="margin-bottom:10px">
+              <h3 style="margin:0">آخر التسديدات</h3>
+              <input type="search" id="paySearch" class="field" placeholder="بحث بالحساب أو الرقم...">
+            </div>
             <div id="paymentsList" class="payments-table-wrap"></div>
           </div>
         </div>
@@ -441,6 +466,12 @@
 
       <!-- Reports -->
       <main id="viewReports" class="view hidden">
+        <div class="filter-chips-row" id="reportPresetChips">
+          <button type="button" class="filter-chip active" data-report-range="today">اليوم</button>
+          <button type="button" class="filter-chip" data-report-range="yesterday">أمس</button>
+          <button type="button" class="filter-chip" data-report-range="week">آخر 7 أيام</button>
+          <button type="button" class="filter-chip" data-report-range="month">هذا الشهر</button>
+        </div>
         <div class="toolbar">
           <input type="date" id="reportFrom" class="field field-date">
           <input type="date" id="reportTo" class="field field-date">
@@ -569,8 +600,12 @@
     <div class="modal-body keyboard-help-body">
       <div class="kbd-row"><kbd>F2</kbd><span>بحث منتج</span></div>
       <div class="kbd-row"><kbd>F3</kbd><span>خصم الفاتورة</span></div>
+      <div class="kbd-row"><kbd>F4</kbd><span>الفواتير</span></div>
       <div class="kbd-row"><kbd>F6</kbd><span>تعليق الفاتورة</span></div>
+      <div class="kbd-row"><kbd>F7</kbd><span>تسديد حساب</span></div>
       <div class="kbd-row"><kbd>F8</kbd><span>إتمام البيع</span></div>
+      <div class="kbd-row"><kbd>F9</kbd><span>اختيار العميل</span></div>
+      <div class="kbd-row"><kbd>Esc</kbd><span>التركيز على مسح الباركود</span></div>
       <div class="kbd-row"><kbd>?</kbd><span>عرض هذه القائمة</span></div>
       <div class="kbd-row"><kbd>مسح باركود</kbd><span>إضافة تلقائية للفاتورة</span></div>
     </div>
@@ -579,6 +614,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=33"></script>
+  <script src="app.js?v=34"></script>
 </body>
 </html>

@@ -118,7 +118,8 @@ router.get('/invoices', (req, res) => {
       dateTo: req.query.to,
       q: req.query.q,
       kind: req.query.kind,
-      limit: Number(req.query.limit) || 50
+      paymentMethod: req.query.payment,
+      limit: Number(req.query.limit) || 200
     })
   });
 });

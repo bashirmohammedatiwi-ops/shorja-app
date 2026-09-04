@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '33';
+const APP_VERSION = '34';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -21,16 +21,16 @@ const DEFAULT_SETTINGS = {
 };
 
 const PAGE_TITLES = {
-  pos: ['إنشاء فاتورة', 'مبيعات · مرتجعات · إخراج مخزون'],
-  dashboard: ['ملخص اليوم', 'إحصائيات مبيعات الفرع'],
-  invoices: ['الفواتير', 'سجل المبيعات والمرتجعات والإخراج'],
+  pos: ['إنشاء فاتورة', 'مسح باركود · بحث · إتمام سريع'],
+  dashboard: ['ملخص اليوم', 'أداء الفرع · طرق الدفع · الساعة'],
+  invoices: ['الفواتير', 'بحث وفلاتر حسب النوع والدفع'],
   returns: ['مرتجع مبيعات', 'إرجاع كامل أو جزئي'],
-  held: ['فواتير معلّقة', 'استئناف الفاتورة المحفوظة'],
-  accounts: ['حسابات العملاء', 'الديون والأرصدة'],
+  held: ['فواتير معلّقة', 'استئناف البيع على هذا الجهاز'],
+  accounts: ['حسابات العملاء', 'الديون والأرصدة وكشف الحساب'],
   payments: ['تسديد الحسابات', 'تسجيل دفعات العملاء'],
   stock: ['استعلام منتج', 'تفاصيل المنتج بالباركود'],
   reports: ['التقارير', 'مبيعات وتحصيلات حسب الفترة'],
-  settings: ['الإعدادات', 'تخصيص سلوك نقطة البيع والطباعة']
+  settings: ['الإعدادات', 'سلوك نقطة البيع والطباعة والمزامنة']
 };
 
 const state = {
@@ -291,6 +291,27 @@ function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function isoDay(d = new Date()) {
+  const x = new Date(d);
+  x.setMinutes(x.getMinutes() - x.getTimezoneOffset());
+  return x.toISOString().slice(0, 10);
+}
+
+function rangeForPreset(key) {
+  const today = isoDay();
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const week = new Date(); week.setDate(week.getDate() - 6);
+  const month = new Date(); month.setDate(1);
+  if (key === 'yesterday') return [isoDay(y), isoDay(y)];
+  if (key === 'week') return [isoDay(week), today];
+  if (key === 'month') return [isoDay(month), today];
+  return [today, today];
+}
+
+function emptyState(title, sub = '') {
+  return `<div class="empty-block"><p class="empty-title">${esc(title)}</p>${sub ? `<p class="empty-sub">${esc(sub)}</p>` : ''}</div>`;
+}
+
 function fmt(n) {
   return Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
@@ -354,7 +375,7 @@ function showLastScan(product, qty = 1) {
     <span class="scan-check">✓</span>
     <div class="scan-info">
       <strong>${esc(product.name)}</strong>
-      <span>باركود: ${esc(product.barcode)} · كمية: ${qty}</span>
+    <span>باركود: ${esc(product.barcode)} · كمية: ${qty}${product.stockQty != null ? ` · مخزون ${fmt(product.stockQty)}` : ''}</span>
     </div>
     <span class="scan-price" dir="ltr">${fmt(product.price)}</span>`;
   el.classList.remove('hidden');
@@ -419,6 +440,8 @@ function showApp() {
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   document.getElementById('branchBadge').textContent = state.user?.branchName || 'الفرع';
+  const cashier = document.getElementById('cashierBadge');
+  if (cashier) cashier.textContent = state.user?.fullName || state.user?.username || '';
   focusBarcode();
 }
 
@@ -496,7 +519,11 @@ document.getElementById('invoiceTypeTabs')?.addEventListener('click', (e) => {
 document.getElementById('dashboardActions')?.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-goto]');
   if (!btn) return;
-  const nav = document.querySelector(`[data-view="${btn.dataset.goto}"]`);
+  const goto = btn.dataset.goto;
+  const invType = btn.dataset.invType;
+  const nav = invType
+    ? document.querySelector(`.nav-item[data-view="${goto}"][data-inv-type="${invType}"]`)
+    : document.querySelector(`.nav-item[data-view="${goto}"]:not([data-inv-type])`) || document.querySelector(`[data-view="${goto}"]`);
   if (nav) nav.click();
 });
 
@@ -1224,22 +1251,27 @@ document.getElementById('btnHold').addEventListener('click', () => {
 function loadHeldList() {
   const held = getHeld();
   const el = document.getElementById('heldList');
+  const clearBtn = document.getElementById('btnClearHeld');
+  if (clearBtn) clearBtn.hidden = !held.length;
   if (!held.length) {
-    el.innerHTML = '<p class="hint">لا توجد فواتير معلّقة</p>';
+    el.innerHTML = emptyState('لا توجد فواتير معلّقة', 'علّق الفاتورة من شاشة البيع بزر تعليق أو F6');
     return;
   }
   el.innerHTML = held.map((h, i) => {
     const total = h.cart.reduce((s, l) => s + l.lineTotal, 0);
     const edited = h.cart.filter((l) => l.priceEdited).length;
+    const mins = Math.max(0, Math.round((Date.now() - new Date(h.savedAt).getTime()) / 60000));
+    const age = mins < 60 ? `منذ ${mins} د` : `منذ ${Math.floor(mins / 60)} س`;
     return `
     <div class="held-card" data-idx="${i}">
       <div>
         <strong>${esc(h.label)}</strong>
-        <span class="held-meta">${h.cart.length} بند · ${h.cart.reduce((s, l) => s + l.qty, 0)} قطعة${edited ? ` · ${edited} سعر معدّل` : ''}</span>
-        <div style="font-size:0.78rem;color:var(--text-muted)">${new Date(h.savedAt).toLocaleString('ar-IQ')}</div>
+        <span class="held-meta">${h.cart.length} بند · ${h.cart.reduce((s, l) => s + Number(l.qty || 0), 0)} قطعة${edited ? ` · ${edited} سعر معدّل` : ''}${h.customer ? ` · ${esc(h.customer.name)}` : ''}</span>
+        <div class="held-time">${new Date(h.savedAt).toLocaleString('ar-IQ')} · ${age}</div>
       </div>
-      <div>
-        <span dir="ltr" style="font-weight:800;color:var(--primary-dark)">${fmt(total)}</span>
+      <div class="held-actions">
+        <span dir="ltr" class="held-amt">${fmt(total)}</span>
+        <button type="button" class="btn btn-primary btn-sm" data-resume-held="${i}">استئناف</button>
         <button type="button" class="btn btn-sm btn-ghost" data-del-held="${i}">حذف</button>
       </div>
     </div>`;
@@ -1248,32 +1280,32 @@ function loadHeldList() {
     card.addEventListener('click', (e) => {
       if (e.target.dataset.delHeld != null) {
         e.stopPropagation();
-        const idx = Number(e.target.dataset.delHeld);
-        const list = getHeld();
-        list.splice(idx, 1);
-        saveHeld(list);
+        const next = getHeld().filter((_, idx) => idx !== Number(e.target.dataset.delHeld));
+        saveHeld(next);
         loadHeldList();
         return;
       }
-      if (state.cart.length && !confirm('استبدال السلة الحالية؟')) return;
+      if (e.target.dataset.resumeHeld != null) e.stopPropagation();
       const idx = Number(card.dataset.idx);
-      const h = getHeld()[idx];
-      state.cart = h.cart.map((l) => ({
+      const item = getHeld()[idx];
+      if (!item) return;
+      if (state.cart.length && !confirm('استبدال الفاتورة الحالية بالمعلّقة؟')) return;
+      state.cart = (item.cart || []).map((l) => ({
         ...l,
         originalPrice: l.originalPrice ?? l.unitPrice,
         priceEdited: l.priceEdited ?? false,
         giftQty: l.giftQty ?? 0
       }));
-      state.customer = h.customer;
-      state.discount = h.discount;
-      document.getElementById('discountInput').value = h.discount || 0;
-      document.getElementById('customerLabel').textContent = h.customer
-        ? `${h.customer.name} (${h.customer.code})` : 'نقدي — بدون حساب';
-      const list = getHeld();
-      list.splice(idx, 1);
-      saveHeld(list);
+      state.customer = item.customer || null;
+      state.discount = item.discount || 0;
+      document.getElementById('discountInput').value = String(state.discount || 0);
+      document.getElementById('customerLabel').textContent = state.customer
+        ? `${state.customer.name} (${state.customer.code || ''})`
+        : 'نقدي — بدون حساب';
+      const rest = getHeld().filter((_, i) => i !== idx);
+      saveHeld(rest);
+      document.querySelector('.nav-item[data-view="pos"]:not([data-inv-type])')?.click();
       renderCart();
-      document.querySelector('[data-view="pos"]').click();
       toast('تم استئناف الفاتورة');
     });
   });
@@ -1329,10 +1361,32 @@ document.addEventListener('click', (e) => {
 let barcodeBuffer = '';
 let barcodeTimer = null;
 document.addEventListener('keydown', (e) => {
-  const posVisible = !document.getElementById('viewPos').classList.contains('hidden');
-  if (e.key === '?' && !e.ctrlKey && !e.metaKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+  const tag = e.target.tagName;
+  const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey && !typing) {
     e.preventDefault();
     document.getElementById('keyboardHelpModal')?.showModal();
+    return;
+  }
+  if (e.key === 'F4') {
+    e.preventDefault();
+    document.querySelector('.nav-item[data-view="invoices"]')?.click();
+    return;
+  }
+  if (e.key === 'F7') {
+    e.preventDefault();
+    document.querySelector('.nav-item[data-view="payments"]')?.click();
+    return;
+  }
+  const posVisible = !document.getElementById('viewPos').classList.contains('hidden');
+  if (e.key === 'Escape' && posVisible) {
+    e.preventDefault();
+    focusBarcode();
+    return;
+  }
+  if (e.key === 'F9' && posVisible) {
+    e.preventDefault();
+    document.getElementById('btnPickCustomer')?.click();
     return;
   }
   if (!posVisible) return;
@@ -1869,7 +1923,9 @@ async function loadDashboard() {
       <div class="kpi-card"><div class="kpi-lbl">نقدي محصّل</div><div class="kpi-val" dir="ltr">${fmt(s.paidAmount)}</div></div>
       <div class="kpi-card"><div class="kpi-lbl">آجل / دين جديد</div><div class="kpi-val" dir="ltr">${fmt(s.dueAmount)}</div></div>
       <div class="kpi-card"><div class="kpi-lbl">متوسط الفاتورة</div><div class="kpi-val" dir="ltr">${fmt(s.salesCount ? s.salesAmount / s.salesCount : 0)}</div></div>
-      <div class="kpi-card"><div class="kpi-lbl">فواتير معلّقة</div><div class="kpi-val">${getHeld().length}</div></div>`;
+      <div class="kpi-card"><div class="kpi-lbl">فواتير معلّقة</div><div class="kpi-val">${getHeld().length}</div></div>
+      <div class="kpi-card"><div class="kpi-lbl">مخزون منخفض</div><div class="kpi-val">${document.getElementById('stockBadge')?.textContent || '—'}</div></div>
+      <div class="kpi-card"><div class="kpi-lbl">بانتظار الرفع</div><div class="kpi-val">${getOutbox().length}</div></div>`;
     document.getElementById('dashboardDetail').innerHTML = `
       <div class="dash-row"><span>تاريخ</span><strong>${esc(s.date)}</strong></div>
       <div class="dash-row"><span>عدد المرتجعات</span><strong>${s.returnsCount}</strong></div>
@@ -2174,17 +2230,19 @@ async function loadReportsView() {
       <div class="kpi-grid">
         <div class="kpi-card"><div class="kpi-lbl">فواتير البيع</div><div class="kpi-val">${r.salesCount}</div></div>
         <div class="kpi-card"><div class="kpi-lbl">إجمالي المبيعات</div><div class="kpi-val" dir="ltr">${fmt(r.salesAmount)}</div></div>
-        <div class="kpi-card danger"><div class="kpi-lbl">المرتجعات</div><div class="kpi-val" dir="ltr">${fmt(r.returnsAmount)}</div></div>
+        <div class="kpi-card danger"><div class="kpi-lbl">المرتجعات (${r.returnsCount || 0})</div><div class="kpi-val" dir="ltr">${fmt(r.returnsAmount)}</div></div>
         <div class="kpi-card highlight"><div class="kpi-lbl">صافي المبيعات</div><div class="kpi-val" dir="ltr">${fmt(r.netSales)}</div></div>
-        <div class="kpi-card"><div class="kpi-lbl">تحصيلات</div><div class="kpi-val" dir="ltr">${fmt(r.collectionsTotal)}</div></div>
+        <div class="kpi-card"><div class="kpi-lbl">المحصّل نقداً</div><div class="kpi-val" dir="ltr">${fmt(r.paidAmount)}</div></div>
+        <div class="kpi-card"><div class="kpi-lbl">تحصيلات حسابات</div><div class="kpi-val" dir="ltr">${fmt(r.collectionsTotal)}</div></div>
         <div class="kpi-card"><div class="kpi-lbl">ديون جديدة</div><div class="kpi-val" dir="ltr">${fmt(r.dueAmount)}</div></div>
+        <div class="kpi-card"><div class="kpi-lbl">متوسط الفاتورة</div><div class="kpi-val" dir="ltr">${fmt(r.salesCount ? r.salesAmount / r.salesCount : 0)}</div></div>
       </div>
       <div class="report-panels">
         <div class="panel-card">
           <h3>حسب طريقة الدفع</h3>
           <table class="data-table">
             <thead><tr><th>الطريقة</th><th>عدد</th><th>المبلغ</th></tr></thead>
-            <tbody>${r.byPayment.length ? r.byPayment.map((p) => `
+            <tbody>${(r.byPayment || []).length ? r.byPayment.map((p) => `
               <tr><td>${payLabel(p.method)}</td><td>${p.count}</td><td dir="ltr">${fmt(p.amount)}</td></tr>
             `).join('') : '<tr><td colspan="3">لا توجد بيانات</td></tr>'}</tbody>
           </table>
@@ -2193,7 +2251,7 @@ async function loadReportsView() {
           <h3>أكثر المنتجات مبيعاً</h3>
           <table class="data-table">
             <thead><tr><th>المنتج</th><th>كمية</th><th>مبيعات</th></tr></thead>
-            <tbody>${r.topProducts.length ? r.topProducts.map((p) => `
+            <tbody>${(r.topProducts || []).length ? r.topProducts.map((p) => `
               <tr><td>${esc(p.name)}</td><td>${p.qty}</td><td dir="ltr">${fmt(p.amount)}</td></tr>
             `).join('') : '<tr><td colspan="3">لا توجد بيانات</td></tr>'}</tbody>
           </table>
@@ -2203,6 +2261,15 @@ async function loadReportsView() {
 }
 
 document.getElementById('btnLoadReport')?.addEventListener('click', loadReportsView);
+document.getElementById('reportPresetChips')?.addEventListener('click', (e) => {
+  const chip = e.target.closest('[data-report-range]');
+  if (!chip) return;
+  const [from, to] = rangeForPreset(chip.dataset.reportRange);
+  if (document.getElementById('reportFrom')) document.getElementById('reportFrom').value = from;
+  if (document.getElementById('reportTo')) document.getElementById('reportTo').value = to;
+  document.getElementById('reportPresetChips').querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
+  loadReportsView();
+});
 document.getElementById('btnPrintReport')?.addEventListener('click', () => {
   const el = document.getElementById('reportBody');
   const w = window.open('', '_blank');
@@ -2249,38 +2316,51 @@ document.getElementById('btnSaveSettings')?.addEventListener('click', async () =
 
 // ── Invoices ──
 async function loadInvoices() {
-  const q = document.getElementById('invoiceSearch').value || '';
-  const date = document.getElementById('invoiceDate').value || new Date().toISOString().slice(0, 10);
-  document.getElementById('invoiceDate').value = date;
+  const q = document.getElementById('invoiceSearch')?.value || '';
+  const today = isoDay();
+  const from = document.getElementById('invoiceFrom')?.value || document.getElementById('invoiceDate')?.value || today;
+  const to = document.getElementById('invoiceTo')?.value || from;
+  if (document.getElementById('invoiceFrom') && !document.getElementById('invoiceFrom').value) {
+    document.getElementById('invoiceFrom').value = from;
+    document.getElementById('invoiceTo').value = to;
+  }
+  if (document.getElementById('invoiceDate')) document.getElementById('invoiceDate').value = from;
   const kind = document.getElementById('invoiceKind')?.value || '';
+  const payment = document.getElementById('invoicePayment')?.value || '';
   try {
-    let url = `/branch/invoices?q=${encodeURIComponent(q)}&from=${date}&to=${date}`;
-    if (kind) url += `&kind=${kind}`;
-    const data = await api(url);
+    const params = new URLSearchParams({ q, from, to, limit: '200' });
+    if (kind) params.set('kind', kind);
+    if (payment) params.set('payment', payment);
+    const data = await api(`/branch/invoices?${params}`);
+    const countEl = document.getElementById('invoiceResultCount');
+    if (countEl) countEl.textContent = `${data.total ?? (data.invoices || []).length} فاتورة`;
     renderInvoiceList(document.getElementById('invoiceList'), data.invoices || []);
   } catch { toast('تعذّر تحميل الفواتير', 'err'); }
 }
 
 function renderInvoiceList(el, invs, { returnMode = false } = {}) {
   if (!invs.length) {
-    el.innerHTML = '<p class="hint">لا توجد فواتير</p>';
+    el.innerHTML = emptyState('لا توجد فواتير', 'جرّب تغيير التاريخ أو البحث');
     return;
   }
-  el.innerHTML = invs.map((i) => `
-    <div class="invoice-card${i.kind === 'return' ? ' kind-return' : i.kind === 'issue' ? ' kind-issue' : ''}" data-id="${i.id}">
-      <div>
-        <strong>${esc(i.invoiceNo)}</strong>
-        <span class="kind-badge ${kindBadgeClass(i.kind)}">${kindLabel(i.kind)}</span>
-        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px">
-          ${esc(i.customerName || (i.kind === 'issue' ? '—' : 'نقدي'))} · ${payLabel(i.paymentMethod, i)} · ${esc(i.invoiceDate)}
-          ${i.kind === 'issue' && i.notes ? ` · ${esc(i.notes)}` : ''}
-        </div>
-      </div>
-      <div dir="ltr" style="font-weight:800;font-size:1.05rem;color:${i.kind === 'return' ? 'var(--danger)' : i.kind === 'issue' ? '#1565c0' : 'var(--primary-dark)'}">${i.kind === 'issue' ? '—' : fmt(i.total)}</div>
-    </div>
-  `).join('');
-  el.querySelectorAll('.invoice-card').forEach((card) => {
-    card.addEventListener('click', () => openInvoiceModal(Number(card.dataset.id), returnMode));
+  el.innerHTML = `
+    <table class="data-table invoices-table">
+      <thead><tr>
+        <th>الوقت</th><th>الرقم</th><th>النوع</th><th>العميل</th><th>الدفع</th><th>الإجمالي</th>
+      </tr></thead>
+      <tbody>${invs.map((i) => `
+        <tr class="click-row${i.kind === 'return' ? ' kind-return' : i.kind === 'issue' ? ' kind-issue' : ''}" data-id="${i.id}">
+          <td>${esc((i.createdAt || '').slice(11, 16) || i.invoiceDate)}</td>
+          <td><strong>${esc(i.invoiceNo)}</strong></td>
+          <td><span class="kind-badge ${kindBadgeClass(i.kind)}">${kindLabel(i.kind)}</span></td>
+          <td>${esc(i.customerName || (i.kind === 'issue' ? '—' : 'نقدي'))}</td>
+          <td>${payLabel(i.paymentMethod, i)}</td>
+          <td dir="ltr" class="inv-amt ${i.kind === 'return' ? 'neg' : ''}">${i.kind === 'issue' ? '—' : fmt(i.total)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  el.querySelectorAll('[data-id]').forEach((row) => {
+    row.addEventListener('click', () => openInvoiceModal(Number(row.dataset.id), returnMode));
   });
 }
 
@@ -2311,8 +2391,20 @@ document.getElementById('invoiceSearch').addEventListener('input', () => {
   clearTimeout(document.getElementById('invoiceSearch')._t);
   document.getElementById('invoiceSearch')._t = setTimeout(loadInvoices, 300);
 });
-document.getElementById('invoiceDate').addEventListener('change', loadInvoices);
+document.getElementById('invoiceDate')?.addEventListener('change', loadInvoices);
+document.getElementById('invoiceFrom')?.addEventListener('change', loadInvoices);
+document.getElementById('invoiceTo')?.addEventListener('change', loadInvoices);
 document.getElementById('invoiceKind')?.addEventListener('change', loadInvoices);
+document.getElementById('invoicePayment')?.addEventListener('change', loadInvoices);
+document.getElementById('invPresetChips')?.addEventListener('click', (e) => {
+  const chip = e.target.closest('[data-inv-range]');
+  if (!chip) return;
+  const [from, to] = rangeForPreset(chip.dataset.invRange);
+  if (document.getElementById('invoiceFrom')) document.getElementById('invoiceFrom').value = from;
+  if (document.getElementById('invoiceTo')) document.getElementById('invoiceTo').value = to;
+  document.getElementById('invPresetChips').querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
+  loadInvoices();
+});
 
 // ── Invoice modal ──
 async function openInvoiceModal(id, returnMode = false) {
@@ -2326,7 +2418,7 @@ async function openInvoiceModal(id, returnMode = false) {
     document.getElementById('invoiceModalBody').innerHTML = `
       <div class="inv-detail-meta">
         <div><b>العميل:</b> ${esc(inv.customerName || 'نقدي')}</div>
-        <div><b>التاريخ:</b> ${esc(inv.invoiceDate)} · <b>النوع:</b> ${kindLabel(inv.kind)}</div>
+        <div><b>التاريخ:</b> ${esc(inv.invoiceDate)} · <b>الوقت:</b> ${esc((inv.createdAt || '').slice(11, 16) || '—')} · <b>النوع:</b> ${kindLabel(inv.kind)}</div>
         <div><b>طريقة الدفع:</b> ${payLabel(inv.paymentMethod, inv)}</div>
         <div><b>الصافي:</b> <strong dir="ltr">${fmt(inv.total)}</strong></div>
         ${inv.notes ? `<div><b>ملاحظات:</b> ${esc(inv.notes)}</div>` : ''}
@@ -2457,14 +2549,18 @@ async function loadAccounts() {
   const debt = document.getElementById('debtOnly').checked;
   try {
     const data = await api(`/branch/accounts?q=${encodeURIComponent(q)}${debt ? '&debt=1' : ''}`);
+    const list = data.accounts || [];
+    const debtSum = list.reduce((s, a) => s + Number(a.balance || 0), 0);
+    const countEl = document.getElementById('accountResultCount');
+    if (countEl) countEl.textContent = `${list.length} حساب · دين ${fmt(debtSum)}`;
     const grid = document.getElementById('accountGrid');
-    grid.innerHTML = (data.accounts || []).map((a) => `
-      <div class="account-card" data-id="${a.id}">
+    grid.innerHTML = list.length ? list.map((a) => `
+      <div class="account-card${Number(a.balance) > 0 ? ' has-debt' : ''}" data-id="${a.id}">
         <div class="name">${esc(a.name)}</div>
         <div class="code">${esc(a.code)}${a.phone ? ` · ${esc(a.phone)}` : ''}</div>
         <div class="debt" dir="ltr">${fmt(a.balance)}</div>
       </div>
-    `).join('') || '<p class="hint">لا توجد حسابات</p>';
+    `).join('') : emptyState('لا توجد حسابات', 'أضف حساباً من النموذج أو ألغِ فلتر المدينين');
     grid.querySelectorAll('.account-card').forEach((card) => {
       card.addEventListener('click', () => openAccountModal(Number(card.dataset.id)));
     });
@@ -2522,6 +2618,17 @@ document.getElementById('accountSearch').addEventListener('input', () => {
   document.getElementById('accountSearch')._t = setTimeout(loadAccounts, 300);
 });
 document.getElementById('debtOnly').addEventListener('change', loadAccounts);
+document.getElementById('paySearch')?.addEventListener('input', () => {
+  clearTimeout(document.getElementById('paySearch')._t);
+  document.getElementById('paySearch')._t = setTimeout(loadPaymentsView, 250);
+});
+document.getElementById('btnClearHeld')?.addEventListener('click', () => {
+  if (!getHeld().length) return;
+  if (!confirm('حذف كل الفواتير المعلّقة من هذا الجهاز؟')) return;
+  saveHeld([]);
+  loadHeldList();
+  toast('تم تفريغ المعلّق');
+});
 
 // ── Payments ──
 async function loadPaymentsView() {
@@ -2536,13 +2643,17 @@ async function loadPaymentsView() {
       `<option value="${a.id}">${esc(a.name)} — دين: ${fmt(a.balance)}</option>`
     ).join('');
     const pays = payData.payments || [];
-    const todayTotal = pays.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const q = (document.getElementById('paySearch')?.value || '').trim().toLowerCase();
+    const filtered = q
+      ? pays.filter((p) => String(p.paymentNo || '').toLowerCase().includes(q) || String(p.accountName || '').toLowerCase().includes(q))
+      : pays;
+    const todayTotal = filtered.reduce((s, p) => s + Number(p.amount || 0), 0);
     document.getElementById('paymentsList').innerHTML = `
-      <div class="pay-summary">إجمالي تسديدات اليوم: <strong dir="ltr">${fmt(todayTotal)}</strong> (${pays.length})</div>
-      ${pays.length ? `
+      <div class="pay-summary">إجمالي المعروض: <strong dir="ltr">${fmt(todayTotal)}</strong> (${filtered.length})</div>
+      ${filtered.length ? `
       <table class="data-table">
         <thead><tr><th>الرقم</th><th>الحساب</th><th>المبلغ</th><th>التاريخ</th></tr></thead>
-        <tbody>${pays.map((p) => `
+        <tbody>${filtered.map((p) => `
           <tr>
             <td>${esc(p.paymentNo)}</td>
             <td>${esc(p.accountName)}</td>
@@ -2550,7 +2661,7 @@ async function loadPaymentsView() {
             <td>${esc(p.paymentDate)}</td>
           </tr>`).join('')}
         </tbody>
-      </table>` : '<p class="hint">لا توجد تسديدات اليوم</p>'}`;
+      </table>` : emptyState('لا توجد تسديدات', 'سجّل دفعة من النموذج أو غيّر البحث')}`;
   } catch { /* */ }
 }
 
