@@ -148,34 +148,46 @@ function a4LineItems(invoice, { showGifts = false, showMoney = true } = {}) {
   }).join('');
 }
 
+function totCell(label, value, extraClass = '') {
+  return `<div class="tot-cell${extraClass ? ` ${extraClass}` : ''}"><span>${label}</span><b dir="ltr">${value}</b></div>`;
+}
+
+function totGrid(cells) {
+  if (!cells.length) return '';
+  return `<div class="tot-grid">${cells.join('')}</div>`;
+}
+
 function a4TotalsPanel(invoice, accent, debtInfo) {
-  let html = `<div class="tot-line"><span>المجموع الفرعي</span><b dir="ltr">${fmt(invoice.subtotal)}</b></div>`;
+  const top = [totCell('المجموع الفرعي', fmt(invoice.subtotal))];
   if (Number(invoice.discount)) {
-    html += `<div class="tot-line disc"><span>الخصم</span><b dir="ltr">− ${fmt(invoice.discount)}</b></div>`;
+    top.push(totCell('الخصم', `− ${fmt(invoice.discount)}`, 'disc'));
   }
+  let html = totGrid(top);
   html += `<div class="tot-grand"><span>الصافي</span><b dir="ltr">${fmtMoney(invoice.total)}</b></div>`;
+
+  const after = [];
   if (Number(invoice.paidAmount)) {
-    html += `<div class="tot-line paid"><span>المدفوع</span><b dir="ltr">${fmt(invoice.paidAmount)}</b></div>`;
+    after.push(totCell('المدفوع', fmt(invoice.paidAmount), 'paid'));
   }
+
   if (isAccountCustomer(invoice)) {
     const prev = Number(debtInfo?.previousDebt || 0);
     const due = Number(debtInfo?.invoiceDue || invoice.dueAmount || 0);
     const total = Number(debtInfo?.totalDebt || 0);
     if (prev > 0 || due > 0) {
+      html += totGrid(after);
       html += `<div class="tot-sep">حساب العميل</div>`;
-      if (prev > 0) {
-        html += `<div class="tot-line debt-prev"><span>ديون سابقة</span><b dir="ltr">${fmtMoney(prev)}</b></div>`;
-      }
-      if (due > 0) {
-        html += `<div class="tot-line due"><span>دين هذه الفاتورة</span><b dir="ltr">${fmtMoney(due)}</b></div>`;
-      }
-      if (total > 0 && prev > 0) {
-        html += `<div class="tot-line debt-total"><span>إجمالي الدين</span><b dir="ltr">${fmtMoney(total)}</b></div>`;
-      }
+      const debt = [];
+      if (prev > 0) debt.push(totCell('ديون سابقة', fmtMoney(prev), 'debt-prev'));
+      if (due > 0) debt.push(totCell('دين هذه الفاتورة', fmtMoney(due), 'due'));
+      if (total > 0 && prev > 0) debt.push(totCell('إجمالي الدين', fmtMoney(total), 'debt-total'));
+      html += totGrid(debt);
+      return html;
     }
   } else if (Number(invoice.dueAmount)) {
-    html += `<div class="tot-line due"><span>المتبقي</span><b dir="ltr">${fmtMoney(invoice.dueAmount)}</b></div>`;
+    after.push(totCell('المتبقي', fmtMoney(invoice.dueAmount), 'due'));
   }
+  html += totGrid(after);
   return html;
 }
 
@@ -196,9 +208,8 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   const sheet = (copyLabel) => `
   <section class="sheet">
       <header class="mast">
-        <div class="mast-top">
+        <div class="id-bar">
           <span class="copy-mark">${esc(copyLabel)}</span>
-          <span class="inv-mid" dir="ltr">${esc(invoice.invoiceNo)}</span>
           <span class="doc-kind">${esc(title)}</span>
         </div>
         <div class="brand-center">
@@ -207,6 +218,10 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
         </div>
       </header>
       <div class="info">
+        <div class="info-cell">
+          <span class="k">رقم الفاتورة</span>
+          <span class="v ltr">${esc(invoice.invoiceNo)}</span>
+        </div>
         <div class="info-cell">
           <span class="k">التاريخ والوقت</span>
           <span class="v ltr">${esc(dateTime)}</span>
@@ -220,25 +235,27 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
           <span class="v">${esc(isIssue ? title : payLabel(invoice.paymentMethod))}</span>
         </div>
       </div>
-      <table class="tbl">
-        <colgroup>
-          <col style="width:6%">
-          <col style="width:${nameWidth}">
-          <col style="width:10%">
-          ${showGifts ? '<col style="width:10%">' : ''}
-          ${showMoney ? '<col style="width:14%"><col style="width:16%">' : ''}
-        </colgroup>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th class="th-name">المنتج</th>
-            <th>الكمية</th>
-            ${showGifts ? '<th>هدايا</th>' : ''}
-            ${showMoney ? '<th>السعر</th><th>الإجمالي</th>' : ''}
-          </tr>
-        </thead>
-        <tbody>${a4LineItems(invoice, { showGifts, showMoney })}</tbody>
-      </table>
+      <div class="tbl-box">
+        <table class="tbl">
+          <colgroup>
+            <col style="width:6%">
+            <col style="width:${nameWidth}">
+            <col style="width:10%">
+            ${showGifts ? '<col style="width:10%">' : ''}
+            ${showMoney ? '<col style="width:14%"><col style="width:16%">' : ''}
+          </colgroup>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th class="th-name">المنتج</th>
+              <th>الكمية</th>
+              ${showGifts ? '<th>هدايا</th>' : ''}
+              ${showMoney ? '<th>السعر</th><th>الإجمالي</th>' : ''}
+            </tr>
+          </thead>
+          <tbody>${a4LineItems(invoice, { showGifts, showMoney })}</tbody>
+        </table>
+      </div>
       <div class="sum-box">
         <div class="sum-head">ملخص الأصناف</div>
         <div class="sum-stats">
@@ -335,12 +352,12 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       letter-spacing: 0.04em;
       direction: ltr;
     }
-    .mast { margin-bottom: 4px; }
-    .mast-top {
+    .mast { margin-bottom: 5px; }
+    .id-bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
       margin-bottom: 4px;
     }
     .copy-mark, .doc-kind {
@@ -351,12 +368,6 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       padding: 1px 8px;
     }
     .doc-kind { border-width: 1.4px; }
-    .inv-mid {
-      font-family: Consolas, 'Courier New', monospace;
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.03em;
-    }
     .brand-center {
       text-align: center;
       padding: 0 0 5px;
@@ -389,13 +400,18 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     }
     .info {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      margin: 6px 0 7px;
-      border-top: 1.3px solid #000;
-      border-bottom: 1.3px solid #000;
+      grid-template-columns: 1fr 1fr;
+      margin: 6px 0 6px;
+      border: 1.3px solid #000;
     }
-    .info-cell { padding: 4px 8px 5px; border-inline-start: 1px solid #000; min-width: 0; }
-    .info-cell:first-child { border-inline-start: 0; padding-right: 0; }
+    .info-cell {
+      padding: 4px 8px 5px;
+      min-width: 0;
+      border-inline-start: 1px solid #000;
+      border-bottom: 1px solid #000;
+    }
+    .info-cell:nth-child(odd) { border-inline-start: 0; }
+    .info-cell:nth-last-child(-n+2) { border-bottom: 0; }
     .info-cell .k {
       display: block;
       font-size: 7.5px;
@@ -405,7 +421,12 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     }
     .info-cell .v { display: block; font-size: 11px; font-weight: 800; word-break: break-word; }
     .info-cell .v.ltr { direction: ltr; font-family: Consolas, monospace; font-size: 10.5px; }
-    .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 7px; }
+    .tbl-box {
+      border: 1.3px solid #000;
+      margin-bottom: 6px;
+      overflow: hidden;
+    }
+    .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 0; }
     .tbl thead { display: table-header-group; }
     .tbl th {
       font-size: 8.5px;
@@ -413,20 +434,22 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       letter-spacing: 0.03em;
       padding: 4px 4px 3px;
       text-align: center;
-      border-top: 1.6px solid #000;
-      border-bottom: 1.6px solid #000;
+      border-bottom: 1.3px solid #000;
     }
     .tbl th.th-name { text-align: right; padding-right: 8px; }
-    .tbl td { padding: 4px 4px; border-bottom: 1px dotted #000; text-align: center; vertical-align: top; }
-    .tbl tbody tr:last-child td { border-bottom: 1.4px solid #000; }
+    .tbl td { padding: 4px 4px; border-bottom: 1px dotted #000; text-align: center; vertical-align: middle; }
+    .tbl tbody tr:last-child td { border-bottom: none; }
     .tbl tbody tr { page-break-inside: avoid; }
     .t-idx { font-weight: 700; font-size: 9px; }
-    .t-name { text-align: right !important; padding-right: 8px !important; }
+    .t-name { text-align: right !important; padding-right: 8px !important; vertical-align: top; }
     .t-name strong { display: block; font-size: 10.5px; font-weight: 800; }
     .t-code { display: block; margin-top: 1px; font-family: Consolas, monospace; font-size: 8px; direction: ltr; letter-spacing: 0.02em; }
     .t-qty { font-weight: 800; font-size: 11px; }
     .t-price { font-weight: 700; }
     .t-total { font-weight: 800; font-size: 11px; }
+    .t-qty, .t-price, .t-total, .t-gift, .sum-stats b, .tot-cell b, .tot-grand b {
+      font-variant-numeric: tabular-nums;
+    }
     .tag-edit {
       display: inline-block; margin-top: 1px; font-size: 7.5px;
       border: 1px solid #000; padding: 0 4px; font-weight: 800;
@@ -455,24 +478,48 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .sum-stats > div:first-child { border-inline-start: 0; }
     .sum-stats span { display: block; font-size: 7.5px; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 0; }
     .sum-stats b { display: block; font-size: 13px; font-weight: 800; }
-    .totals .tot-body { padding: 3px 10px 6px; }
-    .tot-line {
+    .totals .tot-body { padding: 0; }
+    .tot-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+    .tot-cell {
       display: flex;
       justify-content: space-between;
+      align-items: baseline;
       gap: 8px;
-      padding: 3px 2px;
+      padding: 4px 8px;
       font-size: 11px;
+      border-inline-start: 1px solid #000;
       border-bottom: 1px dotted #000;
     }
-    .tot-line b { white-space: nowrap; font-weight: 800; }
-    .tot-line.debt-total { border-bottom: none; border-top: 1.3px solid #000; margin-top: 2px; padding-top: 4px; }
-    .tot-sep { margin: 4px 0 2px; font-size: 8px; font-weight: 800; text-align: center; letter-spacing: 0.06em; }
+    .tot-cell:nth-child(odd) { border-inline-start: 0; }
+    .tot-cell:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+      border-inline-start: 0;
+    }
+    .tot-cell b { white-space: nowrap; font-weight: 800; }
+    .tot-grid:last-child .tot-cell { border-bottom: none; }
+    .tot-sep {
+      margin: 0;
+      padding: 3px 6px;
+      font-size: 8px;
+      font-weight: 800;
+      text-align: center;
+      letter-spacing: 0.06em;
+      border-top: 1.3px solid #000;
+      border-bottom: 1px solid #000;
+    }
     .tot-grand {
       display: flex; justify-content: space-between; align-items: center;
-      margin-top: 4px; padding: 5px 8px; border: 1.5px solid #000;
+      margin: 0; padding: 5px 8px;
+      border: none;
+      border-top: 1.5px solid #000;
+      border-bottom: 1.5px solid #000;
       font-size: 11px; font-weight: 800;
     }
     .tot-grand b { font-size: 15px; }
+    .tot-cell.debt-total { font-weight: 800; }
     .notes-box .notes-v { padding: 5px 10px 6px; font-size: 10.5px; font-weight: 600; }
     @media print { .sheet { max-width: 100%; } }
   </style>
