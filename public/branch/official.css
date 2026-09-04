@@ -142,6 +142,23 @@
   margin: 8px 0 12px;
 }
 .stock-name-hits.hidden { display: none; }
+.offline-banner {
+  background: #7f1d1d;
+  color: #fff;
+  text-align: center;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.offline-banner.hidden { display: none; }
+#pageHeaderMeta {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+#jumpList .picker-item.active { border-color: var(--primary); background: var(--primary-soft); }
+.outbox-list { font-size: 0.8rem; margin-bottom: 8px; }
+.outbox-item { padding: 4px 0; border-bottom: 1px solid var(--border-light); }
 .topbar-stats .stat-pill .lbl { font-size: 0.56rem; }
 .topbar-stats .stat-pill strong { font-size: 0.8rem; }
 .topbar-stats .stat-pill.accent {

@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=35">
-  <link rel="stylesheet" href="official.css?v=35">
+  <link rel="stylesheet" href="styles.css?v=36">
+  <link rel="stylesheet" href="official.css?v=36">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -119,6 +119,7 @@
         <div class="header-meta" id="pageHeaderMeta"></div>
       </header>
 
+      <div id="offlineBanner" class="offline-banner hidden">غير متصل — الفواتير تُحفظ على الجهاز وتُرفع عند عودة الشبكة</div>
       <div id="priceBanner" class="price-banner hidden">
         <span class="price-banner-ico">🔔</span>
         <span>تحديث أسعار جديد متاح من الإدارة</span>
@@ -353,6 +354,7 @@
             <option value="partial">جزئي</option>
           </select>
           <span class="result-count" id="invoiceResultCount"></span>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnExportInvoices">تصدير CSV</button>
         </div>
         <div class="table-wrap panel-card no-pad" id="invoiceList"></div>
       </main>
@@ -436,7 +438,9 @@
           </div>
           <div class="panel-card flex-grow">
             <div class="toolbar" style="margin-bottom:10px">
-              <h3 style="margin:0">آخر التسديدات</h3>
+              <h3 style="margin:0">التسديدات</h3>
+              <input type="date" id="payFrom" class="field field-date" title="من">
+              <input type="date" id="payTo" class="field field-date" title="إلى">
               <input type="search" id="paySearch" class="field" placeholder="بحث بالحساب أو الرقم...">
             </div>
             <div id="paymentsList" class="payments-table-wrap"></div>
@@ -491,6 +495,7 @@
           <input type="date" id="reportFrom" class="field field-date">
           <input type="date" id="reportTo" class="field field-date">
           <button type="button" class="btn btn-primary btn-sm" id="btnLoadReport">عرض التقرير</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnExportReport">تصدير CSV</button>
           <button type="button" class="btn btn-secondary btn-sm" id="btnPrintReport">طباعة</button>
         </div>
         <div id="reportBody" class="report-body"></div>
@@ -533,6 +538,11 @@
                 <div><span>مراجعة البيانات</span><strong id="setDataRevision">—</strong></div>
                 <div><span>الاتصال</span><strong id="setConnStatus">—</strong></div>
               </div>
+            </div>
+            <div class="settings-sync-block">
+              <h4>فواتير بانتظار الرفع</h4>
+              <div id="outboxList" class="outbox-list"></div>
+              <button type="button" class="btn btn-secondary btn-block" id="btnFlushOutboxSettings">رفع الآن</button>
             </div>
           </div>
         </div>
@@ -598,8 +608,10 @@
     <div class="modal-body" id="invoiceModalBody"></div>
     <div class="modal-foot">
       <button type="button" class="btn btn-secondary" id="btnPrintInvoice">طباعة</button>
+      <button type="button" class="btn btn-secondary hidden" id="btnRepeatInvoice">إعادة البيع</button>
       <button type="button" class="btn btn-secondary hidden" id="btnReturnAll">مرتجع كامل</button>
       <button type="button" class="btn btn-secondary hidden" id="btnStartReturn">مرتجع جزئي</button>
+      <button type="button" class="btn btn-ghost hidden" id="btnFillReturnQty">تعبئة الكميات</button>
       <button type="button" class="btn btn-primary hidden" id="btnConfirmReturn">تأكيد المرتجع</button>
       <button type="button" class="btn btn-ghost" data-close>إغلاق</button>
     </div>
@@ -610,6 +622,7 @@
     <div class="modal-head"><h3 id="accountModalTitle">كشف حساب</h3><button type="button" class="modal-x" data-close>×</button></div>
     <div class="modal-body" id="accountModalBody"></div>
     <div class="modal-foot">
+      <button type="button" class="btn btn-secondary" id="btnPrintLedger">طباعة الكشف</button>
       <button type="button" class="btn btn-primary" id="btnPayFromAccount">تسديد سريع</button>
       <button type="button" class="btn btn-ghost" data-close>إغلاق</button>
     </div>
@@ -628,15 +641,25 @@
       <div class="kbd-row"><kbd>F8</kbd><span>إتمام البيع</span></div>
       <div class="kbd-row"><kbd>F9</kbd><span>اختيار العميل</span></div>
       <div class="kbd-row"><kbd>F10</kbd><span>التقارير</span></div>
+      <div class="kbd-row"><kbd>F11</kbd><span>طباعة آخر فاتورة</span></div>
+      <div class="kbd-row"><kbd>Ctrl+K</kbd><span>انتقال سريع</span></div>
       <div class="kbd-row"><kbd>Esc</kbd><span>التركيز على مسح الباركود</span></div>
       <div class="kbd-row"><kbd>?</kbd><span>عرض هذه القائمة</span></div>
       <div class="kbd-row"><kbd>مسح باركود</kbd><span>إضافة تلقائية للفاتورة</span></div>
     </div>
   </dialog>
 
+  <dialog id="jumpModal" class="modal">
+    <div class="modal-head"><h3>انتقال سريع</h3><button type="button" class="modal-x" data-close>×</button></div>
+    <div class="modal-body">
+      <input type="search" id="jumpInput" class="field" placeholder="اكتب: بيع · فواتير · تسديد · استعلام..." autocomplete="off">
+      <div class="picker-list" id="jumpList"></div>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=35"></script>
+  <script src="app.js?v=36"></script>
 </body>
 </html>
