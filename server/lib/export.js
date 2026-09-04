@@ -46,6 +46,10 @@ function isAccountCustomer(invoice) {
   return invoice.paymentMethod === 'credit' || invoice.paymentMethod === 'partial';
 }
 
+function invoicePageFrame() {
+  return `<div class="page-edge" aria-hidden="true"></div><div class="page-edge inner" aria-hidden="true"></div>`;
+}
+
 function invoicePageFoot(thanksText) {
   return `
     <footer class="page-foot">
@@ -191,7 +195,6 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   const nameWidth = showMoney ? (showGifts ? '46%' : '54%') : '72%';
   const sheet = (copyLabel) => `
   <section class="sheet">
-    <div class="frame">
       <header class="mast">
         <div class="mast-top">
           <span class="copy-mark">${esc(copyLabel)}</span>
@@ -249,7 +252,6 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
         <div class="tot-body">${a4TotalsPanel(invoice, null, debtInfo)}</div>
       </div>` : ''}
       ${invoice.notes ? `<div class="sum-box notes-box"><div class="sum-head">ملاحظات</div><div class="notes-v">${esc(invoice.notes)}</div></div>` : ''}
-    </div>
   </section>`;
 
   return `<!DOCTYPE html>
@@ -260,208 +262,223 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    @page { size: A4 portrait; margin: 9mm 11mm 28mm 11mm; }
+    @page { size: A4 portrait; margin: 7mm; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'IBM Plex Sans Arabic', Tahoma, Arial, sans-serif;
-      font-size: 11px;
+      font-size: 10px;
       color: #000;
       background: #fff;
-      line-height: 1.45;
+      line-height: 1.3;
     }
     img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .sheet { width: 100%; max-width: 188mm; margin: 0 auto; page-break-after: always; }
-    .sheet:last-of-type { page-break-after: auto; }
-    .frame {
-      border: 1.8px solid #000;
-      box-shadow: inset 0 0 0 3.5px #fff, inset 0 0 0 4.5px #000;
-      padding: 6mm 7mm 8mm;
+    .page-edge {
+      position: fixed;
+      top: 0; right: 0; bottom: 0; left: 0;
+      border: 1.7px solid #000;
+      pointer-events: none;
+      z-index: 4;
     }
+    .page-edge.inner {
+      top: 1.5mm; right: 1.5mm; bottom: 1.5mm; left: 1.5mm;
+      border-width: 0.7px;
+    }
+    .sheet {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+      padding: 2mm 3mm 22mm;
+      page-break-after: always;
+    }
+    .sheet:last-of-type { page-break-after: auto; }
     .page-foot {
       position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 24mm;
-      padding: 2.5mm 10mm 3mm;
+      left: 3.2mm;
+      right: 3.2mm;
+      bottom: 3.2mm;
+      height: 18mm;
+      padding: 1.5mm 2mm 0;
       background: #fff;
       text-align: center;
+      z-index: 5;
+      border-top: 1.3px solid #000;
     }
     .thanks-line {
-      font-size: 12px;
+      font-size: 10.5px;
       font-weight: 800;
-      letter-spacing: 0.06em;
-      margin: 0 0 2.5mm;
-      line-height: 1.3;
+      letter-spacing: 0.05em;
+      margin: 0 0 1.6mm;
+      line-height: 1.2;
     }
     .phone-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
+      gap: 5px;
     }
     .phone-card {
-      border: 1.4px solid #000;
-      padding: 3px 8px 4px;
+      border: 1px solid #000;
+      padding: 2px 6px 3px;
       text-align: center;
     }
     .phone-k {
       display: block;
-      font-size: 8px;
+      font-size: 7.5px;
       font-weight: 800;
-      letter-spacing: 0.06em;
-      margin-bottom: 1px;
+      letter-spacing: 0.04em;
+      margin-bottom: 0;
     }
     .phone-card b {
       display: block;
       font-family: Consolas, 'Courier New', monospace;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 800;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.04em;
       direction: ltr;
     }
-    .mast { margin-bottom: 6px; }
+    .mast { margin-bottom: 4px; }
     .mast-top {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
+      gap: 6px;
+      margin-bottom: 4px;
     }
     .copy-mark, .doc-kind {
-      font-size: 9px;
+      font-size: 8px;
       font-weight: 800;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
       border: 1px solid #000;
-      padding: 3px 11px;
+      padding: 1px 8px;
     }
-    .doc-kind { border-width: 1.6px; }
+    .doc-kind { border-width: 1.4px; }
     .inv-mid {
       font-family: Consolas, 'Courier New', monospace;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 800;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.03em;
     }
     .brand-center {
       text-align: center;
-      padding: 2px 0 10px;
-      border-bottom: 3px double #000;
+      padding: 0 0 5px;
+      border-bottom: 2px double #000;
     }
     .logo-img {
       display: block;
-      height: 86px;
+      height: 58px;
       width: auto;
-      max-width: 280px;
-      margin: 0 auto 6px;
+      max-width: 210px;
+      margin: 0 auto 3px;
       object-fit: contain;
       filter: grayscale(100%) contrast(1.12);
     }
     .logo-fallback {
-      width: 64px; height: 64px;
-      margin: 0 auto 8px;
-      border: 2px solid #000;
-      font-size: 28px;
+      width: 44px; height: 44px;
+      margin: 0 auto 4px;
+      border: 1.5px solid #000;
+      font-size: 20px;
       font-weight: 800;
       display: flex;
       align-items: center;
       justify-content: center;
     }
     .slogan {
-      font-size: 10.5px;
+      font-size: 9px;
       font-weight: 700;
-      letter-spacing: 0.16em;
+      letter-spacing: 0.14em;
       text-transform: lowercase;
     }
     .info {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      margin: 12px 0 11px;
-      border-top: 1.6px solid #000;
-      border-bottom: 1.6px solid #000;
+      margin: 6px 0 7px;
+      border-top: 1.3px solid #000;
+      border-bottom: 1.3px solid #000;
     }
-    .info-cell { padding: 8px 12px 9px; border-inline-start: 1px solid #000; min-width: 0; }
+    .info-cell { padding: 4px 8px 5px; border-inline-start: 1px solid #000; min-width: 0; }
     .info-cell:first-child { border-inline-start: 0; padding-right: 0; }
     .info-cell .k {
       display: block;
-      font-size: 8.5px;
+      font-size: 7.5px;
       font-weight: 800;
-      letter-spacing: 0.08em;
-      margin-bottom: 3px;
+      letter-spacing: 0.06em;
+      margin-bottom: 1px;
     }
-    .info-cell .v { display: block; font-size: 12.5px; font-weight: 800; word-break: break-word; }
-    .info-cell .v.ltr { direction: ltr; font-family: Consolas, monospace; font-size: 11.5px; }
-    .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 12px; }
+    .info-cell .v { display: block; font-size: 11px; font-weight: 800; word-break: break-word; }
+    .info-cell .v.ltr { direction: ltr; font-family: Consolas, monospace; font-size: 10.5px; }
+    .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 7px; }
     .tbl thead { display: table-header-group; }
     .tbl th {
-      font-size: 9.5px;
+      font-size: 8.5px;
       font-weight: 800;
-      letter-spacing: 0.04em;
-      padding: 8px 6px 7px;
+      letter-spacing: 0.03em;
+      padding: 4px 4px 3px;
       text-align: center;
-      border-top: 2.2px solid #000;
-      border-bottom: 2.2px solid #000;
+      border-top: 1.6px solid #000;
+      border-bottom: 1.6px solid #000;
     }
-    .tbl th.th-name { text-align: right; padding-right: 10px; }
-    .tbl td { padding: 8px 6px; border-bottom: 1px dotted #000; text-align: center; vertical-align: top; }
-    .tbl tbody tr:last-child td { border-bottom: 1.8px solid #000; }
+    .tbl th.th-name { text-align: right; padding-right: 8px; }
+    .tbl td { padding: 4px 4px; border-bottom: 1px dotted #000; text-align: center; vertical-align: top; }
+    .tbl tbody tr:last-child td { border-bottom: 1.4px solid #000; }
     .tbl tbody tr { page-break-inside: avoid; }
-    .t-idx { font-weight: 700; font-size: 10px; }
-    .t-name { text-align: right !important; padding-right: 10px !important; }
-    .t-name strong { display: block; font-size: 11.5px; font-weight: 800; }
-    .t-code { display: block; margin-top: 2px; font-family: Consolas, monospace; font-size: 8.5px; direction: ltr; letter-spacing: 0.03em; }
-    .t-qty { font-weight: 800; font-size: 12px; }
+    .t-idx { font-weight: 700; font-size: 9px; }
+    .t-name { text-align: right !important; padding-right: 8px !important; }
+    .t-name strong { display: block; font-size: 10.5px; font-weight: 800; }
+    .t-code { display: block; margin-top: 1px; font-family: Consolas, monospace; font-size: 8px; direction: ltr; letter-spacing: 0.02em; }
+    .t-qty { font-weight: 800; font-size: 11px; }
     .t-price { font-weight: 700; }
-    .t-total { font-weight: 800; font-size: 12px; }
+    .t-total { font-weight: 800; font-size: 11px; }
     .tag-edit {
-      display: inline-block; margin-top: 2px; font-size: 8px;
-      border: 1px solid #000; padding: 1px 5px; font-weight: 800;
+      display: inline-block; margin-top: 1px; font-size: 7.5px;
+      border: 1px solid #000; padding: 0 4px; font-weight: 800;
     }
-    .gift-val { display: inline-block; border: 1px solid #000; font-weight: 800; padding: 1px 7px; }
-    .was { font-size: 8px; text-decoration: line-through; margin-top: 2px; }
+    .gift-val { display: inline-block; border: 1px solid #000; font-weight: 800; padding: 0 5px; }
+    .was { font-size: 7.5px; text-decoration: line-through; margin-top: 1px; }
     .sum-box {
       width: 100%;
-      border: 1.6px solid #000;
-      margin-bottom: 8px;
+      border: 1.3px solid #000;
+      margin-bottom: 5px;
       page-break-inside: avoid;
     }
     .sum-head {
       text-align: center;
-      padding: 6px 8px;
-      font-size: 10px;
+      padding: 3px 6px;
+      font-size: 8.5px;
       font-weight: 800;
-      letter-spacing: 0.14em;
-      border-bottom: 1.3px solid #000;
+      letter-spacing: 0.12em;
+      border-bottom: 1px solid #000;
     }
     .sum-stats {
       display: flex;
       text-align: center;
     }
-    .sum-stats > div { flex: 1; padding: 8px 6px; border-inline-start: 1px solid #000; }
+    .sum-stats > div { flex: 1; padding: 4px 4px 5px; border-inline-start: 1px solid #000; }
     .sum-stats > div:first-child { border-inline-start: 0; }
-    .sum-stats span { display: block; font-size: 8.5px; font-weight: 800; letter-spacing: 0.06em; margin-bottom: 2px; }
-    .sum-stats b { display: block; font-size: 16px; font-weight: 800; }
-    .totals .tot-body { padding: 6px 14px 10px; }
+    .sum-stats span { display: block; font-size: 7.5px; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 0; }
+    .sum-stats b { display: block; font-size: 13px; font-weight: 800; }
+    .totals .tot-body { padding: 3px 10px 6px; }
     .tot-line {
       display: flex;
       justify-content: space-between;
       gap: 8px;
-      padding: 6px 2px;
-      font-size: 12px;
+      padding: 3px 2px;
+      font-size: 11px;
       border-bottom: 1px dotted #000;
     }
     .tot-line b { white-space: nowrap; font-weight: 800; }
-    .tot-line.debt-total { border-bottom: none; border-top: 1.6px solid #000; margin-top: 4px; padding-top: 8px; }
-    .tot-sep { margin: 8px 0 4px; font-size: 9px; font-weight: 800; text-align: center; letter-spacing: 0.08em; }
+    .tot-line.debt-total { border-bottom: none; border-top: 1.3px solid #000; margin-top: 2px; padding-top: 4px; }
+    .tot-sep { margin: 4px 0 2px; font-size: 8px; font-weight: 800; text-align: center; letter-spacing: 0.06em; }
     .tot-grand {
       display: flex; justify-content: space-between; align-items: center;
-      margin-top: 7px; padding: 9px 12px; border: 1.8px solid #000;
-      font-size: 13px; font-weight: 800;
+      margin-top: 4px; padding: 5px 8px; border: 1.5px solid #000;
+      font-size: 11px; font-weight: 800;
     }
-    .tot-grand b { font-size: 18px; }
-    .notes-box .notes-v { padding: 8px 12px 10px; font-size: 11.5px; font-weight: 600; }
+    .tot-grand b { font-size: 15px; }
+    .notes-box .notes-v { padding: 5px 10px 6px; font-size: 10.5px; font-weight: 600; }
     @media print { .sheet { max-width: 100%; } }
   </style>
 </head>
 <body>
+  ${invoicePageFrame()}
   ${invoicePageFoot(thanksText)}
   ${sheet('نسخة العميل')}
   ${sheet('نسخة الشركة')}
