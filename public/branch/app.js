@@ -778,6 +778,7 @@ async function fetchBarcodeFromAdmin() {
     const result = await fetchProductFromAdmin(code);
     if (!result) {
       toast('المنتج غير موجود في قاعدة الإدارة', 'err');
+      focusBarcode();
       return;
     }
     const line = state.cart.find((l) => l.barcode === result.product.barcode);
