@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '45';
+const APP_VERSION = '46';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -197,7 +197,7 @@ function setInvoiceType(type, { force = false } = {}) {
   state.customer = null;
   state.discount = 0;
   state.returnParent = null;
-  document.getElementById('discountInput').value = '0';
+  setDiscountInput(0);
   applyCustomer(null);
   document.getElementById('issueReason') && (document.getElementById('issueReason').value = '');
   document.getElementById('lastScanPreview')?.classList.add('hidden');
@@ -1017,9 +1017,22 @@ function recalcLine(line) {
   line.priceEdited = Number(line.unitPrice) !== Number(line.originalPrice);
 }
 
+function setDiscountInput(amount) {
+  const el = document.getElementById('discountInput');
+  if (!el) return;
+  const n = Math.max(0, Number(amount) || 0);
+  el.value = n > 0 ? String(n) : '';
+}
+
+function readDiscountInput() {
+  const raw = String(document.getElementById('discountInput')?.value || '').trim();
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 function updateCartTotals() {
   const subtotal = state.cart.reduce((s, l) => s + l.lineTotal, 0);
-  const discount = Number(document.getElementById('discountInput').value || 0);
+  const discount = readDiscountInput();
   state.discount = discount;
   const net = Math.max(0, subtotal - discount);
   document.getElementById('subtotalVal').textContent = fmt(subtotal);
@@ -1403,7 +1416,7 @@ document.getElementById('btnClearCart').addEventListener('click', () => {
   state.cart = [];
   applyCustomer(null);
   state.discount = 0;
-  document.getElementById('discountInput').value = '0';
+  setDiscountInput(0);
   document.getElementById('issueReason') && (document.getElementById('issueReason').value = '');
   document.getElementById('lastScanPreview')?.classList.add('hidden');
   newPosSession();
@@ -1427,7 +1440,7 @@ document.getElementById('btnHold').addEventListener('click', () => {
   state.cart = [];
   applyCustomer(null);
   state.discount = 0;
-  document.getElementById('discountInput').value = '0';
+  setDiscountInput(0);
   renderCart();
   toast('تم تعليق الفاتورة');
 });
@@ -1482,7 +1495,7 @@ function loadHeldList() {
       }));
       applyCustomer(item.customer || null);
       state.discount = item.discount || 0;
-      document.getElementById('discountInput').value = String(state.discount || 0);
+      setDiscountInput(state.discount);
       const rest = getHeld().filter((_, i) => i !== idx);
       saveHeld(rest);
       document.querySelector('.nav-item[data-view="pos"]:not([data-inv-type])')?.click();
@@ -1600,7 +1613,12 @@ document.addEventListener('keydown', (e) => {
   }
   if (!posVisible) return;
   if (e.key === 'F2') { e.preventDefault(); productSearch.focus(); productSearch.select(); return; }
-  if (e.key === 'F3') { e.preventDefault(); document.getElementById('discountInput').focus(); document.getElementById('discountInput').select(); return; }
+  if (e.key === 'F3') {
+    e.preventDefault();
+    const disc = document.getElementById('discountInput');
+    if (disc) { disc.focus(); if (disc.value) disc.select(); }
+    return;
+  }
   if (e.key === 'F6') { e.preventDefault(); document.getElementById('btnHold').click(); return; }
   if (e.key === 'F8') { e.preventDefault(); if (!document.getElementById('btnCheckout').disabled) document.getElementById('btnCheckout').click(); return; }
   if (e.target === barcodeInput || e.target === productSearch) return;
@@ -2034,7 +2052,7 @@ async function submitSale() {
       state.cart = [];
       applyCustomer(null);
       state.discount = 0;
-      document.getElementById('discountInput').value = '0';
+      setDiscountInput(0);
       document.getElementById('checkoutNotes').value = '';
       const prepBox = document.getElementById('prepFromWarehouse');
       if (prepBox) prepBox.checked = false;
@@ -2778,7 +2796,7 @@ document.getElementById('btnRepeatInvoice')?.addEventListener('click', () => {
   setInvoiceType('sale', { force: true });
   state.cart = lines;
   state.discount = discount;
-  document.getElementById('discountInput').value = String(discount || 0);
+  setDiscountInput(discount);
   if (accountId) {
     api(`/branch/accounts/${accountId}`).then((d) => applyCustomer(d.account)).catch(() => {
       applyCustomer({ id: accountId, name: customerName, code: '', balance: 0 });
