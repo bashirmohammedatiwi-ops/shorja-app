@@ -39,6 +39,14 @@ function payLabel(method) {
   return 'نقدي';
 }
 
+function invoiceFooterContacts() {
+  return `
+      <div class="contacts">
+        <div class="contact-row"><span>مدير مبيعات الجملة</span><b dir="ltr">07828630399</b></div>
+        <div class="contact-row"><span>محل الشورجة</span><b dir="ltr">07707683512</b></div>
+      </div>`;
+}
+
 function invoiceDocMeta(invoice) {
   if (invoice.kind === 'return') return { title: 'إشعار مرتجع' };
   if (invoice.kind === 'issue') return { title: 'إذن إخراج مخزون' };
@@ -300,6 +308,24 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .foot .msg { font-size: 12px; font-weight: 800; color: #000; margin-bottom: 4px; }
     .foot .sub { font-size: 9px; color: #000; }
     .foot .copy { font-size: 9px; font-weight: 800; color: #000; margin-top: 6px; letter-spacing: 0.12em; }
+    .contacts {
+      margin: 8px auto 0;
+      max-width: 280px;
+      border: 1px solid #000;
+      padding: 6px 10px;
+      text-align: right;
+    }
+    .contact-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 0;
+    }
+    .contact-row + .contact-row { border-top: 1px dotted #000; padding-top: 4px; margin-top: 2px; }
+    .contact-row b { font-family: Consolas, 'Courier New', monospace; font-size: 11px; letter-spacing: 0.04em; }
     @media print { @page { margin: 0; } .inv { max-width: 100%; padding: 9mm 10mm; } }
   </style>
 </head>
@@ -367,6 +393,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     <footer class="foot">
       <div class="msg">${esc(footer)}</div>
       <div class="sub">${esc(STORE_NAME)}${branchName ? ` — ${esc(branchName)}` : ''} · ${esc(invoice.invoiceNo)}</div>
+      ${invoiceFooterContacts()}
       <div class="copy">أصل للعميل</div>
     </footer>
   </div>
@@ -631,6 +658,23 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
       color: #000;
       font-weight: 600;
     }
+    .contacts {
+      margin-top: 8px;
+      border: 1px solid #000;
+      padding: 6px 8px;
+      text-align: right;
+    }
+    .contact-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 0;
+    }
+    .contact-row + .contact-row { border-top: 1px dotted #000; padding-top: 4px; margin-top: 2px; }
+    .contact-row b { font-family: Consolas, 'Courier New', monospace; font-size: 10px; direction: ltr; }
     .inv-code {
       margin-top: 6px;
       font-family: Consolas, monospace;
@@ -707,6 +751,7 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     <footer class="foot">
       <div class="foot-msg">${esc(footer)}</div>
       <div class="foot-brand">${esc(STORE_NAME)}${branchName ? ` — ${esc(branchName)}` : ''}</div>
+      ${invoiceFooterContacts()}
       <div class="inv-code">${esc(invoice.invoiceNo)}</div>
     </footer>
   </div>
