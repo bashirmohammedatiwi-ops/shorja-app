@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '42';
+const APP_VERSION = '43';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -589,30 +589,59 @@ function clearBarcodeField() {
 }
 
 // ── Login ──
-document.getElementById('loginForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
+const POS_USER = 'branch';
+const POS_PASS = 'branch123';
+
+function fillPosLogin() {
+  const userEl = document.getElementById('loginUser');
+  const passEl = document.getElementById('loginPass');
+  if (userEl) userEl.value = POS_USER;
+  if (passEl) passEl.value = POS_PASS;
+}
+
+async function loginToPos(username, password) {
   const errEl = document.getElementById('loginError');
+  const btn = document.getElementById('btnPosLogin');
   errEl.classList.add('hidden');
+  if (btn) btn.disabled = true;
   try {
     const data = await api('/auth/login', {
       method: 'POST',
       body: JSON.stringify({
-        username: document.getElementById('loginUser').value.trim(),
-        password: document.getElementById('loginPass').value.trim()
+        username: username || POS_USER,
+        password: password || POS_PASS
       })
     });
     if (data.user.role !== 'branch' && data.user.role !== 'admin') {
-      throw new Error('حساب الفرع فقط');
+      throw new Error('حساب الفرع فقط — افتح تطبيق نقطة البيع وليس الإدارة');
     }
     state.token = data.token;
     state.user = data.user;
     saveSession();
     showApp();
-    await initApp();
+    try {
+      await initApp();
+    } catch (bootErr) {
+      toast(bootErr.message || 'تعذر تحميل نقطة البيع', 'err');
+    }
   } catch (err) {
-    errEl.textContent = err.message;
+    errEl.textContent = err.message === 'Failed to fetch'
+      ? 'لا يوجد اتصال بالسيرفر'
+      : (err.message || 'فشل تسجيل الدخول');
     errEl.classList.remove('hidden');
+  } finally {
+    if (btn) btn.disabled = false;
   }
+}
+
+fillPosLogin();
+setTimeout(fillPosLogin, 300);
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('loginUser').value.trim() || POS_USER;
+  const password = document.getElementById('loginPass').value.trim() || POS_PASS;
+  await loginToPos(username, password);
 });
 
 document.getElementById('btnLogout').addEventListener('click', () => {

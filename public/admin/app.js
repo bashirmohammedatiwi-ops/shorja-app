@@ -140,7 +140,9 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         password: document.getElementById('loginPass').value
       })
     });
-    if (data.user.role !== 'admin') throw new Error('حساب إداري فقط');
+    if (data.user.role !== 'admin') {
+      throw new Error('هذا حساب نقطة البيع. أغلق الإدارة وافتح تطبيق «نقطة البيع»');
+    }
     token = data.token;
     localStorage.setItem(KEY, token);
     document.getElementById('loginScreen').classList.add('hidden');
