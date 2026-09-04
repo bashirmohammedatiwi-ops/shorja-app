@@ -8,49 +8,67 @@ function purgeEdariQueue(refType, refId) {
   db.prepare('DELETE FROM edari_sync_queue WHERE ref_type = ? AND ref_id = ?').run(refType, refId);
 }
 
-function deleteInvoiceById(id) {
-  const invoice = loadInvoice(Number(id));
-  if (!invoice) throw new Error('الفاتورة غير موجودة');
+function collectInvoiceIds(id) {
+  const children = db.prepare('SELECT id FROM invoices WHERE parent_invoice_id = ?').all(Number(id));
+  const ids = [];
+  for (const child of children) ids.push(...collectInvoiceIds(child.id));
+  ids.push(Number(id));
+  return ids;
+}
 
-  const childReturns = db.prepare(`
-    SELECT id, invoice_no FROM invoices WHERE parent_invoice_id = ? AND kind = 'return'
-  `).all(invoice.id);
-  if (childReturns.length) {
-    const nums = childReturns.map((r) => r.invoice_no).join('، ');
-    throw new Error(`لا يمكن الحذف — توجد مرتجعات مرتبطة: ${nums}. احذف المرتجعات أولاً.`);
-  }
-
+function revertInvoiceEffects(invoice) {
   const kind = invoice.kind || 'sale';
   const skipBranchStock = kind === 'sale' && invoice.prepMode === 'warehouse';
 
-  const tx = db.transaction(() => {
-    if (!skipBranchStock) {
-      for (const l of invoice.lines || []) {
-        if (!l.barcode) continue;
-        const pieces = Number(l.qty || 0) + Number(l.giftQty || 0);
-        if (!pieces) continue;
-        if (kind === 'sale' || kind === 'issue') {
-          adjustStock(l.barcode, pieces);
-        } else if (kind === 'return') {
-          adjustStock(l.barcode, -pieces);
-        }
+  if (!skipBranchStock) {
+    for (const l of invoice.lines || []) {
+      if (!l.barcode) continue;
+      const pieces = Number(l.qty || 0) + Number(l.giftQty || 0);
+      if (!pieces) continue;
+      if (kind === 'sale' || kind === 'issue') {
+        adjustStock(l.barcode, pieces);
+      } else if (kind === 'return') {
+        adjustStock(l.barcode, -pieces);
       }
     }
+  }
 
-    if (kind === 'sale' && invoice.accountId && Number(invoice.dueAmount || 0) > 0) {
-      updateBalance(invoice.accountId, -Number(invoice.dueAmount));
-    } else if (kind === 'return' && invoice.accountId && Number(invoice.total || 0) > 0) {
-      updateBalance(invoice.accountId, Number(invoice.total));
-    }
+  if (kind === 'sale' && invoice.accountId && Number(invoice.dueAmount || 0) > 0) {
+    updateBalance(invoice.accountId, -Number(invoice.dueAmount));
+  } else if (kind === 'return' && invoice.accountId && Number(invoice.total || 0) > 0) {
+    updateBalance(invoice.accountId, Number(invoice.total));
+  }
+}
 
-    db.prepare("DELETE FROM journal_entries WHERE ref_type = 'invoice' AND ref_id = ?").run(invoice.id);
-    purgeEdariQueue('invoice', invoice.id);
-    db.prepare('DELETE FROM invoices WHERE id = ?').run(invoice.id);
+function purgeInvoiceRow(invoice) {
+  revertInvoiceEffects(invoice);
+  db.prepare("DELETE FROM journal_entries WHERE ref_type = 'invoice' AND ref_id = ?").run(invoice.id);
+  purgeEdariQueue('invoice', invoice.id);
+  db.prepare('DELETE FROM invoices WHERE id = ?').run(invoice.id);
+}
+
+function deleteInvoiceById(id) {
+  const root = loadInvoice(Number(id));
+  if (!root) throw new Error('الفاتورة غير موجودة');
+
+  const ids = collectInvoiceIds(root.id);
+  const invoices = ids.map((invId) => loadInvoice(invId)).filter(Boolean);
+  if (!invoices.length) throw new Error('الفاتورة غير موجودة');
+
+  const tx = db.transaction(() => {
+    for (const invoice of invoices) purgeInvoiceRow(invoice);
   });
-
   tx();
+
   const revision = bumpDataRevision();
-  return { ok: true, deletedId: invoice.id, invoiceNo: invoice.invoiceNo, revision };
+  return {
+    ok: true,
+    deletedId: root.id,
+    invoiceNo: root.invoiceNo,
+    deletedCount: invoices.length,
+    localOnly: true,
+    revision
+  };
 }
 
 function getPayment(id) {
@@ -73,64 +91,64 @@ function getPayment(id) {
   };
 }
 
+function purgePaymentRow(payment) {
+  updateBalance(payment.accountId, payment.amount);
+  db.prepare("DELETE FROM journal_entries WHERE ref_type = 'payment' AND ref_id = ?").run(payment.id);
+  purgeEdariQueue('payment', payment.id);
+  db.prepare('DELETE FROM payments WHERE id = ?').run(payment.id);
+}
+
 function deletePaymentById(id) {
   const payment = getPayment(Number(id));
   if (!payment) throw new Error('التسديد غير موجود');
 
-  const tx = db.transaction(() => {
-    updateBalance(payment.accountId, payment.amount);
-    db.prepare("DELETE FROM journal_entries WHERE ref_type = 'payment' AND ref_id = ?").run(payment.id);
-    purgeEdariQueue('payment', payment.id);
-    db.prepare('DELETE FROM payments WHERE id = ?').run(payment.id);
-  });
-
+  const tx = db.transaction(() => purgePaymentRow(payment));
   tx();
   const revision = bumpDataRevision();
-  return { ok: true, deletedId: payment.id, paymentNo: payment.paymentNo, revision };
+  return { ok: true, deletedId: payment.id, paymentNo: payment.paymentNo, localOnly: true, revision };
 }
 
-function deleteAccountById(id, { force = false } = {}) {
+function deleteAccountById(id) {
   const account = getAccount(Number(id));
   if (!account) throw new Error('الحساب غير موجود');
-  if (!account.isActive && !force) throw new Error('الحساب محذوف مسبقاً');
 
-  const balance = Number(account.balance || 0);
-  if (balance !== 0 && !force) {
-    throw new Error(`لا يمكن الحذف — رصيد الحساب ${balance}. سدّد الدين أو صفّر الرصيد أولاً.`);
-  }
-
-  const invCount = db.prepare('SELECT COUNT(*) AS c FROM invoices WHERE account_id = ?').get(account.id).c;
-  const payCount = db.prepare('SELECT COUNT(*) AS c FROM payments WHERE account_id = ?').get(account.id).c;
-  if ((invCount > 0 || payCount > 0) && !force) {
-    throw new Error(`لا يمكن الحذف — الحساب مرتبط بـ ${invCount} فاتورة و ${payCount} تسديد. احذفها أولاً.`);
-  }
+  const invoiceIds = db.prepare('SELECT id FROM invoices WHERE account_id = ?').all(account.id).map((r) => r.id);
+  const uniqueInvoiceIds = [...new Set(invoiceIds.flatMap((invId) => collectInvoiceIds(invId)))];
+  const invoices = uniqueInvoiceIds.map((invId) => loadInvoice(invId)).filter(Boolean);
+  const payments = db.prepare('SELECT id FROM payments WHERE account_id = ?').all(account.id);
 
   const tx = db.transaction(() => {
-    db.prepare("DELETE FROM journal_entries WHERE account_id = ?").run(account.id);
+    for (const invoice of invoices) purgeInvoiceRow(invoice);
+    for (const row of payments) {
+      const payment = getPayment(row.id);
+      if (payment) purgePaymentRow(payment);
+    }
+    db.prepare('DELETE FROM journal_entries WHERE account_id = ?').run(account.id);
     purgeEdariQueue('account', account.id);
-    db.prepare(`
-      UPDATE accounts
-      SET is_active = 0, balance = 0, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(account.id);
+    db.prepare('DELETE FROM accounts WHERE id = ?').run(account.id);
   });
-
   tx();
+
   const revision = bumpDataRevision();
-  return { ok: true, deletedId: account.id, code: account.code, name: account.name, revision };
+  return {
+    ok: true,
+    deletedId: account.id,
+    code: account.code,
+    name: account.name,
+    deletedInvoices: invoices.length,
+    deletedPayments: payments.length,
+    localOnly: true,
+    revision
+  };
 }
 
 function deleteJournalEntryById(id) {
   const entry = db.prepare('SELECT * FROM journal_entries WHERE id = ?').get(Number(id));
   if (!entry) throw new Error('القيد غير موجود');
 
-  const refType = entry.ref_type || '';
-  if (refType === 'invoice' || refType === 'payment') {
-    throw new Error('هذا القيد مرتبط بفاتورة أو تسديد — احذف المستند الأصلي بدلاً من القيد.');
-  }
-
   const tx = db.transaction(() => {
-    if (entry.account_id) {
+    const isStandalone = !entry.ref_type || entry.ref_type === 'adjustment' || entry.kind === 'adjustment';
+    if (isStandalone && entry.account_id) {
       updateBalance(entry.account_id, -Number(entry.amount || 0));
     }
     db.prepare('DELETE FROM journal_entries WHERE id = ?').run(entry.id);
@@ -138,7 +156,13 @@ function deleteJournalEntryById(id) {
 
   tx();
   const revision = bumpDataRevision();
-  return { ok: true, deletedId: entry.id, entryNo: entry.entry_no, revision };
+  return {
+    ok: true,
+    deletedId: entry.id,
+    entryNo: entry.entry_no,
+    localOnly: true,
+    revision
+  };
 }
 
 module.exports = {

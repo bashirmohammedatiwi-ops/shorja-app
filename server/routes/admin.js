@@ -470,8 +470,7 @@ router.get('/accounts/:id', (req, res) => {
 
 router.delete('/accounts/:id', (req, res) => {
   try {
-    const force = req.query.force === '1' || req.body?.force === true;
-    const result = deleteAccountById(Number(req.params.id), { force });
+    const result = deleteAccountById(Number(req.params.id));
     res.json(result);
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });

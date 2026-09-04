@@ -7,7 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=32">
+  <link rel="stylesheet" href="styles.css?v=33">
+  <link rel="stylesheet" href="official.css?v=33">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -16,7 +17,7 @@
         <div class="login-brand">
           <div class="brand-logo">د</div>
           <h1>ديما الحياة</h1>
-          <p>نظام نقطة البيع للفرع</p>
+          <p>نقطة البيع — نظام فروع رسمي</p>
         </div>
         <form id="loginForm" class="login-form">
           <label>اسم المستخدم</label>
@@ -41,6 +42,7 @@
       </div>
 
       <nav class="topnav" id="mainNav" aria-label="التنقل الرئيسي">
+        <div class="nav-cluster primary">
         <button type="button" class="nav-item active" data-view="pos">
           <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></span>
           <span class="nav-label">البيع</span>
@@ -53,6 +55,8 @@
           <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h6"/></svg></span>
           <span class="nav-label">الفواتير</span>
         </button>
+        </div>
+        <div class="nav-cluster">
         <button type="button" class="nav-item" data-view="pos" data-inv-type="return">
           <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/></svg></span>
           <span class="nav-label">مرتجع</span>
@@ -83,6 +87,7 @@
           <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
           <span class="nav-label">إعدادات</span>
         </button>
+        </div>
       </nav>
 
       <div class="topbar-tools">
@@ -105,6 +110,7 @@
           <h2 id="pageTitle">نقطة البيع</h2>
           <p id="pageSubtitle">مسح · بحث · بيع سريع</p>
         </div>
+        <div class="header-meta" id="pageHeaderMeta"></div>
       </header>
 
       <div id="priceBanner" class="price-banner hidden">
@@ -446,25 +452,34 @@
 
       <!-- Settings -->
       <main id="viewSettings" class="view hidden">
-        <div class="panel-card settings-panel">
-          <h3>إعدادات الفرع</h3>
-          <div class="form-stack">
-            <label>حد تنبيه المخزون المنخفض</label>
-            <input type="number" id="setLowStock" class="field" min="0" value="5">
-            <label class="check-label wide"><input type="checkbox" id="setBlockZero"> منع بيع المنتجات النافدة</label>
-            <label class="check-label wide"><input type="checkbox" id="setBlockOver" checked> منع تجاوز الكمية المتاحة</label>
-            <label class="check-label wide"><input type="checkbox" id="setAllowPrice" checked> السماح بتعديل السعر يدوياً</label>
-            <label class="check-label wide"><input type="checkbox" id="setThermal"> طباعة حرارية 80mm <span class="settings-hint-inline">(بدون تفعيل = فاتورة A4)</span></label>
-            <label>نص أسفل الفاتورة</label>
-            <input type="text" id="setReceiptFooter" class="field" placeholder="شكراً لزيارتكم">
+        <div class="settings-layout">
+          <div class="panel-card settings-panel">
+            <h3>سلوك نقطة البيع</h3>
+            <div class="form-stack">
+              <label>حد تنبيه المخزون المنخفض</label>
+              <input type="number" id="setLowStock" class="field" min="0" value="5">
+              <label class="check-label wide"><input type="checkbox" id="setBlockZero"> منع بيع المنتجات النافدة</label>
+              <label class="check-label wide"><input type="checkbox" id="setBlockOver" checked> منع تجاوز الكمية المتاحة</label>
+              <label class="check-label wide"><input type="checkbox" id="setAllowPrice" checked> السماح بتعديل السعر يدوياً</label>
+              <label class="check-label wide"><input type="checkbox" id="setThermal"> طباعة حرارية 80mm <span class="settings-hint-inline">(بدون تفعيل = فاتورة A4)</span></label>
+              <label>نص أسفل الفاتورة</label>
+              <input type="text" id="setReceiptFooter" class="field" placeholder="شكراً لزيارتكم">
+              <div class="settings-actions-row">
+                <button type="button" class="btn btn-ghost btn-sm" id="btnKeyboardHelp">اختصارات لوحة المفاتيح</button>
+                <button type="button" class="btn btn-primary" id="btnSaveSettings">حفظ الإعدادات</button>
+              </div>
+            </div>
+          </div>
+          <div class="panel-card settings-panel">
+            <h3>المزامنة والحالة</h3>
             <div class="settings-sync-block">
-              <h4>مزامنة المنتجات من الإدارة</h4>
+              <h4>منتجات الإدارة</h4>
               <p class="settings-hint">المخزون المحلي: <strong id="cachedProductCount">0</strong> منتج</p>
               <p class="settings-hint subtle">عند المسح يُجلب المنتج تلقائياً من قاعدة الإدارة إن وُجد.</p>
               <button type="button" class="btn btn-secondary btn-block" id="btnSyncProducts">تحديث جميع المنتجات من الإدارة</button>
             </div>
             <div class="settings-info-block">
-              <h4>معلومات التطبيق</h4>
+              <h4>معلومات الجهاز</h4>
               <div class="settings-info-grid">
                 <div><span>إصدار الواجهة</span><strong id="setAppVersion">—</strong></div>
                 <div><span>نسخة الأسعار</span><strong id="setPriceVersion">—</strong></div>
@@ -472,8 +487,6 @@
                 <div><span>الاتصال</span><strong id="setConnStatus">—</strong></div>
               </div>
             </div>
-            <button type="button" class="btn btn-ghost btn-sm" id="btnKeyboardHelp">⌨ اختصارات لوحة المفاتيح</button>
-            <button type="button" class="btn btn-primary" id="btnSaveSettings">حفظ الإعدادات</button>
           </div>
         </div>
       </main>
@@ -566,6 +579,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=32"></script>
+  <script src="app.js?v=33"></script>
 </body>
 </html>

@@ -524,7 +524,7 @@
     if (countEl) countEl.textContent = `${data.total ?? (data.invoices || []).length} نتيجة`;
     $('invoiceTable').innerHTML = `
       <table id="invoicesDataTable">
-        <thead><tr><th>الرقم</th><th>الفرع</th><th>النوع</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>مدفوع</th><th>متبقي</th><th>الدفع</th><th>الإداري</th></tr></thead>
+        <thead><tr><th>الرقم</th><th>الفرع</th><th>النوع</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>مدفوع</th><th>متبقي</th><th>الدفع</th><th>الإداري</th><th></th></tr></thead>
         <tbody>${(data.invoices||[]).map((i) => `
           <tr class="clickable-row" data-invoice-id="${i.id}">
             <td>${esc(i.invoiceNo)}</td>
@@ -537,11 +537,27 @@
             <td dir="ltr">${fmt(i.dueAmount)}</td>
             <td>${payMethodLabel(i.paymentMethod)}</td>
             <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}</td>
-          </tr>`).join('') || '<tr><td colspan="10">لا توجد فواتير</td></tr>'}
+            <td><button type="button" class="btn btn-danger btn-sm" data-delete-invoice="${i.id}">حذف</button></td>
+          </tr>`).join('') || '<tr><td colspan="11">لا توجد فواتير</td></tr>'}
         </tbody>
       </table>`;
     $('invoiceTable').querySelectorAll('[data-invoice-id]').forEach((row) => {
-      row.addEventListener('click', () => openInvoice(Number(row.dataset.invoiceId)));
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('[data-delete-invoice]')) return;
+        openInvoice(Number(row.dataset.invoiceId));
+      });
+    });
+    $('invoiceTable').querySelectorAll('[data-delete-invoice]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('حذف هذه الفاتورة من لوحة التحكم ونقطة البيع؟\nحتى لو كانت مرحّلة: تُحذف هنا فقط ولا تُلغى من برنامج الإداري.')) return;
+        try {
+          await api(`/admin/invoices/${btn.dataset.deleteInvoice}`, { method: 'DELETE' });
+          toast('تم حذف الفاتورة من الشورجة');
+          loadInvoices();
+          loadDashboard();
+        } catch (err) { toast(err.message); }
+      });
     });
   };
 
@@ -729,7 +745,10 @@
             <td dir="ltr" style="color:var(--danger);font-weight:700${overLimit ? ';background:#fef2f2' : ''}">${fmt(a.balance)}</td>
             <td dir="ltr">${fmt(a.creditLimit)}</td>
             <td>${edariSyncLabel(a.edariSyncStatus, a.edariSyncError)}</td>
-            <td>${a.edariSyncStatus !== 'synced' ? `<button type="button" class="btn btn-sm btn-secondary" data-sync-acc="${a.id}">مزامنة</button>` : '✓'}</td>
+            <td class="row-actions">
+              ${a.edariSyncStatus !== 'synced' ? `<button type="button" class="btn btn-sm btn-secondary" data-sync-acc="${a.id}">مزامنة</button>` : ''}
+              <button type="button" class="btn btn-danger btn-sm" data-delete-acc="${a.id}">حذف</button>
+            </td>
           </tr>`;
         }).join('') || '<tr><td colspan="7">لا توجد حسابات</td></tr>'}
       </tbody></table>`;
@@ -743,6 +762,21 @@
           await api(`/admin/accounts/${btn.dataset.syncAcc}/sync-edari`, { method: 'POST' });
           toast('أُضيف الحساب لطابور الإداري');
           loadAccounts();
+        } catch (err) { toast(err.message); }
+      });
+    });
+    $('accountTable').querySelectorAll('[data-delete-acc]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('حذف هذا الحساب من لوحة التحكم ونقطة البيع مع كل فواتيره وتسديداته وقيوده؟\nحتى البيانات المرحّلة تُحذف هنا فقط ولا تُلغى من برنامج الإداري.')) return;
+        try {
+          await api(`/admin/accounts/${btn.dataset.deleteAcc}`, { method: 'DELETE' });
+          toast('تم حذف الحساب من الشورجة');
+          loadAccounts();
+          loadInvoices();
+          loadPayments();
+          loadJournal();
+          loadDashboard();
         } catch (err) { toast(err.message); }
       });
     });

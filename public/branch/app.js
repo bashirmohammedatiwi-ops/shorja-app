@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '32';
+const APP_VERSION = '33';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';

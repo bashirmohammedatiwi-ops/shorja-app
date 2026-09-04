@@ -611,12 +611,12 @@ document.getElementById('btnPrintInvoice')?.addEventListener('click', () => {
 
 document.getElementById('btnDeleteInvoice')?.addEventListener('click', async () => {
   if (!activeInvoiceId) return;
-  if (!confirm('حذف هذه الفاتورة نهائياً؟\nسيتم عكس المخزون والديون المرتبطة — وتختفي من نقطة البيع أيضاً.')) return;
+  if (!confirm('حذف هذه الفاتورة من لوحة التحكم ونقطة البيع؟\nحتى لو كانت مرحّلة: تُحذف هنا فقط ولا تُلغى من برنامج الإداري.\nيُعكس المخزون والدين، وتُحذف المرتجعات المرتبطة.')) return;
   try {
     await api(`/admin/invoices/${activeInvoiceId}`, { method: 'DELETE' });
     document.getElementById('invoiceModal').close();
     activeInvoiceId = null;
-    toast('تم حذف الفاتورة');
+    toast('تم حذف الفاتورة من الشورجة');
     loadInvoices();
     loadDashboard();
   } catch (err) { toast(err.message); }
@@ -1399,7 +1399,7 @@ async function openLedger(id) {
               <td dir="ltr">${fmt(e.amount)}</td>
               <td>${esc(e.description)}</td>
               <td>${esc(e.entryDate)}</td>
-              <td>${e.kind === 'adjustment' ? `<button type="button" class="btn btn-danger btn-sm" data-delete-journal="${e.id}" title="حذف القيد">حذف</button>` : ''}</td>
+              <td><button type="button" class="btn btn-danger btn-sm" data-delete-journal="${e.id}" title="حذف من الشورجة فقط">حذف</button></td>
             </tr>
           `).join('') : '<tr><td colspan="6">لا توجد حركات</td></tr>'}
           </tbody>
@@ -1409,7 +1409,7 @@ async function openLedger(id) {
     document.getElementById('ledgerDetail').querySelectorAll('[data-delete-payment]').forEach((btn) => {
       btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
-        if (!confirm('حذف هذا التسديد وعكس تأثيره على رصيد الحساب؟')) return;
+        if (!confirm('حذف هذا التسديد من لوحة التحكم فقط؟\nيُعكس رصيد الحساب هنا — ولا يُلغى من الإداري إن كان مرحّلاً.')) return;
         try {
           await api(`/admin/payments/${btn.dataset.deletePayment}`, { method: 'DELETE' });
           toast('تم حذف التسديد');
@@ -1423,10 +1423,10 @@ async function openLedger(id) {
     document.getElementById('ledgerDetail').querySelectorAll('[data-delete-journal]').forEach((btn) => {
       btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
-        if (!confirm('حذف قيد التسوية وعكس تأثيره على الرصيد؟')) return;
+        if (!confirm('حذف هذا القيد من لوحة التحكم فقط؟\nحتى القيود المرحّلة تُحذف هنا ولا تُلغى من برنامج الإداري.')) return;
         try {
           await api(`/admin/journal/${btn.dataset.deleteJournal}`, { method: 'DELETE' });
-          toast('تم حذف القيد');
+          toast('تم حذف القيد من الشورجة');
           openLedger(activeAccountId);
           loadJournal();
           loadAccounts();
@@ -1438,13 +1438,16 @@ async function openLedger(id) {
 
 document.getElementById('btnDeleteAccount')?.addEventListener('click', async () => {
   if (!activeAccountId) return;
-  if (!confirm('حذف هذا الحساب/الزبون؟\nيجب أن يكون الرصيد صفراً ولا توجد فواتير مرتبطة — سيختفي من نقطة البيع.')) return;
+  if (!confirm('حذف هذا الحساب من لوحة التحكم ونقطة البيع مع كل فواتيره وتسديداته وقيوده؟\nحتى البيانات المرحّلة تُحذف هنا فقط ولا تُلغى من برنامج الإداري.')) return;
   try {
     await api(`/admin/accounts/${activeAccountId}`, { method: 'DELETE' });
     document.getElementById('ledgerModal').close();
     activeAccountId = null;
-    toast('تم حذف الحساب');
+    toast('تم حذف الحساب من الشورجة');
     loadAccounts();
+    loadInvoices();
+    loadPayments();
+    loadJournal();
     loadDashboard();
   } catch (err) { toast(err.message); }
 });
@@ -1513,7 +1516,7 @@ async function loadPayments() {
     </table>`;
   document.getElementById('paymentsTable').querySelectorAll('[data-delete-payment-row]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      if (!confirm('حذف هذا التسديد وعكس تأثيره على رصيد الحساب؟')) return;
+      if (!confirm('حذف هذا التسديد من لوحة التحكم فقط؟\nيُعكس رصيد الحساب هنا — ولا يُلغى من الإداري إن كان مرحّلاً.')) return;
       try {
         await api(`/admin/payments/${btn.dataset.deletePaymentRow}`, { method: 'DELETE' });
         toast('تم حذف التسديد');
@@ -1570,13 +1573,13 @@ async function loadJournal() {
           <td dir="ltr">${fmt(e.amount)}</td>
           <td>${esc(e.description)}</td>
           <td>${esc(e.entryDate)}</td>
-          <td>${e.kind === 'adjustment' ? `<button type="button" class="btn btn-danger btn-sm" data-delete-journal-row="${e.id}">حذف</button>` : ''}</td>
+          <td><button type="button" class="btn btn-danger btn-sm" data-delete-journal-row="${e.id}">حذف</button></td>
         </tr>`).join('') || '<tr><td colspan="6">لا توجد قيود</td></tr>'}
       </tbody>
     </table>`;
   document.getElementById('journalTable').querySelectorAll('[data-delete-journal-row]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      if (!confirm('حذف قيد التسوية وعكس تأثيره على الرصيد؟')) return;
+      if (!confirm('حذف هذا القيد من لوحة التحكم فقط؟\nحتى القيود المرحّلة تُحذف هنا ولا تُلغى من برنامج الإداري.')) return;
       try {
         await api(`/admin/journal/${btn.dataset.deleteJournalRow}`, { method: 'DELETE' });
         toast('تم حذف القيد');
