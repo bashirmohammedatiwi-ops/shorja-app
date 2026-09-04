@@ -1225,53 +1225,66 @@ kbd {
   border-radius: 999px;
 }
 
-.col-gift { width: 118px; text-align: center; }
+.col-gift { width: 148px; min-width: 132px; text-align: center; }
 
 .gift-controls {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  gap: 3px;
   background: #fdf2f8;
-  border-radius: 8px;
-  padding: 2px;
-  border: 1px solid #fbcfe8;
+  border-radius: 9px;
+  padding: 3px;
+  border: 1px solid #f9a8d4;
 }
 
 .gift-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid #f9a8d4;
+  background: #fff;
   font: inherit;
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 1.05rem;
+  line-height: 1;
   cursor: pointer;
-  color: #db2777;
+  color: #be185d;
   transition: all 0.1s;
+  flex-shrink: 0;
 }
 
 .gift-btn:hover {
-  background: #fff;
-  color: #9d174d;
+  background: #be185d;
+  border-color: #be185d;
+  color: #fff;
 }
 
 .gift-input {
-  width: 40px;
-  padding: 6px 2px;
+  width: 42px;
+  height: 30px;
+  padding: 0;
   border: none;
   border-radius: 6px;
-  background: transparent;
+  background: #fff;
   font: inherit;
   font-weight: 800;
-  font-size: 0.88rem;
+  font-size: 1rem;
   text-align: center;
   color: #9d174d;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.gift-input::-webkit-outer-spin-button,
+.gift-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .gift-input:focus {
   outline: none;
-  background: #fff;
-  box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.15);
+  box-shadow: 0 0 0 2px rgba(190, 24, 93, 0.25);
 }
 
 .gift-tag {
@@ -2522,7 +2535,7 @@ kbd {
   .btn-dock-checkout { flex: 1; }
   .pos-meta-day { display: none; }
   .col-barcode { display: none; }
-  .col-gift { width: 100px; }
+  .col-gift { width: 132px; min-width: 126px; }
   .login-card { padding: 32px 24px; }
   .stock-table .col-cat { display: none; }
   .stock-chip { min-width: 72px; padding: 8px 12px; }
@@ -2842,7 +2855,7 @@ kbd {
 
 .invoice-table-compact .col-price { min-width: 72px; width: 9%; }
 .invoice-table-compact .col-qty { min-width: 88px; width: 10%; }
-.invoice-table-compact .col-gift { min-width: 72px; width: 8%; }
+.invoice-table-compact .col-gift { min-width: 126px; width: 14%; }
 .invoice-table-compact .col-total {
   min-width: 64px;
   width: 8%;
@@ -2876,16 +2889,17 @@ kbd {
 
 .invoice-table-compact .qty-btn,
 .invoice-table-compact .gift-btn {
-  width: 20px;
-  height: 20px;
-  font-size: 0.75rem;
-  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  font-size: 1rem;
 }
 
 .invoice-table-compact .gift-input {
-  width: 28px;
-  padding: 2px;
-  font-size: 0.72rem;
+  width: 36px;
+  height: 26px;
+  padding: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
 }
 
 .invoice-table-compact .reset-price-btn {
@@ -3149,7 +3163,7 @@ kbd {
 }
 
 @media (max-width: 1000px) {
-  .invoice-table-compact .col-gift { min-width: 64px; }
+  .invoice-table-compact .col-gift { min-width: 120px; }
 }
 
 @media (max-width: 700px) {

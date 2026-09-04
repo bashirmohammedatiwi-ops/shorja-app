@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '44';
+const APP_VERSION = '45';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -1063,25 +1063,22 @@ function setLineGiftQty(idx, val) {
   const line = state.cart[idx];
   if (!line) return;
   let g = Math.max(0, Math.round(Number(val) || 0));
-  if (line.stockQty > 0 && line.qty + g > line.stockQty) {
-    toast(`المخزون لا يكفي (${line.stockQty} قطعة)`, 'warn');
-    g = Math.max(0, line.stockQty - line.qty);
+  const stock = Number(line.stockQty || 0);
+  if (stock > 0 && line.qty + g > stock) {
+    const overflow = line.qty + g - stock;
+    if (line.qty >= overflow) {
+      line.qty -= overflow;
+    } else {
+      toast(`المخزون لا يكفي (${stock} قطعة)`, 'warn');
+      g = Math.max(0, stock - line.qty);
+    }
   }
   line.giftQty = g;
   recalcLine(line);
   if (!line.qty && !line.giftQty) {
     state.cart.splice(idx, 1);
-    renderCart();
-    return;
   }
-  updateCartTotals();
-  const row = document.querySelector(`tr.invoice-row[data-idx="${idx}"]`);
-  if (row) {
-    row.classList.toggle('row-gift', g > 0);
-    row.querySelector('.line-total-cell strong').textContent = fmt(line.lineTotal);
-    const inp = row.querySelector('.gift-input');
-    if (inp) inp.value = g;
-  }
+  renderCart();
 }
 
 function setLinePrice(idx, price) {
@@ -1202,15 +1199,12 @@ function bindCartTableEvents() {
     if (resetBtn) resetLinePrice(Number(resetBtn.dataset.resetPrice));
     const giftBtn = e.target.closest('.gift-btn');
     if (giftBtn) {
+      e.preventDefault();
       const idx = Number(giftBtn.dataset.idx);
       const line = state.cart[idx];
       if (!line) return;
       const action = giftBtn.dataset.action;
       if (action === 'inc') {
-        if (line.stockQty > 0 && line.qty + (line.giftQty || 0) + 1 > line.stockQty) {
-          toast('المخزون لا يكفي', 'warn');
-          return;
-        }
         setLineGiftQty(idx, (line.giftQty || 0) + 1);
       } else if (action === 'dec') {
         setLineGiftQty(idx, (line.giftQty || 0) - 1);
@@ -1279,8 +1273,12 @@ function updateCartRow(idx) {
   if (qtyInp) qtyInp.value = line.qty;
   const giftInp = row.querySelector('.gift-input');
   if (giftInp) giftInp.value = line.giftQty || 0;
-  const totalCell = row.querySelector('.line-total-cell strong');
-  if (totalCell) totalCell.textContent = fmt(line.lineTotal);
+  const totalCell = row.querySelector('.line-total-cell');
+  if (totalCell) {
+    const strong = totalCell.querySelector('strong');
+    if (strong) strong.textContent = fmt(line.lineTotal);
+    else totalCell.textContent = fmt(line.lineTotal);
+  }
   updateCartTotals();
   updateCartMeta();
 }
@@ -1376,9 +1374,9 @@ function renderCartNow() {
       ${isReturn ? '' : `
       <td class="col-gift">
         <div class="gift-controls">
-          <button type="button" class="gift-btn" data-action="dec" data-idx="${i}" title="تقليل الهدايا">−</button>
-          <input type="number" class="gift-input" data-idx="${i}" value="${l.giftQty || 0}" min="0" title="هدايا">
-          <button type="button" class="gift-btn" data-action="inc" data-idx="${i}" title="زيادة الهدايا">+</button>
+          <button type="button" class="gift-btn" data-action="dec" data-idx="${i}" title="تقليل الهدايا" aria-label="تقليل الهدايا">−</button>
+          <input type="text" inputmode="numeric" class="gift-input" data-idx="${i}" value="${l.giftQty || 0}" title="عدد الهدايا" aria-label="عدد الهدايا">
+          <button type="button" class="gift-btn" data-action="inc" data-idx="${i}" title="زيادة الهدايا" aria-label="زيادة الهدايا">+</button>
         </div>
       </td>`}
       <td class="col-total line-total-cell" dir="ltr">${fmt(l.lineTotal)}</td>

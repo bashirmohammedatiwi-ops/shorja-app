@@ -278,8 +278,8 @@
 }
 .invoice-table-compact .line-name { font-size: 0.78rem; font-weight: 700; }
 .invoice-table-compact .cell-input { height: 24px; font-size: 0.76rem; padding: 0 4px; }
-.invoice-table-compact .qty-btn,
-.invoice-table-compact .gift-btn { width: 22px; height: 22px; font-size: 0.85rem; }
+.invoice-table-compact .qty-btn { width: 22px; height: 22px; font-size: 0.85rem; }
+.invoice-table-compact .gift-btn { width: 26px; height: 26px; font-size: 1rem; }
 
 .pos-dock {
   padding: 8px 12px;
