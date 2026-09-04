@@ -525,7 +525,7 @@ kbd {
 /* Header — scan + search */
 .pos-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   padding: 14px 22px;
@@ -537,9 +537,17 @@ kbd {
 
 .pos-inputs {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   flex: 1;
+  min-width: 0;
+}
+
+.pos-scan-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1.4;
   min-width: 0;
 }
 
@@ -547,7 +555,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1.4;
+  width: 100%;
   min-width: 0;
   background: #f8fafc;
   border: 1.5px solid var(--border);
@@ -639,6 +647,7 @@ kbd {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  min-height: 48px;
 }
 
 .pos-meta-item {
@@ -660,14 +669,15 @@ kbd {
 
 .pos-meta-day { color: var(--primary-dark); background: var(--primary-soft); border-color: #99f6e4; }
 
-/* Last scan */
+/* Last scan — under barcode field */
 .pos-last-scan {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 10px 20px 0;
-  padding: 10px 14px;
-  background: #fff;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 10px;
+  width: 100%;
+  background: #f0fdf4;
   border: 1px solid #bbf7d0;
   border-radius: 10px;
   flex-shrink: 0;
@@ -677,22 +687,46 @@ kbd {
 .pos-last-scan.hidden { display: none !important; }
 
 .pos-last-scan .scan-check {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
   background: var(--success);
   color: #fff;
   border-radius: 50%;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 800;
   flex-shrink: 0;
 }
 
-.pos-last-scan .scan-info { flex: 1; min-width: 0; }
-.pos-last-scan .scan-info strong { display: block; font-size: 0.88rem; font-weight: 700; }
-.pos-last-scan .scan-info span { font-size: 0.75rem; color: var(--text-muted); }
-.pos-last-scan .scan-price { font-size: 1rem; font-weight: 800; color: var(--primary-dark); }
+.pos-last-scan .scan-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.pos-last-scan .scan-info strong {
+  display: block;
+  font-size: 0.84rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pos-last-scan .scan-barcode {
+  display: block;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.72rem;
+  color: #64748b;
+  letter-spacing: 0.03em;
+}
+.pos-last-scan .scan-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.pos-last-scan .scan-price { font-size: 0.95rem; font-weight: 800; color: var(--primary-dark); flex-shrink: 0; }
+.pos-last-scan .btn { flex-shrink: 0; }
 
 /* Invoice area */
 .pos-invoice {
@@ -2458,7 +2492,7 @@ kbd {
 
 @media (max-width: 700px) {
   .pos-inputs { flex-direction: column; }
-  .pos-scan-field, .pos-search-field { width: 100%; }
+  .pos-scan-wrap, .pos-scan-field, .pos-search-field { width: 100%; }
   .pos-invoice { margin: 10px 12px 0; }
   .pos-header { padding: 10px 12px; }
   .pos-dock {
@@ -2610,7 +2644,7 @@ kbd {
   font-weight: 600;
 }
 
-.pos-header-meta { gap: 6px; }
+.pos-header-meta { gap: 6px; min-height: 40px; }
 
 .pos-meta-item {
   font-size: 0.68rem;
@@ -2625,14 +2659,14 @@ kbd {
 }
 
 .pos-last-scan {
-  margin: 0;
-  padding: 6px 14px;
+  padding: 6px 8px;
+  border-radius: 8px;
   font-size: 0.78rem;
-  border-bottom: 1px solid var(--border-light);
 }
 
-.pos-last-scan .scan-info strong { font-size: 0.8rem; }
-.pos-last-scan .scan-price { font-size: 0.88rem; }
+.pos-last-scan .scan-info strong { font-size: 0.78rem; }
+.pos-last-scan .scan-barcode { font-size: 0.68rem; }
+.pos-last-scan .scan-price { font-size: 0.84rem; }
 
 /* ── Invoice panel ── */
 .pos-invoice {
@@ -2763,6 +2797,15 @@ kbd {
   color: var(--text);
 }
 
+.line-barcode {
+  display: block;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.68rem;
+  color: #64748b;
+  letter-spacing: 0.02em;
+  margin-top: 1px;
+}
+
 .line-tags {
   display: inline-flex;
   gap: 4px;
@@ -2779,11 +2822,7 @@ kbd {
   vertical-align: middle;
 }
 
-.invoice-table-compact .col-barcode {
-  font-size: 0.66rem;
-  min-width: 80px;
-  color: #64748b;
-}
+.invoice-table-compact .col-barcode { display: none; }
 
 .invoice-table-compact .col-price { min-width: 72px; width: 9%; }
 .invoice-table-compact .col-qty { min-width: 88px; width: 10%; }

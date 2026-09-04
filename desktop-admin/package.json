@@ -1,6 +1,6 @@
 {
   "name": "shorja-admin-desktop",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "description": "شورجة — الإدارة (سطح المكتب)",
   "main": "main.js",
   "author": "Shorja",
@@ -13,7 +13,7 @@
     "appId": "com.shorja.admin",
     "productName": "Shorja Admin",
     "directories": {
-      "output": "dist-v128"
+      "output": "dist-v129"
     },
     "files": [
       "main.js",

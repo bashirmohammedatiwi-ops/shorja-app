@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '38';
+const APP_VERSION = '39';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -421,7 +421,8 @@ function showLastScan(product, qty = 1) {
     <span class="scan-check">✓</span>
     <div class="scan-info">
       <strong>${esc(product.name)}</strong>
-    <span>باركود: ${esc(product.barcode)} · كمية: ${qty}${product.stockQty != null ? ` · مخزون ${fmt(product.stockQty)}` : ''}</span>
+      <span class="scan-barcode" dir="ltr">${esc(product.barcode)}</span>
+      <span class="scan-meta">كمية ${qty}${product.stockQty != null ? ` · مخزون ${fmt(product.stockQty)}` : ''}</span>
     </div>
     <span class="scan-price" dir="ltr">${fmt(product.price)}</span>
     <button type="button" class="btn btn-sm btn-secondary" id="btnLastScanAgain" title="إضافة وحدة أخرى">+1</button>`;
@@ -1290,8 +1291,10 @@ function renderCartNow() {
     tbody.innerHTML = state.cart.map((l, i) => `
       <tr class="invoice-row" data-idx="${i}">
         <td class="col-num">${i + 1}</td>
-        <td class="col-name"><span class="line-name" title="${esc(l.name)}">${esc(l.name)}</span></td>
-        <td class="col-barcode" dir="ltr">${esc(l.barcode)}</td>
+        <td class="col-name">
+          <span class="line-name" title="${esc(l.name)}">${esc(l.name)}</span>
+          <span class="line-barcode" dir="ltr">${esc(l.barcode)}</span>
+        </td>
         <td class="col-qty">
           <div class="qty-controls">
             <button type="button" class="qty-btn" data-action="dec" data-idx="${i}">−</button>
@@ -1321,9 +1324,9 @@ function renderCartNow() {
       <td class="col-num">${i + 1}</td>
       <td class="col-name">
         <span class="line-name" title="${esc(l.name)}">${esc(l.name)}</span>
+        <span class="line-barcode" dir="ltr">${esc(l.barcode)}</span>
         ${l.priceEdited || (!isReturn && l.giftQty) ? `<span class="line-tags">${l.priceEdited ? '<span class="edited-tag">معدّل</span>' : ''}${!isReturn && l.giftQty ? `<span class="gift-tag">هدية ${l.giftQty}</span>` : ''}</span>` : ''}
       </td>
-      <td class="col-barcode" dir="ltr">${esc(l.barcode)}</td>
       <td class="col-price">
         <div class="price-cell">
           <input type="number" class="cell-input price-input${l.priceEdited ? ' price-edited' : ''}"

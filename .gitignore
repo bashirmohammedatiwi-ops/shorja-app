@@ -10,4 +10,5 @@ desktop-admin/dist-new/
 desktop-admin/node_modules/
 desktop-branch/dist/
 desktop-branch/dist-new/
+desktop-branch/dist-v*/
 desktop-branch/node_modules/

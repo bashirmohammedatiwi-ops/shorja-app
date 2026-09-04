@@ -209,6 +209,13 @@
   box-shadow: none;
   background: #fff;
 }
+.pos-header-meta { min-height: 40px; }
+.pos-last-scan {
+  background: #f8f1dc;
+  border-color: #e8d48a;
+}
+.pos-last-scan .scan-check { background: #0f2744; color: #c9a227; }
+.line-barcode { color: #64748b; }
 .pos-scan-field,
 .pos-search-field {
   height: 40px;

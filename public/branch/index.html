@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=38">
-  <link rel="stylesheet" href="official.css?v=38">
+  <link rel="stylesheet" href="styles.css?v=39">
+  <link rel="stylesheet" href="official.css?v=39">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -135,13 +135,16 @@
         <div class="pos-workspace">
           <header class="pos-header" id="posScanSection">
             <div class="pos-inputs">
-              <div class="pos-scan-field scan-bar" id="scanBar">
-                <span class="pos-scan-ico" aria-hidden="true">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
-                </span>
-                <input type="text" id="barcodeInput" class="pos-scan-input" placeholder="امسح الباركود..." autocomplete="off" autofocus>
-                <button type="button" class="btn-fetch-barcode" id="btnFetchBarcode" title="جلب المنتج من الإدارة">↻</button>
-                <span class="scan-ready-dot" title="جاهز"></span>
+              <div class="pos-scan-wrap">
+                <div class="pos-scan-field scan-bar" id="scanBar">
+                  <span class="pos-scan-ico" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+                  </span>
+                  <input type="text" id="barcodeInput" class="pos-scan-input" placeholder="امسح الباركود..." autocomplete="off" autofocus>
+                  <button type="button" class="btn-fetch-barcode" id="btnFetchBarcode" title="جلب المنتج من الإدارة">↻</button>
+                  <span class="scan-ready-dot" title="جاهز"></span>
+                </div>
+                <div class="pos-last-scan hidden" id="lastScanPreview"></div>
               </div>
               <div class="pos-search-field search-wrap">
                 <svg class="pos-search-ico" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -155,8 +158,6 @@
               <span class="pos-meta-item pos-meta-day"><span id="posStatCount">0</span> فاتورة · <span id="posStatNet" dir="ltr">0</span></span>
             </div>
           </header>
-
-          <div class="pos-last-scan hidden" id="lastScanPreview"></div>
 
           <div class="pos-return-panel hidden" id="posReturnPanel">
             <div class="return-panel-head">
@@ -220,7 +221,6 @@
                   <tr>
                     <th class="col-num">#</th>
                     <th class="col-name">المنتج</th>
-                    <th class="col-barcode">الباركود</th>
                     <th class="col-price inv-sale-return">السعر</th>
                     <th class="col-qty" id="thQty">الكمية</th>
                     <th class="col-gift inv-sale-only">هدايا</th>
@@ -647,6 +647,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=38"></script>
+  <script src="app.js?v=39"></script>
 </body>
 </html>
