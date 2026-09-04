@@ -6,6 +6,7 @@ const { listAccounts, getAccount, createAccount, resolveInvoiceDebtInfo } = requ
 const { checkPriceUpdate, applyPricePackage } = require('../lib/prices');
 const { invoicePrintHtml } = require('../lib/export');
 const { getBranchSettings, saveBranchSettings } = require('../lib/settings');
+const { getDataRevision } = require('../lib/data-revision');
 const db = require('../db');
 
 const router = express.Router();
@@ -232,7 +233,11 @@ router.post('/heartbeat', (req, res) => {
     db.prepare('UPDATE branches SET last_seen_at = datetime(\'now\') WHERE id = ?')
       .run(req.user.branchId);
   }
-  res.json({ ok: true, time: new Date().toISOString() });
+  res.json({ ok: true, time: new Date().toISOString(), revision: getDataRevision() });
+});
+
+router.get('/data-revision', (_req, res) => {
+  res.json({ ok: true, revision: getDataRevision() });
 });
 
 module.exports = router;

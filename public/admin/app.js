@@ -3,6 +3,7 @@ const KEY = 'shorja_admin';
 const APP_KEY = 'shorja_admin_app';
 let token = null;
 let activeInvoiceId = null;
+let activeAccountId = null;
 let editingProduct = null;
 const priceSelection = new Map();
 let productViewMode = 'grid';
@@ -20,7 +21,7 @@ const CATEGORY_ICONS = {
 };
 
 const PAGE_TITLES = {
-  dashboard: ['لوحة اليوم', 'ملخص مبيعات الفروع والحسابات'],
+  posMonitor: ['مراقبة نقاط البيع', 'متابعة حية لفروع الشورجة ونقاط البيع'],
   reports: ['التقارير', 'تحليل المبيعات والمنتجات الأكثر مبيعاً'],
   invoices: ['فواتير الشورجة', 'مبيعات فروع الشورجة فقط — بدون المندوبين'],
   warehousePrep: ['تجهيز الشورجة', 'فواتير فروع الشورجة الجاهزة للترحيل بعد التجهيز'],
@@ -169,6 +170,7 @@ document.querySelectorAll('.nav').forEach((btn) => {
     setPageTitle(view);
     const loaders = {
       dashboard: () => (window.loadDashboard || loadDashboard)(),
+      posMonitor: () => (window.loadPosMonitor || (() => {}))(),
       reports: () => (window.loadReports || (() => {}))(),
       invoices: () => (window.loadInvoices || loadInvoices)(),
       warehousePrep: () => (window.loadWarehousePrep || loadWarehousePrep)(),
@@ -605,6 +607,19 @@ function printInvoice(id) {
 
 document.getElementById('btnPrintInvoice')?.addEventListener('click', () => {
   if (activeInvoiceId) printInvoice(activeInvoiceId);
+});
+
+document.getElementById('btnDeleteInvoice')?.addEventListener('click', async () => {
+  if (!activeInvoiceId) return;
+  if (!confirm('حذف هذه الفاتورة نهائياً؟\nسيتم عكس المخزون والديون المرتبطة — وتختفي من نقطة البيع أيضاً.')) return;
+  try {
+    await api(`/admin/invoices/${activeInvoiceId}`, { method: 'DELETE' });
+    document.getElementById('invoiceModal').close();
+    activeInvoiceId = null;
+    toast('تم حذف الفاتورة');
+    loadInvoices();
+    loadDashboard();
+  } catch (err) { toast(err.message); }
 });
 
 function productCardHtml(p, opts = {}) {
@@ -1343,6 +1358,7 @@ async function loadAccounts() {
 
 async function openLedger(id) {
   try {
+    activeAccountId = id;
     const data = await api(`/admin/accounts/${id}`);
     const a = data.account;
     const entries = data.journal?.entries || data.journal || [];
@@ -1358,7 +1374,7 @@ async function openLedger(id) {
       <h3 style="font-size:0.95rem;margin:12px 0 8px">آخر التسديدات</h3>
       <div class="invoice-lines">
         <table>
-          <thead><tr><th>الرقم</th><th>المبلغ</th><th>التاريخ</th><th>الإداري</th><th>ملاحظات</th></tr></thead>
+          <thead><tr><th>الرقم</th><th>المبلغ</th><th>التاريخ</th><th>الإداري</th><th>ملاحظات</th><th></th></tr></thead>
           <tbody>${pays.length ? pays.map((p) => `
             <tr>
               <td>${esc(p.paymentNo)}</td>
@@ -1366,24 +1382,72 @@ async function openLedger(id) {
               <td>${esc(p.paymentDate)}</td>
               <td>${edariSyncLabel(p.edariSyncStatus, p.edariSyncError)}</td>
               <td>${esc(p.notes)}</td>
+              <td><button type="button" class="btn btn-danger btn-sm" data-delete-payment="${p.id}" title="حذف التسديد">حذف</button></td>
             </tr>
-          `).join('') : '<tr><td colspan="5">لا توجد تسديدات</td></tr>'}
+          `).join('') : '<tr><td colspan="6">لا توجد تسديدات</td></tr>'}
           </tbody>
         </table>
       </div>
       <h3 style="font-size:0.95rem;margin:12px 0 8px">سجل الحركات</h3>
       <div class="invoice-lines">
         <table>
-          <thead><tr><th>الرقم</th><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th></tr></thead>
+          <thead><tr><th>الرقم</th><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th><th></th></tr></thead>
           <tbody>${entries.length ? entries.map((e) => `
-            <tr><td>${esc(e.entryNo)}</td><td>${esc(e.kind)}</td><td dir="ltr">${fmt(e.amount)}</td><td>${esc(e.description)}</td><td>${esc(e.entryDate)}</td></tr>
-          `).join('') : '<tr><td colspan="5">لا توجد حركات</td></tr>'}
+            <tr>
+              <td>${esc(e.entryNo)}</td>
+              <td>${esc(e.kind)}</td>
+              <td dir="ltr">${fmt(e.amount)}</td>
+              <td>${esc(e.description)}</td>
+              <td>${esc(e.entryDate)}</td>
+              <td>${e.kind === 'adjustment' ? `<button type="button" class="btn btn-danger btn-sm" data-delete-journal="${e.id}" title="حذف القيد">حذف</button>` : ''}</td>
+            </tr>
+          `).join('') : '<tr><td colspan="6">لا توجد حركات</td></tr>'}
           </tbody>
         </table>
       </div>`;
     document.getElementById('ledgerModal').showModal();
+    document.getElementById('ledgerDetail').querySelectorAll('[data-delete-payment]').forEach((btn) => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        if (!confirm('حذف هذا التسديد وعكس تأثيره على رصيد الحساب؟')) return;
+        try {
+          await api(`/admin/payments/${btn.dataset.deletePayment}`, { method: 'DELETE' });
+          toast('تم حذف التسديد');
+          openLedger(activeAccountId);
+          loadPayments();
+          loadAccounts();
+          loadDashboard();
+        } catch (err) { toast(err.message); }
+      });
+    });
+    document.getElementById('ledgerDetail').querySelectorAll('[data-delete-journal]').forEach((btn) => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        if (!confirm('حذف قيد التسوية وعكس تأثيره على الرصيد؟')) return;
+        try {
+          await api(`/admin/journal/${btn.dataset.deleteJournal}`, { method: 'DELETE' });
+          toast('تم حذف القيد');
+          openLedger(activeAccountId);
+          loadJournal();
+          loadAccounts();
+        } catch (err) { toast(err.message); }
+      });
+    });
   } catch (err) { toast(err.message); }
 }
+
+document.getElementById('btnDeleteAccount')?.addEventListener('click', async () => {
+  if (!activeAccountId) return;
+  if (!confirm('حذف هذا الحساب/الزبون؟\nيجب أن يكون الرصيد صفراً ولا توجد فواتير مرتبطة — سيختفي من نقطة البيع.')) return;
+  try {
+    await api(`/admin/accounts/${activeAccountId}`, { method: 'DELETE' });
+    document.getElementById('ledgerModal').close();
+    activeAccountId = null;
+    toast('تم حذف الحساب');
+    loadAccounts();
+    loadDashboard();
+  } catch (err) { toast(err.message); }
+});
 
 document.getElementById('accSearch')?.addEventListener('input', debounce(loadAccounts, 250));
 
@@ -1434,7 +1498,7 @@ async function loadPayments() {
   const pays = await api(`/admin/payments?${payParams}`);
   document.getElementById('paymentsTable').innerHTML = `
     <table>
-      <thead><tr><th>الرقم</th><th>الحساب</th><th>المبلغ</th><th>التاريخ</th><th>الإداري</th><th>ملاحظات</th></tr></thead>
+      <thead><tr><th>الرقم</th><th>الحساب</th><th>المبلغ</th><th>التاريخ</th><th>الإداري</th><th>ملاحظات</th><th></th></tr></thead>
       <tbody>${(pays.payments||[]).map((p) => `
         <tr>
           <td>${esc(p.paymentNo)}</td>
@@ -1443,9 +1507,22 @@ async function loadPayments() {
           <td>${esc(p.paymentDate)}</td>
           <td>${edariSyncLabel(p.edariSyncStatus, p.edariSyncError)}</td>
           <td>${esc(p.notes)}</td>
-        </tr>`).join('') || '<tr><td colspan="6">لا توجد تسديدات</td></tr>'}
+          <td><button type="button" class="btn btn-danger btn-sm" data-delete-payment-row="${p.id}">حذف</button></td>
+        </tr>`).join('') || '<tr><td colspan="7">لا توجد تسديدات</td></tr>'}
       </tbody>
     </table>`;
+  document.getElementById('paymentsTable').querySelectorAll('[data-delete-payment-row]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('حذف هذا التسديد وعكس تأثيره على رصيد الحساب؟')) return;
+      try {
+        await api(`/admin/payments/${btn.dataset.deletePaymentRow}`, { method: 'DELETE' });
+        toast('تم حذف التسديد');
+        loadPayments();
+        loadAccounts();
+        loadDashboard();
+      } catch (err) { toast(err.message); }
+    });
+  });
 }
 
 document.getElementById('btnPay').addEventListener('click', async () => {
@@ -1485,7 +1562,7 @@ async function loadJournal() {
   const data = await api(`/admin/journal?limit=100${scopeQuery()}`);
   document.getElementById('journalTable').innerHTML = `
     <table>
-      <thead><tr><th>الرقم</th><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th></tr></thead>
+      <thead><tr><th>الرقم</th><th>النوع</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th><th></th></tr></thead>
       <tbody>${(data.entries||[]).map((e) => `
         <tr>
           <td>${esc(e.entryNo)}</td>
@@ -1493,9 +1570,22 @@ async function loadJournal() {
           <td dir="ltr">${fmt(e.amount)}</td>
           <td>${esc(e.description)}</td>
           <td>${esc(e.entryDate)}</td>
-        </tr>`).join('') || '<tr><td colspan="5">لا توجد قيود</td></tr>'}
+          <td>${e.kind === 'adjustment' ? `<button type="button" class="btn btn-danger btn-sm" data-delete-journal-row="${e.id}">حذف</button>` : ''}</td>
+        </tr>`).join('') || '<tr><td colspan="6">لا توجد قيود</td></tr>'}
       </tbody>
     </table>`;
+  document.getElementById('journalTable').querySelectorAll('[data-delete-journal-row]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('حذف قيد التسوية وعكس تأثيره على الرصيد؟')) return;
+      try {
+        await api(`/admin/journal/${btn.dataset.deleteJournalRow}`, { method: 'DELETE' });
+        toast('تم حذف القيد');
+        loadJournal();
+        loadAccounts();
+        loadDashboard();
+      } catch (err) { toast(err.message); }
+    });
+  });
 }
 
 document.getElementById('btnAdj')?.addEventListener('click', async () => {

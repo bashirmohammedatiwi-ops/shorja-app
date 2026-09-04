@@ -1,4 +1,5 @@
 const db = require('../db');
+const { bumpDataRevision } = require('./data-revision');
 
 function mapProduct(row) {
   if (!row) return null;
@@ -104,6 +105,7 @@ function deactivateProduct(id) {
   db.prepare(`
     UPDATE products SET is_active = 0, updated_at = datetime('now') WHERE id = ?
   `).run(id);
+  bumpDataRevision();
   return product;
 }
 

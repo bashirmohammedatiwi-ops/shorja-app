@@ -1,4 +1,5 @@
 const db = require('../db');
+const { bumpDataRevision } = require('./data-revision');
 
 function tableCount(table) {
   return Number(db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get().c);
@@ -46,6 +47,7 @@ function resetBusinessData({ includeProducts = true } = {}) {
       ).run();
     }
     db.exec('COMMIT');
+    bumpDataRevision();
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;

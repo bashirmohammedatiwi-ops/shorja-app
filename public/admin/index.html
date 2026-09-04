@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=8">
-  <link rel="stylesheet" href="premium.css?v=4">
+  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="premium.css?v=10">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -70,6 +70,7 @@
       <nav id="navWarehouse" class="nav-group">
         <div class="nav-group-label">تطبيق الشورجة</div>
         <button type="button" class="nav active" data-view="dashboard">لوحة اليوم</button>
+        <button type="button" class="nav" data-view="posMonitor">مراقبة نقاط البيع</button>
         <button type="button" class="nav" data-view="reports">التقارير</button>
         <button type="button" class="nav" data-view="invoices">الفواتير</button>
         <button type="button" class="nav" data-view="warehousePrep">تجهيز الشورجة</button>
@@ -106,6 +107,7 @@
 
       <section id="viewDashboard" class="view" data-app-scope="warehouse">
         <div class="quick-actions wh-only" id="quickActionsWarehouse">
+        <button type="button" class="quick-action primary" data-goto="posMonitor">📡 مراقبة نقاط البيع</button>
           <button type="button" class="quick-action primary" data-goto="reports">📈 تقرير المبيعات</button>
           <button type="button" class="quick-action" data-goto="invoices">🧾 الفواتير</button>
           <button type="button" class="quick-action warehouse" data-goto="warehousePrep">🏪 تجهيز الشورجة</button>
@@ -121,20 +123,33 @@
           <button type="button" class="quick-action" data-goto="edariSync">🔄 مزامنة الإداري</button>
         </div>
         <div id="dashboardAlerts"></div>
+        <div id="posLiveStrip" class="pos-live-strip wh-only"></div>
         <div id="edariSyncBar" class="edari-sync-bar" hidden></div>
         <div class="kpi-grid" id="kpiGrid"></div>
-        <div class="dashboard-grid">
+        <div class="dashboard-grid dashboard-grid-triple">
+          <div class="panel-card panel-span-2 wh-only">
+            <div class="panel-card-head">
+              <h2>أداء الفروع اليوم</h2>
+              <button type="button" class="btn btn-ghost btn-sm" data-goto="posMonitor">عرض التفصيل ←</button>
+            </div>
+            <div class="panel-card-body no-pad">
+              <div class="table-wrap compact-table" id="branchPerformanceTable"></div>
+            </div>
+          </div>
+          <div class="panel-card wh-only">
+            <div class="panel-card-head"><h2>آخر الفواتير</h2></div>
+            <div class="panel-card-body no-pad">
+              <div class="activity-feed" id="recentInvoicesFeed"></div>
+            </div>
+          </div>
           <div class="panel-card wh-only">
             <div class="panel-card-head"><h2>حالة الفروع</h2></div>
             <div class="panel-card-body" id="branchesList"></div>
           </div>
           <div class="panel-card wh-only">
-            <div class="panel-card-head"><h2>اختصارات الشورجة</h2></div>
+            <div class="panel-card-head"><h2>مبيعات اليوم (ساعة بساعة)</h2></div>
             <div class="panel-card-body">
-              <p class="hint" style="margin-bottom:12px">فروع الشورجة ونقاط البيع — منفصلة تماماً عن المندوبين.</p>
-              <button type="button" class="btn btn-primary btn-sm" data-goto="warehousePrep">تجهيز الشورجة</button>
-              <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="accounts">حسابات الشورجة</button>
-              <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="invoices">الفواتير</button>
+              <div class="hourly-chart" id="hourlySalesChart"></div>
             </div>
           </div>
           <div class="panel-card del-only hidden">
@@ -148,6 +163,71 @@
               <button type="button" class="btn btn-primary btn-sm" data-goto="delegates">فواتير المندوبين</button>
               <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="accounts">حسابات المندوبين</button>
               <button type="button" class="btn btn-secondary btn-sm" style="margin-right:8px" data-goto="payments">التسديدات</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="viewPosMonitor" class="view hidden" data-app-scope="warehouse">
+        <div id="posMonAlerts" class="pos-mon-alerts"></div>
+        <div class="pos-monitor-hero" id="posMonitorHero"></div>
+        <div class="section-panel">
+          <div class="section-panel-toolbar pos-monitor-toolbar sticky-toolbar">
+            <div class="search-box">
+              <span class="search-ico" aria-hidden="true">⌕</span>
+              <input type="search" id="posMonSearch" placeholder="بحث برقم الفاتورة أو العميل أو الباركود...">
+            </div>
+            <select id="posMonBranch" class="field"><option value="">كل الفروع</option></select>
+            <select id="posMonKind" class="field">
+              <option value="">كل الأنواع</option>
+              <option value="sale">مبيعات</option>
+              <option value="return">مرتجعات</option>
+              <option value="issue">إخراج</option>
+            </select>
+            <select id="posMonPayment" class="field">
+              <option value="">كل طرق الدفع</option>
+              <option value="cash">نقدي</option>
+              <option value="credit">آجل</option>
+              <option value="partial">جزئي</option>
+            </select>
+            <select id="posMonEdari" class="field">
+              <option value="">الإداري — الكل</option>
+              <option value="pending">بانتظار</option>
+              <option value="synced">مرحّل</option>
+              <option value="error">خطأ</option>
+            </select>
+            <select id="posMonRefresh" class="field">
+              <option value="0">تحديث يدوي</option>
+              <option value="15">تحديث كل 15 ث</option>
+              <option value="30" selected>تحديث كل 30 ث</option>
+              <option value="60">تحديث كل دقيقة</option>
+            </select>
+            <button type="button" class="btn btn-primary btn-sm" id="btnPosMonRefresh">↻ تحديث الآن</button>
+            <span class="pos-mon-updated" id="posMonUpdated">—</span>
+          </div>
+          <div class="dashboard-grid pos-monitor-grid">
+            <div class="panel-card panel-span-2">
+              <div class="panel-card-head"><h2>أداء الفروع — اليوم</h2><span class="panel-meta">انقر على فرع للتصفية</span></div>
+              <div class="panel-card-body no-pad">
+                <div class="table-wrap compact-table" id="posMonBranchTable"></div>
+              </div>
+            </div>
+            <div class="panel-card">
+              <div class="panel-card-head"><h2>توزيع المبيعات بالساعة</h2></div>
+              <div class="panel-card-body"><div class="hourly-chart tall" id="posMonHourly"></div></div>
+            </div>
+            <div class="panel-card">
+              <div class="panel-card-head"><h2>طرق الدفع اليوم</h2></div>
+              <div class="panel-card-body"><div class="report-bars compact-bars" id="posMonPaymentMix"></div></div>
+            </div>
+          </div>
+          <div class="panel-card" style="margin-top:18px">
+            <div class="panel-card-head">
+              <h2>سجل الفواتير الحي</h2>
+              <span class="panel-meta" id="posMonCount">0 فاتورة</span>
+            </div>
+            <div class="panel-card-body no-pad">
+              <div class="table-wrap" id="posMonInvoiceTable"></div>
             </div>
           </div>
         </div>
@@ -177,6 +257,13 @@
 
       <section id="viewInvoices" class="view hidden" data-app-scope="warehouse">
         <div class="section-panel">
+          <div class="filter-chips-row" id="invPresetChips">
+            <button type="button" class="filter-chip" data-inv-preset="today">اليوم</button>
+            <button type="button" class="filter-chip" data-inv-preset="today-credit">آجل اليوم</button>
+            <button type="button" class="filter-chip" data-inv-preset="returns">مرتجعات</button>
+            <button type="button" class="filter-chip" data-inv-preset="edari-pending">بانتظار الإداري</button>
+            <button type="button" class="filter-chip" data-inv-preset="edari-error">أخطاء الإداري</button>
+          </div>
           <div class="section-panel-toolbar">
             <div class="search-box">
               <span class="search-ico" aria-hidden="true">⌕</span>
@@ -186,6 +273,25 @@
             <input type="date" id="invFrom" class="field-date" title="من تاريخ">
             <input type="date" id="invTo" class="field-date" title="إلى تاريخ">
             <select id="invBranch" class="field"><option value="">كل الفروع</option></select>
+            <select id="invKind" class="field">
+              <option value="">كل الأنواع</option>
+              <option value="sale">مبيعات</option>
+              <option value="return">مرتجعات</option>
+              <option value="issue">إخراج</option>
+            </select>
+            <select id="invPayment" class="field">
+              <option value="">كل طرق الدفع</option>
+              <option value="cash">نقدي</option>
+              <option value="credit">آجل</option>
+              <option value="partial">جزئي</option>
+            </select>
+            <select id="invEdari" class="field">
+              <option value="">حالة الإداري — الكل</option>
+              <option value="pending">بانتظار الترحيل</option>
+              <option value="synced">مرحّل</option>
+              <option value="error">خطأ</option>
+            </select>
+            <span class="inv-result-count" id="invResultCount"></span>
             <button type="button" class="btn btn-secondary btn-sm" id="btnExportInvoices">تصدير CSV</button>
           </div>
           <div class="section-panel-body no-pad">
@@ -519,6 +625,7 @@
   <dialog id="invoiceModal" class="modal-dialog modal-wide">
     <div id="invoiceDetail"></div>
     <div class="modal-actions">
+      <button type="button" class="btn btn-danger" id="btnDeleteInvoice">حذف الفاتورة</button>
       <button type="button" class="btn btn-ghost" data-close>إغلاق</button>
       <button type="button" class="btn btn-primary" id="btnPrintInvoice">طباعة</button>
     </div>
@@ -527,6 +634,7 @@
   <dialog id="ledgerModal" class="modal-dialog modal-wide">
     <div id="ledgerDetail"></div>
     <div class="modal-actions">
+      <button type="button" class="btn btn-danger" id="btnDeleteAccount">حذف الحساب</button>
       <button type="button" class="btn btn-ghost" data-close>إغلاق</button>
     </div>
   </dialog>
@@ -541,7 +649,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=24"></script>
-  <script src="premium.js?v=7"></script>
+  <script src="app.js?v=26"></script>
+  <script src="premium.js?v=10"></script>
 </body>
 </html>

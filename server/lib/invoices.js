@@ -128,6 +128,7 @@ function mapInvoice(row, lines = []) {
     prepError: row.prep_error || '',
     invoiceDate: row.invoice_date,
     createdAt: row.created_at,
+    branchName: row.branch_name || '',
     lines: lines.map((l) => ({
       id: l.id,
       productId: l.product_id,
@@ -418,13 +419,21 @@ async function createReturn(parentId, data, user) {
   }, user);
 }
 
-function listInvoices({ branchId, dateFrom, dateTo, q, kind, limit = 50, offset = 0, excludePrepModes = [] } = {}) {
+function listInvoices({ branchId, dateFrom, dateTo, q, kind, paymentMethod, edariStatus, limit = 50, offset = 0, excludePrepModes = [] } = {}) {
   const where = ['1=1'];
   const params = [];
   if (branchId) { where.push('i.branch_id = ?'); params.push(branchId); }
   if (dateFrom) { where.push('i.invoice_date >= ?'); params.push(dateFrom); }
   if (dateTo) { where.push('i.invoice_date <= ?'); params.push(dateTo); }
   if (kind) { where.push('i.kind = ?'); params.push(kind); }
+  if (paymentMethod) { where.push('i.payment_method = ?'); params.push(paymentMethod); }
+  if (edariStatus === 'pending') {
+    where.push("COALESCE(i.edari_sync_status, 'none') IN ('pending', 'none', 'hold')");
+  } else if (edariStatus === 'synced') {
+    where.push("i.edari_sync_status = 'synced'");
+  } else if (edariStatus === 'error') {
+    where.push("i.edari_sync_status = 'error'");
+  }
   if (Array.isArray(excludePrepModes) && excludePrepModes.length) {
     const modes = excludePrepModes.map((m) => String(m).trim()).filter(Boolean);
     if (modes.length) {
@@ -438,8 +447,9 @@ function listInvoices({ branchId, dateFrom, dateTo, q, kind, limit = 50, offset 
     params.push(like, like, like, like);
   }
   const sql = `
-    SELECT i.*, a.name AS account_name FROM invoices i
+    SELECT i.*, a.name AS account_name, br.name AS branch_name FROM invoices i
     LEFT JOIN accounts a ON a.id = i.account_id
+    LEFT JOIN branches br ON br.id = i.branch_id
     WHERE ${where.join(' AND ')}
     ORDER BY i.created_at DESC LIMIT ? OFFSET ?
   `;

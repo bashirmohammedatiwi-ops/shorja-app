@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=22">
+  <link rel="stylesheet" href="styles.css?v=32">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -20,9 +20,9 @@
         </div>
         <form id="loginForm" class="login-form">
           <label>اسم المستخدم</label>
-          <input type="text" id="loginUser" autocomplete="username" value="branch" required>
+          <input type="text" id="loginUser" autocomplete="username" placeholder="اسم المستخدم" required>
           <label>كلمة المرور</label>
-          <input type="password" id="loginPass" autocomplete="current-password" value="branch123" required>
+          <input type="password" id="loginPass" autocomplete="current-password" placeholder="••••••••" required>
           <button type="submit" class="btn btn-primary btn-block">دخول إلى نقطة البيع</button>
           <p class="login-error hidden" id="loginError"></p>
         </form>
@@ -42,36 +42,46 @@
 
       <nav class="topnav" id="mainNav" aria-label="التنقل الرئيسي">
         <button type="button" class="nav-item active" data-view="pos">
-          <span class="nav-ico" aria-hidden="true">🧾</span><span class="nav-label">إنشاء فاتورة</span>
+          <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></span>
+          <span class="nav-label">البيع</span>
         </button>
         <button type="button" class="nav-item" data-view="dashboard">
-          <span class="nav-ico" aria-hidden="true">📊</span><span class="nav-label">اليوم</span>
+          <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></span>
+          <span class="nav-label">اليوم</span>
         </button>
         <button type="button" class="nav-item" data-view="invoices">
-          <span class="nav-ico" aria-hidden="true">🧾</span><span class="nav-label">الفواتير</span>
+          <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h6"/></svg></span>
+          <span class="nav-label">الفواتير</span>
         </button>
         <button type="button" class="nav-item" data-view="pos" data-inv-type="return">
-          <span class="nav-ico" aria-hidden="true">↩</span><span class="nav-label">مرتجع</span>
+          <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v5h5"/></svg></span>
+          <span class="nav-label">مرتجع</span>
         </button>
         <button type="button" class="nav-item" data-view="held">
-          <span class="nav-ico" aria-hidden="true">⏸</span><span class="nav-label">معلّق</span>
+          <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></span>
+          <span class="nav-label">معلّق</span>
           <span class="nav-badge hidden" id="heldBadge">0</span>
         </button>
         <button type="button" class="nav-item" data-view="accounts">
-          <span class="nav-ico" aria-hidden="true">👥</span><span class="nav-label">الحسابات</span>
+          <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+          <span class="nav-label">الحسابات</span>
         </button>
         <button type="button" class="nav-item" data-view="payments">
-          <span class="nav-ico" aria-hidden="true">💳</span><span class="nav-label">تسديد</span>
+          <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></span>
+          <span class="nav-label">تسديد</span>
         </button>
         <button type="button" class="nav-item" data-view="stock">
-          <span class="nav-ico" aria-hidden="true">📦</span><span class="nav-label">مخزون</span>
+          <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></span>
+          <span class="nav-label">استعلام</span>
           <span class="nav-badge hidden" id="stockBadge">0</span>
         </button>
         <button type="button" class="nav-item" data-view="reports">
-          <span class="nav-ico" aria-hidden="true">📈</span><span class="nav-label">تقارير</span>
+          <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-6 4 3 5-8"/></svg></span>
+          <span class="nav-label">تقارير</span>
         </button>
         <button type="button" class="nav-item" data-view="settings">
-          <span class="nav-ico" aria-hidden="true">⚙</span><span class="nav-label">إعدادات</span>
+          <span class="nav-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
+          <span class="nav-label">إعدادات</span>
         </button>
       </nav>
 
@@ -111,14 +121,6 @@
       <!-- POS — إنشاء فاتورة -->
       <main id="viewPos" class="view pos-view inv-type-sale">
         <div class="pos-workspace">
-          <div class="inv-type-bar">
-            <div class="inv-type-tabs" id="invoiceTypeTabs" role="tablist" aria-label="نوع الفاتورة">
-              <button type="button" class="inv-type-tab active" data-inv-type="sale" role="tab" aria-selected="true">مبيعات</button>
-              <button type="button" class="inv-type-tab" data-inv-type="return" role="tab">مرتجعات</button>
-              <button type="button" class="inv-type-tab" data-inv-type="issue" role="tab">إخراج</button>
-            </div>
-          </div>
-
           <header class="pos-header" id="posScanSection">
             <div class="pos-inputs">
               <div class="pos-scan-field scan-bar" id="scanBar">
@@ -168,6 +170,11 @@
           <section class="pos-invoice">
             <div class="pos-invoice-bar">
               <div class="pos-invoice-left">
+                <div class="inv-type-tabs compact-tabs" id="invoiceTypeTabs" role="tablist" aria-label="نوع الفاتورة">
+                  <button type="button" class="inv-type-tab active" data-inv-type="sale" role="tab" aria-selected="true">مبيعات</button>
+                  <button type="button" class="inv-type-tab" data-inv-type="return" role="tab">مرتجع</button>
+                  <button type="button" class="inv-type-tab" data-inv-type="issue" role="tab">إخراج</button>
+                </div>
                 <h3 class="pos-invoice-heading" id="posInvoiceHeading">فاتورة مبيعات</h3>
                 <span class="cart-count-pill" id="cartCount">0</span>
                 <span class="price-edit-badge hidden" id="priceEditBadge">0 معدّل</span>
@@ -196,7 +203,7 @@
             <div class="return-debt-hint inv-return-only hidden" id="returnDebtHint"></div>
 
             <div class="invoice-table-wrap">
-              <table class="invoice-table" id="invoiceTable">
+              <table class="invoice-table invoice-table-compact" id="invoiceTable">
                 <thead>
                   <tr>
                     <th class="col-num">#</th>
@@ -218,6 +225,11 @@
                 </div>
                 <p class="empty-title" id="cartEmptyTitle">ابدأ بمسح باركود</p>
                 <p class="empty-sub" id="cartEmptySub">أو ابحث عن منتج بالاسم</p>
+                <div class="empty-hints">
+                  <span><kbd>F8</kbd> إتمام الفاتورة</span>
+                  <span><kbd>F6</kbd> تعليق</span>
+                  <span><kbd>F3</kbd> خصم</span>
+                </div>
               </div>
             </div>
           </section>
@@ -271,18 +283,26 @@
       <!-- Dashboard -->
       <main id="viewDashboard" class="view hidden">
         <div class="quick-actions" id="dashboardActions">
-          <button type="button" class="qa-btn" data-goto="pos">🧾 فاتورة جديدة</button>
-          <button type="button" class="qa-btn" data-goto="held">⏸ فواتير معلّقة</button>
-          <button type="button" class="qa-btn" data-goto="invoices">🧾 فواتير اليوم</button>
-          <button type="button" class="qa-btn" data-goto="payments">💳 تسديد</button>
+          <button type="button" class="qa-btn" data-goto="pos">فاتورة جديدة</button>
+          <button type="button" class="qa-btn" data-goto="held">فواتير معلّقة</button>
+          <button type="button" class="qa-btn" data-goto="invoices">فواتير اليوم</button>
+          <button type="button" class="qa-btn" data-goto="payments">تسديد حساب</button>
         </div>
         <div class="kpi-grid" id="dashboardKpis"></div>
-        <div class="dash-panels">
+        <div class="dash-panels dash-panels-triple">
           <div class="panel-card">
             <h3>ملخص اليوم</h3>
             <div id="dashboardDetail" class="dashboard-detail"></div>
           </div>
           <div class="panel-card">
+            <h3>طرق الدفع</h3>
+            <div id="dashboardPayments" class="dash-payment-bars"></div>
+          </div>
+          <div class="panel-card">
+            <h3>مبيعات بالساعة</h3>
+            <div id="dashboardHourly" class="hourly-chart compact"></div>
+          </div>
+          <div class="panel-card panel-span-2">
             <h3>آخر الفواتير</h3>
             <div id="dashboardRecent" class="list-cards compact-list"></div>
           </div>
@@ -380,62 +400,36 @@
         </div>
       </main>
 
-      <!-- Stock -->
+      <!-- Stock — استعلام منتج بالباركود -->
       <main id="viewStock" class="view hidden">
-        <div class="stock-panel">
-          <div class="stock-summary-bar" id="stockSummaryBar">
-            <button type="button" class="stock-chip active" data-stock="all">
-              <span class="chip-lbl">الكل</span><strong id="stockSumAll">0</strong>
-            </button>
-            <button type="button" class="stock-chip ok" data-stock="in">
-              <span class="chip-lbl">متوفر</span><strong id="stockSumIn">0</strong>
-            </button>
-            <button type="button" class="stock-chip warn" data-stock="low">
-              <span class="chip-lbl">منخفض</span><strong id="stockSumLow">0</strong>
-            </button>
-            <button type="button" class="stock-chip danger" data-stock="out">
-              <span class="chip-lbl">نافد</span><strong id="stockSumOut">0</strong>
-            </button>
+        <div class="stock-lookup-panel">
+          <div class="stock-lookup-bar">
+            <div class="pos-scan-field stock-barcode-field">
+              <span class="pos-scan-ico" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+              </span>
+              <input type="text" id="stockBarcodeInput" class="pos-scan-input" placeholder="امسح أو أدخل الباركود..." autocomplete="off">
+              <button type="button" class="btn-fetch-barcode" id="btnStockLookup" title="بحث">↵</button>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnStockClear">مسح</button>
           </div>
-
-          <div class="toolbar stock-filters">
-            <input type="search" id="stockSearch" class="field field-grow" placeholder="بحث بالاسم أو الباركود أو SKU..." autocomplete="off">
-            <select id="stockCategory" class="field">
-              <option value="">كل التصنيفات</option>
-            </select>
-            <select id="stockSort" class="field">
-              <option value="name">ترتيب: الاسم</option>
-              <option value="stock_asc">ترتيب: المخزون (الأقل)</option>
-              <option value="stock_desc">ترتيب: المخزون (الأعلى)</option>
-              <option value="price_desc">ترتيب: السعر (الأعلى)</option>
-              <option value="price_asc">ترتيب: السعر (الأقل)</option>
-            </select>
-            <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshStock">تحديث</button>
-          </div>
-
-          <div class="stock-meta" id="stockMeta"></div>
-
-          <div class="stock-table-wrap">
-            <table class="stock-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>المنتج</th>
-                  <th>التصنيف</th>
-                  <th>الباركود</th>
-                  <th>السعر</th>
-                  <th>المخزون</th>
-                  <th>الحالة</th>
-                </tr>
-              </thead>
-              <tbody id="stockTableBody"></tbody>
-            </table>
-            <div class="stock-empty hidden" id="stockEmpty">
-              <p>لا توجد منتجات مطابقة للفلتر</p>
+          <p class="hint stock-lookup-hint">اعرض تفاصيل منتج واحد بالباركود — مع قائمة المخزون المنخفض</p>
+          <div id="stockProductDetail" class="stock-product-detail">
+            <div class="stock-lookup-empty" id="stockLookupEmpty">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.3"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              <p>امسح باركود المنتج لعرض التفاصيل</p>
             </div>
           </div>
-
-          <div class="stock-pagination" id="stockPagination"></div>
+          <div class="stock-side-panels">
+            <div class="panel-card stock-recent-panel">
+              <h3>آخر الاستعلامات</h3>
+              <div id="stockRecentList" class="stock-recent-list"></div>
+            </div>
+            <div class="panel-card stock-low-panel">
+              <h3>مخزون منخفض / نافد</h3>
+              <div id="stockLowList" class="stock-low-list"></div>
+            </div>
+          </div>
         </div>
       </main>
 
@@ -469,6 +463,16 @@
               <p class="settings-hint subtle">عند المسح يُجلب المنتج تلقائياً من قاعدة الإدارة إن وُجد.</p>
               <button type="button" class="btn btn-secondary btn-block" id="btnSyncProducts">تحديث جميع المنتجات من الإدارة</button>
             </div>
+            <div class="settings-info-block">
+              <h4>معلومات التطبيق</h4>
+              <div class="settings-info-grid">
+                <div><span>إصدار الواجهة</span><strong id="setAppVersion">—</strong></div>
+                <div><span>نسخة الأسعار</span><strong id="setPriceVersion">—</strong></div>
+                <div><span>مراجعة البيانات</span><strong id="setDataRevision">—</strong></div>
+                <div><span>الاتصال</span><strong id="setConnStatus">—</strong></div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnKeyboardHelp">⌨ اختصارات لوحة المفاتيح</button>
             <button type="button" class="btn btn-primary" id="btnSaveSettings">حفظ الإعدادات</button>
           </div>
         </div>
@@ -547,9 +551,21 @@
     </div>
   </dialog>
 
+  <dialog id="keyboardHelpModal" class="modal">
+    <div class="modal-head"><h3>اختصارات لوحة المفاتيح</h3><button type="button" class="modal-x" data-close>×</button></div>
+    <div class="modal-body keyboard-help-body">
+      <div class="kbd-row"><kbd>F2</kbd><span>بحث منتج</span></div>
+      <div class="kbd-row"><kbd>F3</kbd><span>خصم الفاتورة</span></div>
+      <div class="kbd-row"><kbd>F6</kbd><span>تعليق الفاتورة</span></div>
+      <div class="kbd-row"><kbd>F8</kbd><span>إتمام البيع</span></div>
+      <div class="kbd-row"><kbd>?</kbd><span>عرض هذه القائمة</span></div>
+      <div class="kbd-row"><kbd>مسح باركود</kbd><span>إضافة تلقائية للفاتورة</span></div>
+    </div>
+  </dialog>
+
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=27"></script>
+  <script src="app.js?v=32"></script>
 </body>
 </html>

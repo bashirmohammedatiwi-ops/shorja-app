@@ -14,6 +14,9 @@ const { canWriteEdari } = require('../lib/edari-bridge');
 const { resetBusinessData, snapshotCounts } = require('../lib/reset-business-data');
 const { publishPricePackage, listPackages, getLatestVersion } = require('../lib/prices');
 const { parseProductsCsv, invoicePrintHtml } = require('../lib/export');
+const { deleteInvoiceById, deletePaymentById, deleteAccountById, deleteJournalEntryById } = require('../lib/deletions');
+const { getDataRevision } = require('../lib/data-revision');
+const { getPosMonitor } = require('../lib/pos-monitor');
 const db = require('../db');
 
 const router = express.Router();
@@ -286,9 +289,28 @@ router.get('/invoices', (req, res) => {
       dateFrom: req.query.from,
       dateTo: req.query.to,
       q: req.query.q,
+      kind: req.query.kind || '',
+      paymentMethod: req.query.payment || '',
+      edariStatus: req.query.edari || '',
       limit: Number(req.query.limit) || 100,
       excludePrepModes: ['delegate']
     })
+  });
+});
+
+router.get('/pos-monitor', (req, res) => {
+  res.json({
+    ok: true,
+    monitor: getPosMonitor({
+      branchId: req.query.branchId ? Number(req.query.branchId) : null,
+      limit: Number(req.query.limit) || 50,
+      q: String(req.query.q || '').trim(),
+      kind: req.query.kind || '',
+      paymentMethod: req.query.payment || '',
+      edariStatus: req.query.edari || '',
+      todayOnly: req.query.allDates !== '1'
+    }),
+    revision: getDataRevision()
   });
 });
 
@@ -306,6 +328,15 @@ router.get('/invoices/:id/print', (req, res) => {
   const debtInfo = resolveInvoiceDebtInfo(invoice);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(invoicePrintHtml(invoice, branch?.name || '', { thermal, debtInfo }));
+});
+
+router.delete('/invoices/:id', (req, res) => {
+  try {
+    const result = deleteInvoiceById(Number(req.params.id));
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
 });
 
 router.get('/delegate-invoices', (req, res) => {
@@ -437,6 +468,16 @@ router.get('/accounts/:id', (req, res) => {
   res.json({ ok: true, account, journal, payments });
 });
 
+router.delete('/accounts/:id', (req, res) => {
+  try {
+    const force = req.query.force === '1' || req.body?.force === true;
+    const result = deleteAccountById(Number(req.params.id), { force });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
 router.post('/payments', (req, res) => {
   try {
     const payment = createPayment({
@@ -459,6 +500,15 @@ router.get('/payments', (req, res) => {
     dateTo: req.query.to,
     accountScope: scope === 'warehouse' || scope === 'delegate' ? scope : ''
   }) });
+});
+
+router.delete('/payments/:id', (req, res) => {
+  try {
+    const result = deletePaymentById(Number(req.params.id));
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
 });
 
 router.post('/journal/adjustment', (req, res) => {
@@ -486,6 +536,19 @@ router.get('/journal', (req, res) => {
       limit: Number(req.query.limit) || 200
     })
   });
+});
+
+router.delete('/journal/:id', (req, res) => {
+  try {
+    const result = deleteJournalEntryById(Number(req.params.id));
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.get('/data-revision', (_req, res) => {
+  res.json({ ok: true, revision: getDataRevision() });
 });
 
 router.get('/branches', (req, res) => {

@@ -1,10 +1,13 @@
 const API = '/api';
+const APP_VERSION = '32';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
 const HELD_KEY = 'shorja_held';
 const PRICE_VER_KEY = 'shorja_price_version';
+const DATA_REV_KEY = 'shorja_data_revision';
 const LAST_INV_KEY = 'shorja_last_invoice';
+const STOCK_RECENT_KEY = 'shorja_stock_recent';
 
 const SETTINGS_KEY = 'shorja_branch_settings';
 
@@ -25,7 +28,7 @@ const PAGE_TITLES = {
   held: ['فواتير معلّقة', 'استئناف الفاتورة المحفوظة'],
   accounts: ['حسابات العملاء', 'الديون والأرصدة'],
   payments: ['تسديد الحسابات', 'تسجيل دفعات العملاء'],
-  stock: ['المخزون', 'كل المنتجات · فلاتر وبحث'],
+  stock: ['استعلام منتج', 'تفاصيل المنتج بالباركود'],
   reports: ['التقارير', 'مبيعات وتحصيلات حسب الفترة'],
   settings: ['الإعدادات', 'تخصيص سلوك نقطة البيع والطباعة']
 };
@@ -1107,7 +1110,7 @@ function renderCartNow() {
     tbody.innerHTML = state.cart.map((l, i) => `
       <tr class="invoice-row" data-idx="${i}">
         <td class="col-num">${i + 1}</td>
-        <td class="col-name"><strong>${esc(l.name)}</strong></td>
+        <td class="col-name"><span class="line-name" title="${esc(l.name)}">${esc(l.name)}</span></td>
         <td class="col-barcode" dir="ltr">${esc(l.barcode)}</td>
         <td class="col-qty">
           <div class="qty-controls">
@@ -1117,7 +1120,7 @@ function renderCartNow() {
           </div>
         </td>
         <td class="col-act">
-          <button type="button" class="qty-btn del-btn" data-action="del" data-idx="${i}">×</button>
+          <button type="button" class="qty-btn del-btn" data-action="del" data-idx="${i}" title="حذف">×</button>
         </td>
       </tr>
     `).join('');
@@ -1136,9 +1139,8 @@ function renderCartNow() {
     <tr class="invoice-row${l.priceEdited ? ' row-edited' : ''}${l.giftQty ? ' row-gift' : ''}" data-idx="${i}">
       <td class="col-num">${i + 1}</td>
       <td class="col-name">
-        <strong>${esc(l.name)}</strong>
-        ${l.priceEdited ? '<span class="edited-tag">سعر معدّل</span>' : ''}
-        ${!isReturn && l.giftQty ? `<span class="gift-tag">🎁 ${l.giftQty} هدية</span>` : ''}
+        <span class="line-name" title="${esc(l.name)}">${esc(l.name)}</span>
+        ${l.priceEdited || (!isReturn && l.giftQty) ? `<span class="line-tags">${l.priceEdited ? '<span class="edited-tag">معدّل</span>' : ''}${!isReturn && l.giftQty ? `<span class="gift-tag">هدية ${l.giftQty}</span>` : ''}</span>` : ''}
       </td>
       <td class="col-barcode" dir="ltr">${esc(l.barcode)}</td>
       <td class="col-price">
@@ -1148,7 +1150,6 @@ function renderCartNow() {
             title="السعر الأصلي: ${fmt(l.originalPrice)}" ${allowPrice ? '' : 'readonly'}>
           ${allowPrice ? `<button type="button" class="reset-price-btn${l.priceEdited ? '' : ' hidden'}" data-reset-price="${i}" title="إعادة السعر الأصلي">↺</button>` : ''}
         </div>
-        ${l.priceEdited ? `<small class="orig-price" dir="ltr">كان: ${fmt(l.originalPrice)}</small>` : ''}
       </td>
       ${linked ? `<td class="col-stock inv-return-linked" dir="ltr">${l.maxQty ?? 0}</td>` : ''}
       <td class="col-qty">
@@ -1162,13 +1163,13 @@ function renderCartNow() {
       <td class="col-gift">
         <div class="gift-controls">
           <button type="button" class="gift-btn" data-action="dec" data-idx="${i}" title="تقليل الهدايا">−</button>
-          <input type="number" class="gift-input" data-idx="${i}" value="${l.giftQty || 0}" min="0" title="هدايا إضافية (مجانية)">
+          <input type="number" class="gift-input" data-idx="${i}" value="${l.giftQty || 0}" min="0" title="هدايا">
           <button type="button" class="gift-btn" data-action="inc" data-idx="${i}" title="زيادة الهدايا">+</button>
         </div>
       </td>`}
-      <td class="col-total line-total-cell" dir="ltr"><strong>${fmt(l.lineTotal)}</strong></td>
+      <td class="col-total line-total-cell" dir="ltr">${fmt(l.lineTotal)}</td>
       <td class="col-act">
-        <button type="button" class="qty-btn del-btn" data-action="del" data-idx="${i}"${linked ? ' disabled' : ''}>×</button>
+        <button type="button" class="qty-btn del-btn" data-action="del" data-idx="${i}"${linked ? ' disabled' : ''} title="حذف">×</button>
       </td>
     </tr>
   `).join('');
@@ -1329,6 +1330,11 @@ let barcodeBuffer = '';
 let barcodeTimer = null;
 document.addEventListener('keydown', (e) => {
   const posVisible = !document.getElementById('viewPos').classList.contains('hidden');
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+    e.preventDefault();
+    document.getElementById('keyboardHelpModal')?.showModal();
+    return;
+  }
   if (!posVisible) return;
   if (e.key === 'F2') { e.preventDefault(); productSearch.focus(); productSearch.select(); return; }
   if (e.key === 'F3') { e.preventDefault(); document.getElementById('discountInput').focus(); document.getElementById('discountInput').select(); return; }
@@ -1812,13 +1818,49 @@ async function flushOutbox() {
 }
 
 // ── Dashboard ──
+function renderBranchHourlyChart(el, invoices) {
+  if (!el) return;
+  const hours = Array.from({ length: 24 }, (_, i) => ({ hour: i, amount: 0, count: 0 }));
+  (invoices || []).forEach((inv) => {
+    if (inv.kind !== 'sale') return;
+    const h = Number(String(inv.createdAt || '').slice(11, 13));
+    if (!Number.isNaN(h) && hours[h]) {
+      hours[h].amount += Number(inv.total || 0);
+      hours[h].count += 1;
+    }
+  });
+  const maxAmt = Math.max(...hours.map((h) => h.amount), 1);
+  el.innerHTML = `<div class="hourly-bars">${hours.map((h) => `
+    <div class="hourly-bar-col" title="${h.hour}:00 — ${h.count} · ${fmt(h.amount)}">
+      <i style="height:${Math.max(4, Math.round(h.amount / maxAmt * 100))}%"></i>
+      <span class="hour-lbl">${h.hour}</span>
+    </div>`).join('')}</div>`;
+}
+
+function renderBranchPaymentBars(el, byPayment) {
+  if (!el) return;
+  const maxAmt = Math.max(...(byPayment || []).map((p) => p.amount), 1);
+  el.innerHTML = (byPayment || []).length
+    ? (byPayment || []).map((p) => `
+      <div class="pay-bar-item">
+        <i style="height:${Math.max(8, Math.round(p.amount / maxAmt * 100))}%"></i>
+        <b dir="ltr">${fmt(p.amount)}</b>
+        <span>${payLabel(p.method)}</span>
+      </div>`).join('')
+    : '<p class="hint">لا توجد مبيعات اليوم</p>';
+}
+
 async function loadDashboard() {
+  const today = new Date().toISOString().slice(0, 10);
   try {
-    const [sumData, invData] = await Promise.all([
+    const [sumData, invData, repData, allInvData] = await Promise.all([
       api('/branch/summary/today'),
-      api(`/branch/invoices?from=${new Date().toISOString().slice(0, 10)}&limit=8`)
+      api(`/branch/invoices?from=${today}&limit=8`),
+      api(`/branch/reports/sales?from=${today}&to=${today}`),
+      api(`/branch/invoices?from=${today}&limit=300`)
     ]);
     const s = sumData.summary;
+    const r = repData.report || {};
     document.getElementById('dashboardKpis').innerHTML = `
       <div class="kpi-card"><div class="kpi-lbl">فواتير البيع</div><div class="kpi-val">${s.salesCount}</div></div>
       <div class="kpi-card"><div class="kpi-lbl">إجمالي المبيعات</div><div class="kpi-val" dir="ltr">${fmt(s.salesAmount)}</div></div>
@@ -1826,17 +1868,20 @@ async function loadDashboard() {
       <div class="kpi-card highlight"><div class="kpi-lbl">صافي اليوم</div><div class="kpi-val" dir="ltr">${fmt(s.netSales)}</div></div>
       <div class="kpi-card"><div class="kpi-lbl">نقدي محصّل</div><div class="kpi-val" dir="ltr">${fmt(s.paidAmount)}</div></div>
       <div class="kpi-card"><div class="kpi-lbl">آجل / دين جديد</div><div class="kpi-val" dir="ltr">${fmt(s.dueAmount)}</div></div>
-    `;
+      <div class="kpi-card"><div class="kpi-lbl">متوسط الفاتورة</div><div class="kpi-val" dir="ltr">${fmt(s.salesCount ? s.salesAmount / s.salesCount : 0)}</div></div>
+      <div class="kpi-card"><div class="kpi-lbl">فواتير معلّقة</div><div class="kpi-val">${getHeld().length}</div></div>`;
     document.getElementById('dashboardDetail').innerHTML = `
       <div class="dash-row"><span>تاريخ</span><strong>${esc(s.date)}</strong></div>
       <div class="dash-row"><span>عدد المرتجعات</span><strong>${s.returnsCount}</strong></div>
-      <div class="dash-row"><span>فواتير معلّقة (جهاز)</span><strong>${getHeld().length}</strong></div>
       <div class="dash-row"><span>بانتظار الرفع</span><strong>${getOutbox().length}</strong></div>
       ${getOutbox().length ? `<div class="dash-row"><button type="button" class="btn btn-secondary btn-sm" id="btnFlushOutbox">رفع الفواتير المعلّقة الآن</button></div>` : ''}
       <div class="dash-row"><span>منتجات محمّلة</span><strong>${allProducts().length}</strong></div>
       <div class="dash-row"><span>نسخة الأسعار</span><strong>v${state.priceVersion}</strong></div>
+      <div class="dash-row"><span>إصدار التطبيق</span><strong>v${APP_VERSION}</strong></div>
       ${state.lastInvoiceId ? `<div class="dash-row"><button type="button" class="btn btn-secondary btn-sm" id="btnReprintLast">إعادة طباعة آخر فاتورة</button></div>` : ''}
     `;
+    renderBranchPaymentBars(document.getElementById('dashboardPayments'), r.byPayment);
+    renderBranchHourlyChart(document.getElementById('dashboardHourly'), allInvData.invoices || []);
     document.getElementById('btnReprintLast')?.addEventListener('click', () => printInvoice(state.lastInvoiceId));
     document.getElementById('btnFlushOutbox')?.addEventListener('click', async () => {
       await flushOutbox();
@@ -1886,18 +1931,74 @@ async function updateStockBadge() {
   } catch { /* */ }
 }
 
-const stockState = {
-  q: '',
-  category: '',
-  status: 'all',
-  sort: 'name',
-  page: 0,
-  pageSize: 50,
-  total: 0,
-  loading: false
-};
-let stockSearchTimer = null;
-let stockCategoriesLoaded = false;
+const stockState = { loading: false, lastProduct: null };
+
+function getStockRecent() {
+  try { return JSON.parse(localStorage.getItem(STOCK_RECENT_KEY) || '[]'); } catch { return []; }
+}
+
+function pushStockRecent(product) {
+  if (!product?.barcode) return;
+  const list = getStockRecent().filter((p) => p.barcode !== product.barcode);
+  list.unshift({
+    barcode: product.barcode,
+    name: product.name,
+    stockQty: product.stockQty,
+    price: product.price,
+    at: Date.now()
+  });
+  localStorage.setItem(STOCK_RECENT_KEY, JSON.stringify(list.slice(0, 12)));
+  renderStockRecentList();
+}
+
+function renderStockRecentList() {
+  const el = document.getElementById('stockRecentList');
+  if (!el) return;
+  const list = getStockRecent();
+  el.innerHTML = list.length
+    ? list.map((p) => `
+      <button type="button" class="stock-recent-item" data-barcode="${esc(p.barcode)}">
+        <strong>${esc(p.name)}</strong>
+        <small dir="ltr">${esc(p.barcode)} · ${fmt(p.stockQty)} · ${fmt(p.price)}</small>
+      </button>`).join('')
+    : '<p class="hint">لا توجد استعلامات سابقة</p>';
+  el.querySelectorAll('[data-barcode]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById('stockBarcodeInput');
+      if (input) input.value = btn.dataset.barcode;
+      lookupStockProduct(btn.dataset.barcode);
+    });
+  });
+}
+
+async function loadLowStockList() {
+  const el = document.getElementById('stockLowList');
+  if (!el) return;
+  try {
+    const threshold = getSettings().lowStockThreshold || 5;
+    const data = await api(`/branch/products/low-stock?threshold=${threshold}`);
+    const products = data.products || [];
+    el.innerHTML = products.length
+      ? products.slice(0, 20).map((p) => {
+        const st = stockStatusOf(p.stockQty, threshold);
+        return `<button type="button" class="stock-low-item ${st.cls}" data-barcode="${esc(p.barcode)}">
+          <span class="stock-status ${st.cls}">${st.label}</span>
+          <strong>${esc(p.name)}</strong>
+          <small dir="ltr">${esc(p.barcode)} · ${fmt(p.stockQty)}</small>
+        </button>`;
+      }).join('')
+      : '<p class="hint">لا يوجد مخزون منخفض</p>';
+    el.querySelectorAll('[data-barcode]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const input = document.getElementById('stockBarcodeInput');
+        if (input) input.value = btn.dataset.barcode;
+        lookupStockProduct(btn.dataset.barcode);
+      });
+    });
+  } catch {
+    el.innerHTML = '<p class="hint">تعذّر تحميل القائمة</p>';
+  }
+}
 
 function stockStatusOf(qty, threshold) {
   const n = Number(qty) || 0;
@@ -1906,173 +2007,153 @@ function stockStatusOf(qty, threshold) {
   return { key: 'in', label: 'متوفر', cls: 'st-ok' };
 }
 
-function renderStockSummary(summary) {
-  if (!summary) return;
-  const map = {
-    stockSumAll: summary.total,
-    stockSumIn: summary.inStock,
-    stockSumLow: summary.low,
-    stockSumOut: summary.out
-  };
-  Object.entries(map).forEach(([id, val]) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = String(val ?? 0);
-  });
-  document.querySelectorAll('.stock-chip').forEach((chip) => {
-    chip.classList.toggle('active', chip.dataset.stock === stockState.status);
-  });
-}
-
-function renderStockPagination() {
-  const el = document.getElementById('stockPagination');
-  if (!el) return;
-  const pages = Math.max(1, Math.ceil(stockState.total / stockState.pageSize));
-  const page = stockState.page + 1;
-  if (stockState.total <= stockState.pageSize) {
-    el.innerHTML = stockState.total
-      ? `<span class="stock-page-info">عرض ${stockState.total} منتج</span>`
-      : '';
+function renderStockProductDetail(product) {
+  const wrap = document.getElementById('stockProductDetail');
+  if (!wrap) return;
+  if (!product) {
+    wrap.innerHTML = `
+      <div class="stock-lookup-empty" id="stockLookupEmpty">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.3"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        <p>امسح باركود المنتج لعرض التفاصيل</p>
+      </div>`;
     return;
   }
-  el.innerHTML = `
-    <button type="button" class="btn btn-secondary btn-sm" id="stockPrev" ${stockState.page <= 0 ? 'disabled' : ''}>السابق</button>
-    <span class="stock-page-info">صفحة ${page} من ${pages} · ${stockState.total} منتج</span>
-    <button type="button" class="btn btn-secondary btn-sm" id="stockNext" ${page >= pages ? 'disabled' : ''}>التالي</button>
-  `;
-  document.getElementById('stockPrev')?.addEventListener('click', () => {
-    if (stockState.page > 0) {
-      stockState.page -= 1;
-      loadStockView();
-    }
+  const threshold = getSettings().lowStockThreshold || 5;
+  const st = stockStatusOf(product.stockQty, threshold);
+  wrap.innerHTML = `
+    <article class="stock-detail-card">
+      <header class="stock-detail-head">
+        <div>
+          <span class="stock-status ${st.cls}">${st.label}</span>
+          ${product.category ? `<span class="stock-detail-cat">${esc(product.category)}</span>` : ''}
+        </div>
+        <span class="stock-detail-price" dir="ltr">${fmt(product.price)}</span>
+      </header>
+      <h3 class="stock-detail-name">${esc(product.name)}</h3>
+      <div class="stock-detail-grid">
+        <div class="stock-detail-item">
+          <span class="lbl">الباركود</span>
+          <strong dir="ltr">${esc(product.barcode)}</strong>
+        </div>
+        ${product.sku ? `<div class="stock-detail-item"><span class="lbl">SKU</span><strong dir="ltr">${esc(product.sku)}</strong></div>` : ''}
+        <div class="stock-detail-item">
+          <span class="lbl">المخزون</span>
+          <strong dir="ltr" class="stock-qty-val">${fmt(product.stockQty)} ${esc(product.unit || 'قطعة')}</strong>
+        </div>
+        <div class="stock-detail-item">
+          <span class="lbl">سعر التكلفة</span>
+          <strong dir="ltr">${fmt(product.costPrice || 0)}</strong>
+        </div>
+        <div class="stock-detail-item">
+          <span class="lbl">الوحدة</span>
+          <strong>${esc(product.unit || 'قطعة')}</strong>
+        </div>
+        <div class="stock-detail-item">
+          <span class="lbl">آخر تحديث</span>
+          <strong>${product.updatedAt ? new Date(product.updatedAt).toLocaleString('ar-IQ') : '—'}</strong>
+        </div>
+      </div>
+      ${product.hasOffer ? `<div class="stock-detail-offer">عرض: ${esc(product.offerName || 'خاص')} — كان <span dir="ltr">${fmt(product.originalPrice)}</span></div>` : ''}
+      <div class="stock-detail-actions">
+        <button type="button" class="btn btn-primary btn-sm" id="btnStockAddToCart">إضافة للفاتورة</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btnStockRefresh">تحديث من السيرفر</button>
+      </div>
+    </article>`;
+  document.getElementById('btnStockAddToCart')?.addEventListener('click', async () => {
+    await addToCart(product.barcode, 1);
+    document.querySelector('[data-view="pos"]')?.click();
   });
-  document.getElementById('stockNext')?.addEventListener('click', () => {
-    if (stockState.page < pages - 1) {
-      stockState.page += 1;
-      loadStockView();
-    }
-  });
+  document.getElementById('btnStockRefresh')?.addEventListener('click', () => lookupStockProduct(product.barcode, true));
 }
 
-function renderStockTable(products, threshold) {
-  const tbody = document.getElementById('stockTableBody');
-  const empty = document.getElementById('stockEmpty');
-  if (!tbody) return;
-  if (!products.length) {
-    tbody.innerHTML = '';
-    empty?.classList.remove('hidden');
+async function lookupStockProduct(code, force = false) {
+  const c = String(code || '').trim();
+  if (!c) {
+    renderStockProductDetail(null);
     return;
   }
-  empty?.classList.add('hidden');
-  const offset = stockState.page * stockState.pageSize;
-  tbody.innerHTML = products.map((p, i) => {
-    const st = stockStatusOf(p.stockQty, threshold);
-    const rowCls = st.key === 'out' ? 'row-out' : st.key === 'low' ? 'row-low' : '';
-    return `
-      <tr class="${rowCls}">
-        <td class="col-idx">${offset + i + 1}</td>
-        <td class="col-name">
-          <strong>${esc(p.name)}</strong>
-          ${p.sku ? `<div class="sku-sub" dir="ltr">${esc(p.sku)}</div>` : ''}
-        </td>
-        <td class="col-cat">${esc(p.category || '—')}</td>
-        <td class="col-code" dir="ltr">${esc(p.barcode)}</td>
-        <td class="col-price" dir="ltr">${fmt(p.price)}</td>
-        <td class="col-qty" dir="ltr"><strong>${fmt(p.stockQty)}</strong> <small>${esc(p.unit || 'قطعة')}</small></td>
-        <td class="col-status"><span class="stock-status ${st.cls}">${st.label}</span></td>
-      </tr>`;
-  }).join('');
-}
-
-async function ensureStockCategories() {
-  if (stockCategoriesLoaded) return;
-  try {
-    const data = await api('/branch/categories');
-    const sel = document.getElementById('stockCategory');
-    if (!sel) return;
-    const current = sel.value;
-    sel.innerHTML = '<option value="">كل التصنيفات</option>' +
-      (data.categories || []).map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-    sel.value = current;
-    stockCategoriesLoaded = true;
-  } catch { /* */ }
-}
-
-async function loadStockView() {
-  if (stockState.loading) return;
+  if (stockState.loading && !force) return;
   stockState.loading = true;
-  const meta = document.getElementById('stockMeta');
-  if (meta) meta.textContent = 'جاري التحميل...';
   try {
-    await ensureStockCategories();
-    const threshold = getSettings().lowStockThreshold || 5;
-    const params = new URLSearchParams({
-      summary: '1',
-      limit: String(stockState.pageSize),
-      offset: String(stockState.page * stockState.pageSize),
-      sort: stockState.sort,
-      stock: stockState.status,
-      threshold: String(threshold)
-    });
-    if (stockState.q) params.set('q', stockState.q);
-    if (stockState.category) params.set('category', stockState.category);
-    const data = await api(`/branch/products?${params}`);
-    stockState.total = Number(data.total) || 0;
-    renderStockSummary(data.summary);
-    renderStockTable(data.products || [], threshold);
-    renderStockPagination();
-    const from = stockState.total ? stockState.page * stockState.pageSize + 1 : 0;
-    const to = Math.min(stockState.total, (stockState.page + 1) * stockState.pageSize);
-    if (meta) {
-      meta.textContent = stockState.total
-        ? `عرض ${from}–${to} من ${stockState.total} منتج`
-        : 'لا توجد منتجات مطابقة';
+    let product = null;
+    try {
+      const data = await api(`/branch/products/barcode/${encodeURIComponent(c)}`);
+      product = data.product;
+    } catch {
+      product = await fetchProductFromAdmin(c);
     }
-    updateStockBadge();
+    if (!product) {
+      renderStockProductDetail(null);
+      toast('المنتج غير موجود', 'warn');
+      return;
+    }
+    stockState.lastProduct = product;
+    mergeProductIntoState(product);
+    pushStockRecent(product);
+    renderStockProductDetail(product);
   } catch {
-    if (meta) meta.textContent = '';
-    toast('تعذّر تحميل المخزون', 'err');
+    toast('تعذّر جلب المنتج', 'err');
   } finally {
     stockState.loading = false;
   }
 }
 
+function loadStockView() {
+  renderStockRecentList();
+  loadLowStockList();
+  if (stockState.lastProduct) renderStockProductDetail(stockState.lastProduct);
+  else renderStockProductDetail(null);
+  updateStockBadge();
+  setTimeout(() => document.getElementById('stockBarcodeInput')?.focus(), 80);
+}
+
 function bindStockFilters() {
-  document.getElementById('btnRefreshStock')?.addEventListener('click', () => {
-    stockState.page = 0;
-    loadStockView();
+  const input = document.getElementById('stockBarcodeInput');
+  const lookup = () => lookupStockProduct(input?.value);
+
+  input?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      lookup();
+    }
   });
 
-  document.getElementById('stockSearch')?.addEventListener('input', (e) => {
-    clearTimeout(stockSearchTimer);
-    stockSearchTimer = setTimeout(() => {
-      stockState.q = e.target.value.trim();
-      stockState.page = 0;
-      loadStockView();
-    }, 320);
-  });
-
-  document.getElementById('stockCategory')?.addEventListener('change', (e) => {
-    stockState.category = e.target.value;
-    stockState.page = 0;
-    loadStockView();
-  });
-
-  document.getElementById('stockSort')?.addEventListener('change', (e) => {
-    stockState.sort = e.target.value;
-    stockState.page = 0;
-    loadStockView();
-  });
-
-  document.getElementById('stockSummaryBar')?.addEventListener('click', (e) => {
-    const chip = e.target.closest('.stock-chip');
-    if (!chip) return;
-    stockState.status = chip.dataset.stock || 'all';
-    stockState.page = 0;
-    loadStockView();
+  document.getElementById('btnStockLookup')?.addEventListener('click', lookup);
+  document.getElementById('btnStockClear')?.addEventListener('click', () => {
+    stockState.lastProduct = null;
+    if (input) input.value = '';
+    renderStockProductDetail(null);
+    input?.focus();
   });
 }
 
 bindStockFilters();
+
+async function checkDataRevision() {
+  try {
+    const data = await api('/branch/data-revision');
+    const rev = Number(data.revision || 0);
+    const stored = Number(localStorage.getItem(DATA_REV_KEY) || 0);
+    if (rev > stored) {
+      localStorage.setItem(DATA_REV_KEY, String(rev));
+      bustViewCache('dashboard', 'invoices', 'accounts', 'payments', 'stock');
+      state.productsDirty = true;
+      await loadProducts();
+      if (stockState.lastProduct?.barcode) {
+        lookupStockProduct(stockState.lastProduct.barcode, true);
+      }
+      const active = document.querySelector('.nav-item.active')?.dataset.view;
+      if (active === 'invoices') loadInvoices();
+      if (active === 'accounts') loadAccounts();
+      if (active === 'payments') loadPaymentsView();
+      if (active === 'dashboard') loadDashboard();
+      if (active === 'stock') { loadLowStockList(); renderStockRecentList(); }
+      updateStockBadge();
+    } else if (!stored && rev) {
+      localStorage.setItem(DATA_REV_KEY, String(rev));
+    }
+  } catch { /* */ }
+}
 
 function initReportDates() {
   const today = new Date().toISOString().slice(0, 10);
@@ -2138,6 +2219,14 @@ function loadSettingsView() {
   document.getElementById('setAllowPrice').checked = s.allowPriceEdit !== false;
   document.getElementById('setThermal').checked = s.thermalPrint !== false;
   document.getElementById('setReceiptFooter').value = s.receiptFooter || '';
+  const verEl = document.getElementById('setAppVersion');
+  const priceEl = document.getElementById('setPriceVersion');
+  const revEl = document.getElementById('setDataRevision');
+  const connEl = document.getElementById('setConnStatus');
+  if (verEl) verEl.textContent = `v${APP_VERSION}`;
+  if (priceEl) priceEl.textContent = `v${state.priceVersion}`;
+  if (revEl) revEl.textContent = localStorage.getItem(DATA_REV_KEY) || '—';
+  if (connEl) connEl.textContent = navigator.onLine ? 'متصل' : 'غير متصل';
 }
 
 document.getElementById('btnSaveSettings')?.addEventListener('click', async () => {
@@ -2516,6 +2605,10 @@ document.getElementById('btnDismissPrices').addEventListener('click', () => {
   document.getElementById('priceBanner').classList.add('hidden');
 });
 
+document.getElementById('btnKeyboardHelp')?.addEventListener('click', () => {
+  document.getElementById('keyboardHelpModal')?.showModal();
+});
+
 document.getElementById('btnSyncProducts')?.addEventListener('click', syncAllProductsFromAdmin);
 document.getElementById('btnFetchBarcode')?.addEventListener('click', fetchBarcodeFromAdmin);
 
@@ -2560,7 +2653,16 @@ async function initApp() {
   setInterval(flushOutbox, 30000);
   setInterval(checkPriceUpdate, 60000);
   setInterval(updateStockBadge, 120000);
-  try { await api('/branch/heartbeat', { method: 'POST' }); } catch { /* */ }
+  setInterval(checkDataRevision, 30000);
+  try {
+    const hb = await api('/branch/heartbeat', { method: 'POST' });
+    if (hb.revision != null) {
+      const rev = Number(hb.revision);
+      const stored = Number(localStorage.getItem(DATA_REV_KEY) || 0);
+      if (!stored) localStorage.setItem(DATA_REV_KEY, String(rev));
+    }
+    checkDataRevision();
+  } catch { /* */ }
 }
 
 window.addEventListener('online', () => {

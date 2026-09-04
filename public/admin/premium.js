@@ -28,6 +28,7 @@
 
   const NAV_ICONS = {
     dashboard: '📊',
+    posMonitor: '📡',
     reports: '📈',
     invoices: '🧾',
     warehousePrep: '🏪',
@@ -51,6 +52,7 @@
 
   const VIEW_SCOPE = {
     dashboard: 'warehouse',
+    posMonitor: 'warehouse',
     reports: 'warehouse',
     invoices: 'warehouse',
     warehousePrep: 'warehouse',
@@ -428,6 +430,15 @@
         <div class="kpi premium-kpi${edariPending ? ' warn' : ''}"><div class="ico">🔄</div><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>
         <div class="kpi premium-kpi"><div class="ico">📦</div><div class="lbl">منتجات</div><div class="val">${data.products.total}</div></div>
         <div class="kpi premium-kpi"><div class="ico">🏷️</div><div class="lbl">إصدار الأسعار</div><div class="val">v${data.priceVersion || 0}</div></div>`;
+
+    try {
+      const { monitor } = await fetchPosMonitor();
+      renderPosLiveStrip(monitor);
+      renderBranchPerformanceTable($('branchPerformanceTable'), monitor.branches);
+      renderActivityFeed($('recentInvoicesFeed'), monitor.recent);
+      renderHourlyChart($('hourlySalesChart'), monitor.hourly);
+    } catch { /* */ }
+
     $('branchesList').innerHTML = `
         <div class="branch-grid">${(data.branches || []).map((b) => {
           const online = branchOnline(b.last_seen_at);
@@ -500,31 +511,58 @@
     if ($('invDate')) $('invDate').value = from;
     const q = $('invSearch')?.value || '';
     const branchId = $('invBranch')?.value || '';
+    const kind = $('invKind')?.value || '';
+    const payment = $('invPayment')?.value || '';
+    const edari = $('invEdari')?.value || '';
     const params = new URLSearchParams({ from, to, q, limit: '200' });
     if (branchId) params.set('branchId', branchId);
+    if (kind) params.set('kind', kind);
+    if (payment) params.set('payment', payment);
+    if (edari) params.set('edari', edari);
     const data = await api(`/admin/invoices?${params}`);
-    const kindBadge = (k) => k === 'return' ? 'return' : k === 'issue' ? 'issue' : 'sale';
-    const kindLabel = (k) => k === 'return' ? 'مرتجع' : k === 'issue' ? 'إخراج' : 'بيع';
+    const countEl = $('invResultCount');
+    if (countEl) countEl.textContent = `${data.total ?? (data.invoices || []).length} نتيجة`;
     $('invoiceTable').innerHTML = `
       <table id="invoicesDataTable">
-        <thead><tr><th>الرقم</th><th>النوع</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>مدفوع</th><th>متبقي</th><th>الإداري</th></tr></thead>
+        <thead><tr><th>الرقم</th><th>الفرع</th><th>النوع</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>مدفوع</th><th>متبقي</th><th>الدفع</th><th>الإداري</th></tr></thead>
         <tbody>${(data.invoices||[]).map((i) => `
           <tr class="clickable-row" data-invoice-id="${i.id}">
             <td>${esc(i.invoiceNo)}</td>
-            <td><span class="badge-pill ${kindBadge(i.kind)}">${kindLabel(i.kind)}</span></td>
+            <td>${esc(i.branchName || branchesCache.find((b) => b.id === i.branchId)?.name || '—')}</td>
+            <td>${kindBadgeHtml(i.kind)}</td>
             <td>${esc(i.customerName||'نقدي')}</td>
             <td>${esc(i.invoiceDate)}</td>
             <td dir="ltr">${fmt(i.total)}</td>
             <td dir="ltr">${fmt(i.paidAmount)}</td>
             <td dir="ltr">${fmt(i.dueAmount)}</td>
+            <td>${payMethodLabel(i.paymentMethod)}</td>
             <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}</td>
-          </tr>`).join('') || '<tr><td colspan="8">لا توجد فواتير</td></tr>'}
+          </tr>`).join('') || '<tr><td colspan="10">لا توجد فواتير</td></tr>'}
         </tbody>
       </table>`;
     $('invoiceTable').querySelectorAll('[data-invoice-id]').forEach((row) => {
       row.addEventListener('click', () => openInvoice(Number(row.dataset.invoiceId)));
     });
   };
+
+  document.getElementById('invPresetChips')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-inv-preset]');
+    if (!chip) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if ($('invFrom')) $('invFrom').value = today;
+    if ($('invTo')) $('invTo').value = today;
+    if ($('invDate')) $('invDate').value = today;
+    if ($('invKind')) $('invKind').value = '';
+    if ($('invPayment')) $('invPayment').value = '';
+    if ($('invEdari')) $('invEdari').value = '';
+    if ($('invSearch')) $('invSearch').value = '';
+    const preset = chip.dataset.invPreset;
+    if (preset === 'today-credit' && $('invPayment')) $('invPayment').value = 'credit';
+    if (preset === 'returns' && $('invKind')) $('invKind').value = 'return';
+    if (preset === 'edari-pending' && $('invEdari')) $('invEdari').value = 'pending';
+    if (preset === 'edari-error' && $('invEdari')) $('invEdari').value = 'error';
+    loadInvoices();
+  });
 
   $('btnExportInvoices')?.addEventListener('click', () => {
     exportTableCsv($('invoicesDataTable'), `invoices-${Date.now()}.csv`);
@@ -533,6 +571,9 @@
   $('invFrom')?.addEventListener('change', loadInvoices);
   $('invTo')?.addEventListener('change', loadInvoices);
   $('invBranch')?.addEventListener('change', loadInvoices);
+  $('invKind')?.addEventListener('change', loadInvoices);
+  $('invPayment')?.addEventListener('change', loadInvoices);
+  $('invEdari')?.addEventListener('change', loadInvoices);
 
   function renderPrepTablePremium(tableEl, rows, { labelHeader, labelFn, badgeClass }) {
     tableEl.innerHTML = `
@@ -804,8 +845,274 @@
     }, true);
   }
 
-  // ——— Extend nav for reports ———
+  function payMethodLabel(m) {
+    if (m === 'cash') return 'نقدي';
+    if (m === 'credit') return 'آجل';
+    if (m === 'partial') return 'جزئي';
+    if (m === 'issue') return 'إخراج';
+    return esc(m || '—');
+  }
+
+  function kindBadgeHtml(k) {
+    const cls = k === 'return' ? 'return' : k === 'issue' ? 'issue' : 'sale';
+    const lbl = k === 'return' ? 'مرتجع' : k === 'issue' ? 'إخراج' : 'بيع';
+    return `<span class="badge-pill ${cls}">${lbl}</span>`;
+  }
+
+  function renderBranchPerformanceTable(el, branches, { clickable = false } = {}) {
+    if (!el) return;
+    if (!branches?.length) {
+      el.innerHTML = '<p class="empty-panel">لا توجد فروع</p>';
+      return;
+    }
+    el.innerHTML = `
+      <table class="data-table compact">
+        <thead><tr>
+          <th>الفرع</th><th>الاتصال</th><th>فواتير</th><th>مبيعات</th><th>مرتجعات</th><th>صافي</th><th>آجل</th><th>مزامنة</th><th>أسعار</th>
+        </tr></thead>
+        <tbody>${branches.map((b) => `
+          <tr class="${b.online ? 'row-online' : 'row-offline'}${clickable ? ' clickable-row' : ''}" ${clickable ? `data-branch-id="${b.id}"` : ''}>
+            <td><strong>${esc(b.name)}</strong><small class="sub">${esc(b.code)}</small></td>
+            <td><span class="status-dot ${b.online ? 'online' : 'offline'}"></span> ${b.online ? 'متصل' : (b.minutesOffline != null ? `منذ ${b.minutesOffline} د` : 'غير متصل')}</td>
+            <td>${b.salesCount || 0}</td>
+            <td dir="ltr">${fmt(b.salesAmount)}</td>
+            <td dir="ltr">${fmt(b.returnsAmount)}</td>
+            <td dir="ltr"><strong>${fmt(b.netSales)}</strong></td>
+            <td dir="ltr">${fmt(b.dueAmount)}</td>
+            <td>${b.pendingSync ? `<span class="badge-pill warn">${b.pendingSync}</span>` : '✓'}</td>
+            <td>${b.priceStale ? `<span class="badge-pill warn">v${b.priceVersion}</span>` : `v${b.priceVersion || 0}`}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+    if (clickable) {
+      el.querySelectorAll('[data-branch-id]').forEach((row) => {
+        row.addEventListener('click', () => {
+          const sel = $('posMonBranch');
+          if (sel) { sel.value = row.dataset.branchId; loadPosMonitor(); }
+        });
+      });
+    }
+  }
+
+  function renderBranchHealthAlerts(monitor) {
+    const el = $('posMonAlerts');
+    if (!el) return;
+    const alerts = [];
+    (monitor.branches || []).forEach((b) => {
+      if (!b.online) {
+        alerts.push(`<div class="alert-strip stock"><span>⚠ ${esc(b.name)} غير متصل${b.minutesOffline != null ? ` (منذ ${b.minutesOffline} دقيقة)` : ''}</span><button type="button" class="btn btn-sm" data-filter-branch="${b.id}">تصفية</button></div>`);
+      }
+      if (b.priceStale) {
+        alerts.push(`<div class="alert-strip edari"><span>🏷 ${esc(b.name)} — أسعار قديمة (v${b.priceVersion})</span></div>`);
+      }
+      if (b.pendingSync > 0) {
+        alerts.push(`<div class="alert-strip warehouse"><span>⏳ ${esc(b.name)} — ${b.pendingSync} فاتورة بانتظار المزامنة</span></div>`);
+      }
+    });
+    el.innerHTML = alerts.slice(0, 6).join('');
+    el.querySelectorAll('[data-filter-branch]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const sel = $('posMonBranch');
+        if (sel) { sel.value = btn.dataset.filterBranch; loadPosMonitor(); }
+      });
+    });
+  }
+
+  function renderPaymentMix(el, byPayment) {
+    if (!el) return;
+    const maxAmt = Math.max(...(byPayment || []).map((x) => x.amount), 1);
+    el.innerHTML = (byPayment || []).length
+      ? (byPayment || []).map((p) => `
+        <div class="report-bar">
+          <i style="height:${Math.max(8, Math.round(p.amount / maxAmt * 100))}%"></i>
+          <b dir="ltr">${fmt(p.amount)}</b>
+          <span>${payMethodLabel(p.method)} (${p.count})</span>
+        </div>`).join('')
+      : '<p class="empty-panel">لا توجد مبيعات اليوم</p>';
+  }
+
+  function renderHourlyChart(el, hourly) {
+    if (!el) return;
+    const hours = Array.from({ length: 24 }, (_, i) => {
+      const row = (hourly || []).find((h) => Number(h.hour) === i);
+      return { hour: i, count: row?.count || 0, amount: row?.amount || 0 };
+    });
+    const maxAmt = Math.max(...hours.map((h) => h.amount), 1);
+    el.innerHTML = `
+      <div class="hourly-bars">${hours.map((h) => `
+        <div class="hourly-bar-col" title="${h.hour}:00 — ${h.count} فاتورة · ${fmt(h.amount)}">
+          <i style="height:${Math.max(4, Math.round(h.amount / maxAmt * 100))}%"></i>
+          <span class="hour-lbl">${h.hour}</span>
+        </div>`).join('')}
+      </div>`;
+  }
+
+  function renderActivityFeed(el, recent) {
+    if (!el) return;
+    if (!recent?.length) {
+      el.innerHTML = '<p class="empty-panel">لا توجد فواتير حديثة</p>';
+      return;
+    }
+    el.innerHTML = recent.slice(0, 12).map((inv) => `
+      <button type="button" class="activity-item" data-invoice-id="${inv.id}">
+        <span class="activity-kind">${kindBadgeHtml(inv.kind)}</span>
+        <span class="activity-body">
+          <strong>${esc(inv.invoiceNo)}</strong>
+          <small>${esc(inv.branchName || 'فرع')} · ${esc(inv.customerName || 'نقدي')}</small>
+        </span>
+        <span class="activity-amt" dir="ltr">${fmt(inv.total)}</span>
+        <span class="activity-time">${esc((inv.createdAt || '').slice(11, 16) || inv.invoiceDate)}</span>
+      </button>`).join('');
+    el.querySelectorAll('[data-invoice-id]').forEach((btn) => {
+      btn.addEventListener('click', () => openInvoice(Number(btn.dataset.invoiceId)));
+    });
+  }
+
+  function renderPosLiveStrip(monitor) {
+    const el = $('posLiveStrip');
+    if (!el || currentApp !== 'warehouse') return;
+    const t = monitor?.totals || {};
+    el.classList.toggle('live-pulse', !!monitor?._fresh);
+    el.innerHTML = `
+      <div class="live-stat"><span class="lbl">فروع متصلة</span><strong>${t.onlineBranches || 0}/${t.totalBranches || 0}</strong></div>
+      <div class="live-stat"><span class="lbl">فواتير اليوم</span><strong>${t.salesCount || 0}</strong></div>
+      <div class="live-stat accent"><span class="lbl">صافي المبيعات</span><strong dir="ltr">${fmt(t.netSales)}</strong></div>
+      <div class="live-stat"><span class="lbl">متوسط الفاتورة</span><strong dir="ltr">${fmt(t.avgTicket)}</strong></div>
+      <div class="live-stat"><span class="lbl">مرتجعات</span><strong>${t.returnsCount || 0}</strong></div>
+      <div class="live-stat"><span class="lbl">بانتظار المزامنة</span><strong>${monitor?.pendingSync || 0}</strong></div>`;
+  }
+
+  function buildPosMonitorParams() {
+    const params = new URLSearchParams({ limit: '80' });
+    const branchId = $('posMonBranch')?.value || '';
+    const q = ($('posMonSearch')?.value || '').trim();
+    const kind = $('posMonKind')?.value || '';
+    const payment = $('posMonPayment')?.value || '';
+    const edari = $('posMonEdari')?.value || '';
+    if (branchId) params.set('branchId', branchId);
+    if (q) params.set('q', q);
+    if (kind) params.set('kind', kind);
+    if (payment) params.set('payment', payment);
+    if (edari) params.set('edari', edari);
+    return params;
+  }
+
+  async function fetchPosMonitor() {
+    const data = await api(`/admin/pos-monitor?${buildPosMonitorParams()}`);
+    return { monitor: data.monitor || {}, revision: data.revision };
+  }
+
+  let posMonTimer = null;
+  let lastKnownRevision = 0;
+  let lastPosInvoiceIds = new Set();
+  let revisionPollTimer = null;
+
+  function setupPosMonAutoRefresh() {
+    if (posMonTimer) { clearInterval(posMonTimer); posMonTimer = null; }
+    const sec = Number($('posMonRefresh')?.value || 0);
+    if (sec > 0) {
+      posMonTimer = setInterval(() => {
+        if (!$('viewPosMonitor')?.classList.contains('hidden')) loadPosMonitor();
+      }, sec * 1000);
+    }
+  }
+
+  async function refreshDashboardLive() {
+    if (currentApp !== 'warehouse') return;
+    try {
+      const { monitor } = await fetchPosMonitor();
+      monitor._fresh = true;
+      renderPosLiveStrip(monitor);
+      renderBranchPerformanceTable($('branchPerformanceTable'), monitor.branches);
+      renderActivityFeed($('recentInvoicesFeed'), monitor.recent);
+      renderHourlyChart($('hourlySalesChart'), monitor.hourly);
+      setTimeout(() => $('posLiveStrip')?.classList.remove('live-pulse'), 1200);
+    } catch { /* */ }
+  }
+
+  async function pollDataRevision() {
+    try {
+      const data = await api('/admin/data-revision');
+      const rev = Number(data.revision || 0);
+      if (lastKnownRevision && rev > lastKnownRevision) {
+        const active = document.querySelector('.nav.active')?.dataset.view;
+        if (active === 'dashboard') refreshDashboardLive();
+        if (active === 'posMonitor') loadPosMonitor();
+        if (active === 'invoices') loadInvoices();
+      }
+      if (rev) lastKnownRevision = rev;
+    } catch { /* */ }
+  }
+
+  window.loadPosMonitor = async function loadPosMonitor() {
+    if (currentApp !== 'warehouse') return;
+    await fetchBranches();
+    fillBranchSelect($('posMonBranch'));
+    const { monitor, revision } = await fetchPosMonitor();
+    if (revision) lastKnownRevision = Number(revision);
+    const t = monitor.totals || {};
+
+    renderBranchHealthAlerts(monitor);
+
+    $('posMonitorHero').className = 'kpi-grid premium-kpis pos-monitor-hero';
+    $('posMonitorHero').innerHTML = `
+      <div class="kpi premium-kpi accent"><div class="ico">📡</div><div class="lbl">فروع متصلة</div><div class="val">${t.onlineBranches || 0} / ${t.totalBranches || 0}</div></div>
+      <div class="kpi premium-kpi"><div class="ico">🧾</div><div class="lbl">فواتير اليوم</div><div class="val">${t.salesCount || 0}</div></div>
+      <div class="kpi premium-kpi"><div class="ico">💵</div><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmt(t.salesAmount)}</div></div>
+      <div class="kpi premium-kpi"><div class="ico">📈</div><div class="lbl">صافي اليوم</div><div class="val" dir="ltr">${fmt(t.netSales)}</div></div>
+      <div class="kpi premium-kpi"><div class="ico">↩️</div><div class="lbl">مرتجعات</div><div class="val">${t.returnsCount || 0}</div></div>
+      <div class="kpi premium-kpi"><div class="ico">📤</div><div class="lbl">إخراج مخزون</div><div class="val">${t.issuesCount || 0}</div></div>
+      <div class="kpi premium-kpi"><div class="ico">🧮</div><div class="lbl">متوسط الفاتورة</div><div class="val" dir="ltr">${fmt(t.avgTicket)}</div></div>
+      <div class="kpi premium-kpi warn"><div class="ico">⏳</div><div class="lbl">بانتظار المزامنة</div><div class="val">${monitor.pendingSync || 0}</div></div>`;
+
+    renderBranchPerformanceTable($('posMonBranchTable'), monitor.branches, { clickable: true });
+    renderHourlyChart($('posMonHourly'), monitor.hourly);
+    renderPaymentMix($('posMonPaymentMix'), monitor.byPayment);
+
+    const recent = monitor.recent || [];
+    const prevIds = lastPosInvoiceIds;
+    const hasNew = recent.some((i) => !prevIds.has(i.id) && prevIds.size > 0);
+    lastPosInvoiceIds = new Set(recent.map((i) => i.id));
+
+    $('posMonCount').textContent = `${recent.length} فاتورة`;
+    $('posMonInvoiceTable').innerHTML = `
+      <table class="data-table striped">
+        <thead><tr>
+          <th>الوقت</th><th>الفرع</th><th>الرقم</th><th>النوع</th><th>العميل</th><th>الكاشير</th><th>الدفع</th><th>الإجمالي</th><th>الإداري</th>
+        </tr></thead>
+        <tbody>${recent.length ? recent.map((i, idx) => `
+          <tr class="clickable-row${hasNew && idx < 3 ? ' row-new' : ''}" data-invoice-id="${i.id}">
+            <td>${esc((i.createdAt || '').slice(11, 16) || '—')}</td>
+            <td>${esc(i.branchName || '—')}</td>
+            <td><strong>${esc(i.invoiceNo)}</strong></td>
+            <td>${kindBadgeHtml(i.kind)}</td>
+            <td>${esc(i.customerName || 'نقدي')}</td>
+            <td>${esc(i.cashierName || '—')}</td>
+            <td>${payMethodLabel(i.paymentMethod)}</td>
+            <td dir="ltr"><strong>${fmt(i.total)}</strong></td>
+            <td>${edariSyncLabel(i.edariSyncStatus)}</td>
+          </tr>`).join('') : '<tr><td colspan="9">لا توجد فواتير</td></tr>'}
+        </tbody>
+      </table>`;
+    $('posMonInvoiceTable').querySelectorAll('[data-invoice-id]').forEach((row) => {
+      row.addEventListener('click', () => openInvoice(Number(row.dataset.invoiceId)));
+    });
+
+    const now = new Date();
+    $('posMonUpdated').textContent = `آخر تحديث: ${now.toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+    setupPosMonAutoRefresh();
+  };
+
+  $('btnPosMonRefresh')?.addEventListener('click', () => loadPosMonitor());
+  $('posMonBranch')?.addEventListener('change', () => loadPosMonitor());
+  $('posMonKind')?.addEventListener('change', () => loadPosMonitor());
+  $('posMonPayment')?.addEventListener('change', () => loadPosMonitor());
+  $('posMonEdari')?.addEventListener('change', () => loadPosMonitor());
+  $('posMonSearch')?.addEventListener('input', debounce(() => loadPosMonitor(), 280));
+  $('posMonRefresh')?.addEventListener('change', setupPosMonAutoRefresh);
+
   PAGE_TITLES.reports = ['تقارير الشورجة', 'مبيعات فروع الشورجة فقط — بدون المندوبين'];
+  PAGE_TITLES.posMonitor = ['مراقبة نقاط البيع', 'متابعة حية للفروع والفواتير'];
   PAGE_TITLES.warehousePrep = ['تجهيز الشورجة', 'فواتير فروع الشورجة الجاهزة للترحيل'];
   PAGE_TITLES.delegates = ['المندوبين', 'طلبات المندوبين فقط — منفصلة عن الشورجة'];
 
@@ -816,6 +1123,8 @@
     setupHeader();
     setupQuickActions();
     fetchBranches();
+    pollDataRevision();
+    if (!revisionPollTimer) revisionPollTimer = setInterval(pollDataRevision, 12000);
 
     const today = new Date().toISOString().slice(0, 10);
     if ($('reportFrom')) $('reportFrom').value = today;
