@@ -21,6 +21,13 @@ function logoMarkup(cls) {
   return `<img class="${cls}" src="${src}" alt="${esc(STORE_NAME)}">`;
 }
 
+function brandOrnament(cls = 'ornament') {
+  return `<svg class="${cls}" viewBox="0 0 220 20" fill="none" aria-hidden="true">
+    <path d="M8 12c24-10 48-10 72-3s48 12 72 3 48-10 60-4" stroke="#000" stroke-width="1.35" stroke-linecap="round"/>
+    <path d="M18 16c22-8 44-8 66-2s44 10 66 2 40-8 52-3" stroke="#000" stroke-width=".7" stroke-linecap="round"/>
+  </svg>`;
+}
+
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -49,8 +56,10 @@ function isAccountCustomer(invoice) {
 function invoicePageFoot() {
   return `
     <footer class="page-foot">
+      ${brandOrnament('ornament ornament-foot')}
       <div class="page-foot-row">
         <span>مدير مبيعات الجملة <b dir="ltr">07828630399</b></span>
+        <span class="foot-mark">${esc(STORE_NAME)}</span>
         <span>محل الشورجة <b dir="ltr">07707683512</b></span>
       </div>
     </footer>`;
@@ -178,63 +187,73 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   const nameWidth = showMoney ? (showGifts ? '46%' : '54%') : '72%';
   const sheet = (copyLabel) => `
   <section class="sheet">
-    <div class="copy-badge">${esc(copyLabel)}</div>
-    <header class="hdr">
-      <div class="hdr-brand">
-        ${logoMarkup('logo-img')}
-        <div class="hdr-store">
-          <h1>${esc(STORE_NAME)}</h1>
-          <p>${esc(branchName || 'نقطة البيع')} · ${summary.lineCount} صنف · ${soldTotal} قطعة${giftTotal ? ` · ${giftTotal} هدية` : ''}</p>
+    <div class="frame">
+      <header class="mast">
+        <div class="mast-top">
+          <span class="copy-mark">${esc(copyLabel)}</span>
+          <span class="doc-kind">${esc(title)}</span>
+        </div>
+        <div class="brand-row">
+          ${logoMarkup('logo-img')}
+          <div class="brand-text">
+            <p class="brand-en">deema alhayat</p>
+            <h1>${esc(STORE_NAME)}</h1>
+            ${brandOrnament()}
+            <p class="brand-sub">${esc(branchName || 'نقطة البيع')} · ${summary.lineCount} صنف · ${soldTotal} قطعة${giftTotal ? ` · ${giftTotal} هدية` : ''}</p>
+          </div>
+          <div class="inv-plate">
+            <span class="inv-k">رقم الفاتورة</span>
+            <span class="inv-no" dir="ltr">${esc(invoice.invoiceNo)}</span>
+          </div>
+        </div>
+      </header>
+      <div class="info">
+        <div class="info-cell">
+          <span class="k">التاريخ والوقت</span>
+          <span class="v ltr">${esc(dateTime)}</span>
+        </div>
+        <div class="info-cell">
+          <span class="k">العميل</span>
+          <span class="v">${esc(customer)}</span>
+        </div>
+        <div class="info-cell">
+          <span class="k">${isIssue ? 'النوع' : 'طريقة الدفع'}</span>
+          <span class="v">${esc(isIssue ? title : payLabel(invoice.paymentMethod))}</span>
         </div>
       </div>
-      <div class="hdr-doc">
-        <span class="type">${title}</span>
-        <span class="no">${esc(invoice.invoiceNo)}</span>
+      <table class="tbl">
+        <colgroup>
+          <col style="width:6%">
+          <col style="width:${nameWidth}">
+          <col style="width:10%">
+          ${showGifts ? '<col style="width:10%">' : ''}
+          ${showMoney ? '<col style="width:14%"><col style="width:16%">' : ''}
+        </colgroup>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th class="th-name">المنتج</th>
+            <th>الكمية</th>
+            ${showGifts ? '<th>هدايا</th>' : ''}
+            ${showMoney ? '<th>السعر</th><th>الإجمالي</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>${a4LineItems(invoice, { showGifts, showMoney })}</tbody>
+      </table>
+      <div class="bottom">
+        <div class="side">
+          ${invoice.notes ? `<div class="notes"><div class="k">ملاحظات</div><div class="v">${esc(invoice.notes)}</div></div>` : `<div class="quiet-card"><div class="k">ملخص الأصناف</div><div class="v">${summary.lineCount} صنف · ${soldTotal} قطعة${giftTotal ? ` · ${giftTotal} هدية` : ''}</div></div>`}
+        </div>
+        ${showMoney ? `<div class="totals">
+          <div class="tot-head">ملخص المبالغ</div>
+          <div class="tot-body">${a4TotalsPanel(invoice, null, debtInfo)}</div>
+        </div>` : `<div class="quiet-card"><div class="k">عدد الأصناف</div><div class="v">${summary.lineCount} صنف · ${soldTotal} قطعة</div></div>`}
       </div>
-    </header>
-    <div class="info">
-      <div class="info-cell">
-        <span class="k">التاريخ والوقت</span>
-        <span class="v ltr">${esc(dateTime)}</span>
-      </div>
-      <div class="info-cell">
-        <span class="k">العميل</span>
-        <span class="v">${esc(customer)}</span>
-      </div>
-      <div class="info-cell">
-        <span class="k">${isIssue ? 'النوع' : 'طريقة الدفع'}</span>
-        <span class="v">${esc(isIssue ? title : payLabel(invoice.paymentMethod))}</span>
+      <div class="thanks">
+        ${brandOrnament('ornament ornament-sm')}
+        <p>${esc(footer)}</p>
       </div>
     </div>
-    <table class="tbl">
-      <colgroup>
-        <col style="width:6%">
-        <col style="width:${nameWidth}">
-        <col style="width:10%">
-        ${showGifts ? '<col style="width:10%">' : ''}
-        ${showMoney ? '<col style="width:14%"><col style="width:16%">' : ''}
-      </colgroup>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th class="th-name">المنتج</th>
-          <th>الكمية</th>
-          ${showGifts ? '<th>هدايا</th>' : ''}
-          ${showMoney ? '<th>السعر</th><th>الإجمالي</th>' : ''}
-        </tr>
-      </thead>
-      <tbody>${a4LineItems(invoice, { showGifts, showMoney })}</tbody>
-    </table>
-    <div class="bottom">
-      <div class="side">
-        ${invoice.notes ? `<div class="notes"><div class="k">ملاحظات</div><div class="v">${esc(invoice.notes)}</div></div>` : ''}
-      </div>
-      ${showMoney ? `<div class="totals">
-        <div class="tot-head">ملخص المبالغ</div>
-        <div class="tot-body">${a4TotalsPanel(invoice, null, debtInfo)}</div>
-      </div>` : `<div class="notes"><div class="k">عدد الأصناف</div><div class="v">${summary.lineCount} صنف · ${soldTotal} قطعة</div></div>`}
-    </div>
-    <p class="thanks">${esc(footer)}</p>
   </section>`;
 
   return `<!DOCTYPE html>
@@ -243,9 +262,9 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
   <meta charset="UTF-8">
   <title>${esc(title)} ${esc(invoice.invoiceNo)}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    @page { size: A4 portrait; margin: 10mm 12mm 20mm 12mm; }
+    @page { size: A4 portrait; margin: 9mm 11mm 20mm 11mm; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'IBM Plex Sans Arabic', Tahoma, Arial, sans-serif;
@@ -255,81 +274,101 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       line-height: 1.45;
     }
     img { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .sheet { width: 100%; max-width: 190mm; margin: 0 auto; padding-bottom: 4mm; page-break-after: always; }
+    .sheet { width: 100%; max-width: 188mm; margin: 0 auto; page-break-after: always; }
     .sheet:last-of-type { page-break-after: auto; }
-    .copy-badge {
-      display: inline-block;
-      border: 1px solid #000;
-      padding: 2px 10px;
-      font-size: 10px;
-      font-weight: 800;
-      margin-bottom: 8px;
+    .frame {
+      border: 1.8px solid #000;
+      box-shadow: inset 0 0 0 3.5px #fff, inset 0 0 0 4.5px #000;
+      padding: 7mm 7mm 6mm;
     }
     .page-foot {
       position: fixed;
       left: 0;
       right: 0;
       bottom: 0;
-      height: 16mm;
-      padding: 3mm 12mm 4mm;
-      border-top: 2px solid #000;
+      height: 17mm;
+      padding: 2mm 12mm 3mm;
       background: #fff;
+      text-align: center;
     }
+    .page-foot .ornament-foot { width: 88px; height: 10px; margin: 0 auto 2px; display: block; }
     .page-foot-row {
       display: flex;
       justify-content: space-between;
-      gap: 12px;
+      align-items: baseline;
+      gap: 10px;
       font-size: 10px;
       font-weight: 700;
+      border-top: 1.6px solid #000;
+      padding-top: 3mm;
     }
-    .page-foot-row b { font-family: Consolas, 'Courier New', monospace; letter-spacing: 0.04em; }
-    .hdr {
+    .page-foot-row b { font-family: Consolas, 'Courier New', monospace; letter-spacing: 0.05em; }
+    .foot-mark { letter-spacing: 0.18em; font-size: 9px; font-weight: 800; }
+    .ornament { width: 118px; height: 14px; display: block; }
+    .ornament-sm { width: 92px; height: 12px; margin: 0 auto 6px; }
+    .mast { margin-bottom: 8px; }
+    .mast-top {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      gap: 16px;
-      padding: 0 0 12px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .copy-mark, .doc-kind {
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      border: 1px solid #000;
+      padding: 3px 11px;
+    }
+    .doc-kind { border-width: 1.6px; }
+    .brand-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 14px;
+      padding-bottom: 10px;
       border-bottom: 3px double #000;
     }
-    .hdr-brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      min-width: 0;
-    }
     .logo-img {
-      height: 58px;
+      height: 64px;
       width: auto;
-      max-width: 200px;
+      max-width: 210px;
       object-fit: contain;
       flex-shrink: 0;
-      filter: grayscale(100%) contrast(1.4);
+      filter: grayscale(100%) contrast(1.25);
     }
     .logo-fallback {
-      width: 48px; height: 48px;
+      width: 56px; height: 56px;
       border: 2px solid #000;
-      font-size: 24px;
+      font-size: 26px;
       font-weight: 800;
       display: flex;
       align-items: center;
       justify-content: center;
     }
-    .hdr-store { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
-    .hdr-store h1 { font-size: 20px; font-weight: 800; color: #000; line-height: 1.2; }
-    .hdr-store p { font-size: 11px; color: #000; font-weight: 700; margin-top: 4px; }
-    .hdr-doc {
-      text-align: left;
-      flex-shrink: 0;
-      padding: 6px 12px;
-      border: 2px solid #000;
-      color: #000;
-      min-width: 176px;
+    .brand-text { min-width: 0; }
+    .brand-en {
+      font-size: 9px;
+      letter-spacing: 0.28em;
+      font-weight: 700;
+      text-transform: lowercase;
+      margin-bottom: 1px;
     }
-    .hdr-doc .type { display: block; font-size: 10px; font-weight: 700; margin-bottom: 4px; }
-    .hdr-doc .no {
+    .brand-text h1 { font-size: 23px; font-weight: 800; line-height: 1.15; }
+    .brand-text .ornament { margin: 4px 0 5px; }
+    .brand-sub { font-size: 10.5px; font-weight: 700; }
+    .inv-plate {
+      text-align: left;
+      min-width: 168px;
+      padding: 8px 12px 9px;
+      border: 1.8px solid #000;
+      box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px #000;
+    }
+    .inv-k { display: block; font-size: 8.5px; font-weight: 800; letter-spacing: 0.12em; margin-bottom: 4px; }
+    .inv-no {
       display: block;
       font-family: Consolas, 'Courier New', monospace;
-      font-size: 13px;
+      font-size: 13.5px;
       font-weight: 800;
       direction: ltr;
       letter-spacing: 0.04em;
@@ -337,67 +376,96 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .info {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      margin: 14px 0 12px;
-      border: 1px solid #000;
+      margin: 12px 0 11px;
+      border-top: 1.6px solid #000;
+      border-bottom: 1.6px solid #000;
     }
-    .info-cell { padding: 9px 12px; border-inline-start: 1px solid #000; min-width: 0; }
-    .info-cell:first-child { border-inline-start: 0; }
-    .info-cell .k { display: block; font-size: 9px; color: #000; font-weight: 700; margin-bottom: 3px; }
-    .info-cell .v { display: block; font-size: 12px; font-weight: 800; color: #000; word-break: break-word; }
-    .info-cell .v.ltr { direction: ltr; font-family: Consolas, monospace; font-size: 11px; }
+    .info-cell { padding: 8px 12px 9px; border-inline-start: 1px solid #000; min-width: 0; }
+    .info-cell:first-child { border-inline-start: 0; padding-right: 0; }
+    .info-cell .k {
+      display: block;
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      margin-bottom: 3px;
+    }
+    .info-cell .v { display: block; font-size: 12.5px; font-weight: 800; word-break: break-word; }
+    .info-cell .v.ltr { direction: ltr; font-family: Consolas, monospace; font-size: 11.5px; }
     .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 12px; }
     .tbl thead { display: table-header-group; }
     .tbl th {
-      background: #fff;
-      color: #000;
-      font-size: 10px;
+      font-size: 9.5px;
       font-weight: 800;
-      padding: 8px 6px;
+      letter-spacing: 0.04em;
+      padding: 8px 6px 7px;
       text-align: center;
-      border-top: 2px solid #000;
-      border-bottom: 2px solid #000;
+      border-top: 2.2px solid #000;
+      border-bottom: 2.2px solid #000;
     }
     .tbl th.th-name { text-align: right; padding-right: 10px; }
-    .tbl td { padding: 8px 6px; border-bottom: 1px solid #000; text-align: center; vertical-align: top; }
+    .tbl td { padding: 8px 6px; border-bottom: 1px dotted #000; text-align: center; vertical-align: top; }
+    .tbl tbody tr:last-child td { border-bottom: 1.8px solid #000; }
     .tbl tbody tr { page-break-inside: avoid; }
-    .t-idx { color: #000; font-weight: 700; font-size: 10px; }
+    .t-idx { font-weight: 700; font-size: 10px; }
     .t-name { text-align: right !important; padding-right: 10px !important; }
-    .t-name strong { display: block; font-size: 11px; font-weight: 800; color: #000; }
-    .t-code { display: block; margin-top: 2px; font-family: Consolas, monospace; font-size: 9px; color: #000; direction: ltr; }
+    .t-name strong { display: block; font-size: 11.5px; font-weight: 800; }
+    .t-code { display: block; margin-top: 2px; font-family: Consolas, monospace; font-size: 8.5px; direction: ltr; letter-spacing: 0.03em; }
     .t-qty { font-weight: 800; font-size: 12px; }
-    .t-price { font-weight: 700; color: #000; }
-    .t-total { font-weight: 800; color: #000; font-size: 12px; }
+    .t-price { font-weight: 700; }
+    .t-total { font-weight: 800; font-size: 12px; }
     .tag-edit {
       display: inline-block; margin-top: 2px; font-size: 8px;
       border: 1px solid #000; padding: 1px 5px; font-weight: 800;
     }
     .gift-val { display: inline-block; border: 1px solid #000; font-weight: 800; padding: 1px 7px; }
-    .was { font-size: 8px; color: #000; text-decoration: line-through; margin-top: 2px; }
+    .was { font-size: 8px; text-decoration: line-through; margin-top: 2px; }
     .bottom {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 230px;
-      gap: 14px;
+      grid-template-columns: minmax(0, 1fr) 236px;
+      gap: 16px;
+      align-items: start;
       page-break-inside: avoid;
     }
     .side { display: flex; flex-direction: column; gap: 10px; }
-    .notes { border: 1px solid #000; padding: 10px 12px; min-height: 48px; }
-    .notes .k { font-size: 9px; font-weight: 800; color: #000; margin-bottom: 4px; }
-    .notes .v { font-size: 11px; color: #000; }
-    .totals { border: 2px solid #000; }
-    .totals .tot-head { text-align: center; padding: 7px; font-size: 10px; font-weight: 800; border-bottom: 1px solid #000; }
-    .totals .tot-body { padding: 8px 12px 10px; }
-    .tot-line { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: 11px; border-bottom: 1px dotted #000; }
+    .notes, .quiet-card {
+      border: 1px solid #000;
+      padding: 10px 12px;
+      min-height: 54px;
+    }
+    .notes .k, .quiet-card .k { font-size: 8.5px; font-weight: 800; letter-spacing: 0.1em; margin-bottom: 5px; }
+    .notes .v, .quiet-card .v { font-size: 11.5px; font-weight: 600; }
+    .totals {
+      border: 1.8px solid #000;
+      box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px #000;
+    }
+    .totals .tot-head {
+      text-align: center;
+      padding: 7px 8px;
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      border-bottom: 1.4px solid #000;
+    }
+    .totals .tot-body { padding: 8px 12px 11px; }
+    .tot-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 5px 0;
+      font-size: 11px;
+      border-bottom: 1px dotted #000;
+    }
     .tot-line b { white-space: nowrap; font-weight: 800; }
-    .tot-line.disc, .tot-line.paid, .tot-line.due, .tot-line.debt-prev, .tot-line.debt-total { color: #000; }
-    .tot-line.debt-total { border-bottom: none; border-top: 2px solid #000; margin-top: 4px; padding-top: 8px; }
-    .tot-sep { margin: 8px 0 4px; font-size: 9px; font-weight: 800; color: #000; text-align: center; }
+    .tot-line.debt-total { border-bottom: none; border-top: 1.6px solid #000; margin-top: 4px; padding-top: 8px; }
+    .tot-sep { margin: 8px 0 4px; font-size: 9px; font-weight: 800; text-align: center; letter-spacing: 0.08em; }
     .tot-grand {
       display: flex; justify-content: space-between; align-items: center;
-      margin-top: 6px; padding: 9px 10px; border: 2px solid #000;
-      font-size: 12px; font-weight: 800; color: #000;
+      margin-top: 7px; padding: 9px 10px; border: 1.8px solid #000;
+      font-size: 12px; font-weight: 800;
     }
-    .tot-grand b { font-size: 16px; color: #000; }
-    .thanks { margin-top: 12px; text-align: center; font-size: 11px; font-weight: 800; }
+    .tot-grand b { font-size: 16.5px; }
+    .thanks { margin-top: 14px; text-align: center; }
+    .thanks p { font-size: 11.5px; font-weight: 800; letter-spacing: 0.04em; }
     @media print { .sheet { max-width: 100%; } }
   </style>
 </head>
@@ -476,11 +544,12 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     .copy-badge {
       display: block;
       text-align: center;
-      border: 1px solid #000;
-      padding: 3px 8px;
+      border: 1.4px solid #000;
+      padding: 4px 8px;
       font-size: 10px;
       font-weight: 800;
-      margin-bottom: 6px;
+      letter-spacing: 0.12em;
+      margin-bottom: 8px;
     }
     .cut {
       border: none;
@@ -503,17 +572,18 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
       border-top: 3px double #000;
       margin: 10px 0 8px;
     }
+    .ornament { width: 72px; height: 12px; display: block; margin: 4px auto 6px; }
 
     .head { text-align: center; padding: 2px 0 4px; }
     .logo-img {
       display: block;
       height: auto;
       width: auto;
-      max-width: 52mm;
-      max-height: 18mm;
-      margin: 0 auto 6px;
+      max-width: 54mm;
+      max-height: 20mm;
+      margin: 0 auto 4px;
       object-fit: contain;
-      filter: grayscale(100%) contrast(1.45);
+      filter: grayscale(100%) contrast(1.3);
     }
     .logo-fallback {
       width: 40px; height: 40px;
@@ -526,18 +596,25 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
       justify-content: center;
     }
     .store-name {
-      font-size: 16px;
+      font-size: 17px;
       font-weight: 800;
       letter-spacing: -0.02em;
-      margin-bottom: 4px;
+      margin-bottom: 0;
+    }
+    .brand-en {
+      font-size: 8px;
+      letter-spacing: 0.22em;
+      font-weight: 700;
+      margin-bottom: 1px;
     }
     .doc-badge {
       display: inline-block;
       font-size: 10px;
       font-weight: 800;
+      letter-spacing: 0.08em;
       padding: 3px 12px;
       border: 1.5px solid #000;
-      margin: 4px 0;
+      margin: 2px 0 4px;
     }
     .branch-name {
       font-size: 10px;
@@ -547,7 +624,7 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     }
 
     .meta-box {
-      border: 1.5px solid #000;
+      border: 1.6px solid #000;
       padding: 8px 10px;
       font-size: 10px;
     }
@@ -724,7 +801,9 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     <div class="copy-badge">${copyLabel}</div>
     <header class="head">
       ${logoMarkup('logo-img')}
+      <div class="brand-en">deema alhayat</div>
       <div class="store-name">${esc(STORE_NAME)}</div>
+      ${brandOrnament()}
       <div class="doc-badge">${title}</div>
       ${branchName ? `<div class="branch-name">${esc(branchName)}</div>` : ''}
     </header>
