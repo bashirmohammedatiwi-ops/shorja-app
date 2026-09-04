@@ -304,7 +304,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       width: 100%;
       max-width: 100%;
       margin: 0;
-      padding: 2mm 3mm 22mm;
+      padding: 2mm 3mm 28mm;
       page-break-after: always;
     }
     .sheet:last-of-type { page-break-after: auto; }
@@ -313,18 +313,18 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       left: 3.2mm;
       right: 3.2mm;
       bottom: 3.2mm;
-      height: 18mm;
-      padding: 1.5mm 2mm 0;
+      height: 23mm;
+      padding: 1.8mm 2mm 0;
       background: #fff;
       text-align: center;
       z-index: 5;
       border-top: 1.3px solid #000;
     }
     .thanks-line {
-      font-size: 10.5px;
+      font-size: 13.5px;
       font-weight: 800;
       letter-spacing: 0.05em;
-      margin: 0 0 1.6mm;
+      margin: 0 0 1.8mm;
       line-height: 1.2;
     }
     .phone-row {
@@ -334,12 +334,12 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     }
     .phone-card {
       border: 1px solid #000;
-      padding: 2px 6px 3px;
+      padding: 3px 8px 4px;
       text-align: center;
     }
     .phone-k {
       display: block;
-      font-size: 7.5px;
+      font-size: 10px;
       font-weight: 800;
       letter-spacing: 0.04em;
       margin-bottom: 0;
@@ -347,7 +347,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .phone-card b {
       display: block;
       font-family: Consolas, 'Courier New', monospace;
-      font-size: 11px;
+      font-size: 15px;
       font-weight: 800;
       letter-spacing: 0.04em;
       direction: ltr;
@@ -361,13 +361,13 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       margin-bottom: 4px;
     }
     .copy-mark, .doc-kind {
-      font-size: 8px;
+      font-size: 12.5px;
       font-weight: 800;
       letter-spacing: 0.06em;
       border: 1px solid #000;
-      padding: 1px 8px;
+      padding: 3px 12px;
     }
-    .doc-kind { border-width: 1.4px; }
+    .doc-kind { border-width: 1.6px; }
     .brand-center {
       text-align: center;
       padding: 0 0 5px;
@@ -375,25 +375,25 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     }
     .logo-img {
       display: block;
-      height: 58px;
+      height: 82px;
       width: auto;
-      max-width: 210px;
-      margin: 0 auto 3px;
+      max-width: 290px;
+      margin: 0 auto 4px;
       object-fit: contain;
       filter: grayscale(100%) contrast(1.12);
     }
     .logo-fallback {
-      width: 44px; height: 44px;
+      width: 62px; height: 62px;
       margin: 0 auto 4px;
       border: 1.5px solid #000;
-      font-size: 20px;
+      font-size: 26px;
       font-weight: 800;
       display: flex;
       align-items: center;
       justify-content: center;
     }
     .slogan {
-      font-size: 9px;
+      font-size: 13px;
       font-weight: 700;
       letter-spacing: 0.14em;
       text-transform: lowercase;
@@ -414,13 +414,13 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .info-cell:nth-last-child(-n+2) { border-bottom: 0; }
     .info-cell .k {
       display: block;
-      font-size: 7.5px;
+      font-size: 9.5px;
       font-weight: 800;
       letter-spacing: 0.06em;
       margin-bottom: 1px;
     }
-    .info-cell .v { display: block; font-size: 11px; font-weight: 800; word-break: break-word; }
-    .info-cell .v.ltr { direction: ltr; font-family: Consolas, monospace; font-size: 10.5px; }
+    .info-cell .v { display: block; font-size: 13px; font-weight: 800; word-break: break-word; }
+    .info-cell .v.ltr { direction: ltr; font-family: Consolas, monospace; font-size: 13px; }
     .tbl-box {
       border: 1.3px solid #000;
       margin-bottom: 6px;
@@ -429,7 +429,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 0; }
     .tbl thead { display: table-header-group; }
     .tbl th {
-      font-size: 8.5px;
+      font-size: 10.5px;
       font-weight: 800;
       letter-spacing: 0.03em;
       padding: 4px 4px 3px;
@@ -440,13 +440,13 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .tbl td { padding: 4px 4px; border-bottom: 1px dotted #000; text-align: center; vertical-align: middle; }
     .tbl tbody tr:last-child td { border-bottom: none; }
     .tbl tbody tr { page-break-inside: avoid; }
-    .t-idx { font-weight: 700; font-size: 9px; }
+    .t-idx { font-weight: 700; font-size: 10.5px; }
     .t-name { text-align: right !important; padding-right: 8px !important; vertical-align: top; }
     .t-name strong { display: block; font-size: 10.5px; font-weight: 800; }
     .t-code { display: block; margin-top: 1px; font-family: Consolas, monospace; font-size: 8px; direction: ltr; letter-spacing: 0.02em; }
-    .t-qty { font-weight: 800; font-size: 11px; }
-    .t-price { font-weight: 700; }
-    .t-total { font-weight: 800; font-size: 11px; }
+    .t-qty { font-weight: 800; font-size: 13.5px; }
+    .t-price { font-weight: 700; font-size: 13px; }
+    .t-total { font-weight: 800; font-size: 13.5px; }
     .t-qty, .t-price, .t-total, .t-gift, .sum-stats b, .tot-cell b, .tot-grand b {
       font-variant-numeric: tabular-nums;
     }
@@ -464,8 +464,8 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     }
     .sum-head {
       text-align: center;
-      padding: 3px 6px;
-      font-size: 8.5px;
+      padding: 4px 6px;
+      font-size: 11px;
       font-weight: 800;
       letter-spacing: 0.12em;
       border-bottom: 1px solid #000;
@@ -476,8 +476,8 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     }
     .sum-stats > div { flex: 1; padding: 4px 4px 5px; border-inline-start: 1px solid #000; }
     .sum-stats > div:first-child { border-inline-start: 0; }
-    .sum-stats span { display: block; font-size: 7.5px; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 0; }
-    .sum-stats b { display: block; font-size: 13px; font-weight: 800; }
+    .sum-stats span { display: block; font-size: 9.5px; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 0; }
+    .sum-stats b { display: block; font-size: 16px; font-weight: 800; }
     .totals .tot-body { padding: 0; }
     .tot-grid {
       display: grid;
@@ -488,8 +488,8 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
       justify-content: space-between;
       align-items: baseline;
       gap: 8px;
-      padding: 4px 8px;
-      font-size: 11px;
+      padding: 5px 8px;
+      font-size: 13px;
       border-inline-start: 1px solid #000;
       border-bottom: 1px dotted #000;
     }
@@ -502,8 +502,8 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     .tot-grid:last-child .tot-cell { border-bottom: none; }
     .tot-sep {
       margin: 0;
-      padding: 3px 6px;
-      font-size: 8px;
+      padding: 4px 6px;
+      font-size: 10px;
       font-weight: 800;
       text-align: center;
       letter-spacing: 0.06em;
@@ -512,13 +512,13 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
     }
     .tot-grand {
       display: flex; justify-content: space-between; align-items: center;
-      margin: 0; padding: 5px 8px;
+      margin: 0; padding: 6px 8px;
       border: none;
       border-top: 1.5px solid #000;
       border-bottom: 1.5px solid #000;
-      font-size: 11px; font-weight: 800;
+      font-size: 13px; font-weight: 800;
     }
-    .tot-grand b { font-size: 15px; }
+    .tot-grand b { font-size: 18px; }
     .tot-cell.debt-total { font-weight: 800; }
     .notes-box .notes-v { padding: 5px 10px 6px; font-size: 10.5px; font-weight: 600; }
     @media print { .sheet { max-width: 100%; } }
