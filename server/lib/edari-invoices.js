@@ -725,7 +725,8 @@ async function createEdariPayment(payload) {
     return { ok: false, error: 'الحساب غير مربوط بإداري — رحّل حساب العميل أولاً' };
   }
 
-  const amount = roundAmount(payload.amount);
+  const currency = normalizeCurrency(payload.currency);
+  const amount = roundAmount(payload.amount, currency);
   if (amount <= 0) return { ok: false, error: 'مبلغ التسديد غير صالح' };
 
   const dateStr = payload.paymentDate || new Date().toISOString().slice(0, 10);

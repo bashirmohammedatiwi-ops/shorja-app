@@ -103,6 +103,7 @@ function receiptSummary(invoice) {
 }
 
 function thermalLineItems(invoice) {
+  const cur = invoice.currency || 'iqd';
   return (invoice.lines || []).map((l, i) => {
     const edited = l.priceEdited && l.originalPrice != null && l.originalPrice !== l.unitPrice;
     const gift = Number(l.giftQty || 0);
@@ -110,8 +111,8 @@ function thermalLineItems(invoice) {
       ? `<span dir="ltr">${l.qty} + ${gift} هدية</span>`
       : `<span dir="ltr">${l.qty}</span>`;
     const pricePart = edited
-      ? `<span dir="ltr">${fmt(l.unitPrice)}</span> <span class="was-price" dir="ltr">(${fmt(l.originalPrice)})</span>`
-      : `<span dir="ltr">${fmt(l.unitPrice)}</span>`;
+      ? `<span dir="ltr">${fmt(l.unitPrice, cur)}</span> <span class="was-price" dir="ltr">(${fmt(l.originalPrice, cur)})</span>`
+      : `<span dir="ltr">${fmt(l.unitPrice, cur)}</span>`;
     return `
       <div class="item">
         <div class="item-head">
@@ -123,7 +124,7 @@ function thermalLineItems(invoice) {
           <span class="item-x">×</span>
           ${pricePart}
           <span class="item-eq">=</span>
-          <span class="item-total" dir="ltr">${fmt(l.lineTotal)}</span>
+          <span class="item-total" dir="ltr">${fmt(l.lineTotal, cur)}</span>
         </div>
         <div class="item-barcode" dir="ltr">${esc(l.barcode)}</div>
       </div>`;
@@ -542,14 +543,15 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
 }
 
 function totalsBlock(invoice, { compact = false, debtInfo = null } = {}) {
+  const cur = invoice.currency || 'iqd';
   const rows = [];
-  rows.push(`<div class="total-row"><span>المجموع الفرعي</span><span dir="ltr">${fmt(invoice.subtotal)}</span></div>`);
+  rows.push(`<div class="total-row"><span>المجموع الفرعي</span><span dir="ltr">${fmt(invoice.subtotal, cur)}</span></div>`);
   if (Number(invoice.discount)) {
-    rows.push(`<div class="total-row discount"><span>الخصم</span><span dir="ltr">− ${fmt(invoice.discount)}</span></div>`);
+    rows.push(`<div class="total-row discount"><span>الخصم</span><span dir="ltr">− ${fmt(invoice.discount, cur)}</span></div>`);
   }
-  rows.push(`<div class="total-row grand"><span>الصافي</span><span dir="ltr">${fmtMoney(invoice.total)}</span></div>`);
+  rows.push(`<div class="total-row grand"><span>الصافي</span><span dir="ltr">${fmtMoney(invoice.total, cur)}</span></div>`);
   if (Number(invoice.paidAmount)) {
-    rows.push(`<div class="total-row paid"><span>المبلغ المدفوع</span><span dir="ltr">${fmt(invoice.paidAmount)}</span></div>`);
+    rows.push(`<div class="total-row paid"><span>المبلغ المدفوع</span><span dir="ltr">${fmt(invoice.paidAmount, cur)}</span></div>`);
   }
   if (isAccountCustomer(invoice)) {
     const prev = Number(debtInfo?.previousDebt || 0);
@@ -558,17 +560,17 @@ function totalsBlock(invoice, { compact = false, debtInfo = null } = {}) {
     if (prev > 0 || due > 0) {
       rows.push(`<div class="total-row debt-sep"><span>حساب العميل</span><span></span></div>`);
       if (prev > 0) {
-        rows.push(`<div class="total-row debt-prev"><span>ديون سابقة</span><span dir="ltr">${fmtMoney(prev)}</span></div>`);
+        rows.push(`<div class="total-row debt-prev"><span>ديون سابقة</span><span dir="ltr">${fmtMoney(prev, cur)}</span></div>`);
       }
       if (due > 0) {
-        rows.push(`<div class="total-row due"><span>دين هذه الفاتورة</span><span dir="ltr">${fmtMoney(due)}</span></div>`);
+        rows.push(`<div class="total-row due"><span>دين هذه الفاتورة</span><span dir="ltr">${fmtMoney(due, cur)}</span></div>`);
       }
       if (total > 0 && prev > 0) {
-        rows.push(`<div class="total-row debt-total"><span>إجمالي الدين</span><span dir="ltr">${fmtMoney(total)}</span></div>`);
+        rows.push(`<div class="total-row debt-total"><span>إجمالي الدين</span><span dir="ltr">${fmtMoney(total, cur)}</span></div>`);
       }
     }
   } else if (Number(invoice.dueAmount)) {
-    rows.push(`<div class="total-row due"><span>المتبقي على الحساب</span><span dir="ltr">${fmt(invoice.dueAmount)}</span></div>`);
+    rows.push(`<div class="total-row due"><span>المتبقي على الحساب</span><span dir="ltr">${fmt(invoice.dueAmount, cur)}</span></div>`);
   }
   return rows.join('');
 }
@@ -889,6 +891,10 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
         <span class="meta-lbl">طريقة الدفع</span>
         <span class="meta-val">${payLabel(invoice.paymentMethod)}</span>
       </div>
+      <div class="meta-row">
+        <span class="meta-lbl">العملة</span>
+        <span class="meta-val">${(invoice.currency || 'iqd') === 'usd' ? 'دولار' : 'دينار'}</span>
+      </div>
     </div>
 
     <hr class="rule">
@@ -911,7 +917,7 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
     <div class="pay-strip">
       <span>${payLabel(invoice.paymentMethod)}</span>
       <span>·</span>
-      <span dir="ltr">${fmtMoney(invoice.total)}</span>
+      <span dir="ltr">${fmtMoney(invoice.total, invoice.currency || 'iqd')}</span>
     </div>
 
     ${invoice.notes ? `<div class="notes"><strong>ملاحظات:</strong> ${esc(invoice.notes)}</div>` : ''}

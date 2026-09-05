@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=47">
-  <link rel="stylesheet" href="official.css?v=47">
+  <link rel="stylesheet" href="styles.css?v=48">
+  <link rel="stylesheet" href="official.css?v=48">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -423,7 +423,7 @@
               <p class="hint" id="payBalanceHint">اختر حساباً لعرض الدين</p>
               <label>المبلغ</label>
               <div class="pay-amount-row">
-                <input type="number" id="payAmount" class="field" min="1" placeholder="0">
+                <input type="number" id="payAmount" class="field" min="0" step="any" placeholder="0">
                 <button type="button" class="btn btn-secondary btn-sm" id="btnPayFillDebt">الدين كاملاً</button>
               </div>
               <label>طريقة الدفع</label>
@@ -655,6 +655,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=47"></script>
+  <script src="app.js?v=48"></script>
 </body>
 </html>

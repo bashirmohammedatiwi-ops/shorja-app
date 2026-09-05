@@ -120,8 +120,23 @@ function accountStats({ scope = '' } = {}) {
   const scopeParams = scopeWhere ? [scope] : [];
   const total = db.prepare(`SELECT COUNT(*) AS c FROM accounts WHERE is_active = 1${scopeWhere}`).get(...scopeParams).c;
   const withDebt = db.prepare(`SELECT COUNT(*) AS c FROM accounts WHERE is_active = 1 AND balance > 0${scopeWhere}`).get(...scopeParams).c;
-  const totalDebt = db.prepare(`SELECT COALESCE(SUM(balance), 0) AS s FROM accounts WHERE is_active = 1 AND balance > 0${scopeWhere}`).get(...scopeParams).s;
-  return { total, withDebt, totalDebt: Number(totalDebt), scope: scope || 'all' };
+  const debtRows = db.prepare(`
+    SELECT LOWER(COALESCE(currency, 'iqd')) AS currency, COALESCE(SUM(balance), 0) AS s
+    FROM accounts WHERE is_active = 1 AND balance > 0${scopeWhere}
+    GROUP BY LOWER(COALESCE(currency, 'iqd'))
+  `).all(...scopeParams);
+  const debtByCurrency = { iqd: 0, usd: 0 };
+  for (const row of debtRows) {
+    debtByCurrency[normalizeCurrency(row.currency)] = Number(row.s || 0);
+  }
+  return {
+    total,
+    withDebt,
+    totalDebt: debtByCurrency.iqd,
+    totalDebtUsd: debtByCurrency.usd,
+    debtByCurrency,
+    scope: scope || 'all'
+  };
 }
 
 /** Debt snapshot for invoice print: previous balance before this invoice, current invoice due, total after. */

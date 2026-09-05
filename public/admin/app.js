@@ -103,6 +103,38 @@ function fmtPrice(n, currency) {
   });
   return usd ? `$${num}` : `${num} د.ع`;
 }
+function fmtMoneySplit(byCurrency, field, fallback = 0) {
+  if (!byCurrency) return fmtPrice(fallback, 'iqd');
+  const iqd = Number(byCurrency.iqd?.[field] ?? 0);
+  const usd = Number(byCurrency.usd?.[field] ?? 0);
+  const parts = [];
+  if (iqd) parts.push(fmtPrice(iqd, 'iqd'));
+  if (usd) parts.push(fmtPrice(usd, 'usd'));
+  return parts.length ? parts.join(' · ') : fmtPrice(0, 'iqd');
+}
+function fmtAvgTicket(byCurrency, count, amount) {
+  if (byCurrency) {
+    const parts = [];
+    for (const k of ['iqd', 'usd']) {
+      const c = Number(byCurrency[k]?.salesCount || 0);
+      const amt = Number(byCurrency[k]?.salesAmount || 0);
+      if (c > 0) parts.push(fmtPrice(amt / c, k));
+    }
+    if (parts.length) return parts.join(' · ');
+  }
+  const c = Number(count || 0);
+  return c ? fmtPrice(Number(amount || 0) / c, 'iqd') : fmtPrice(0, 'iqd');
+}
+function fmtPaySplit(pays) {
+  const iqd = (pays || []).filter((p) => (p.currency || 'iqd') !== 'usd').reduce((s, p) => s + Number(p.amount || 0), 0);
+  const usd = (pays || []).filter((p) => p.currency === 'usd').reduce((s, p) => s + Number(p.amount || 0), 0);
+  return fmtMoneySplit({ iqd: { amount: iqd }, usd: { amount: usd } }, 'amount');
+}
+function fmtDebtSplit(stats) {
+  const iqd = Number(stats?.debtByCurrency?.iqd ?? stats?.totalDebt ?? 0);
+  const usd = Number(stats?.debtByCurrency?.usd ?? stats?.totalDebtUsd ?? 0);
+  return fmtMoneySplit({ iqd: { amount: iqd }, usd: { amount: usd } }, 'amount');
+}
 function productPriceLabel(p) {
   if (!p?.priced || !(Number(p.price) > 0)) return 'بدون سعر';
   return fmtPrice(p.price, p.priceCurrency);
@@ -217,11 +249,11 @@ async function loadDashboard() {
   const payPending = Number(edari.paymentsPending || 0);
   document.getElementById('kpiGrid').innerHTML = `
     <div class="kpi"><div class="lbl">فواتير اليوم</div><div class="val">${t.salesCount}</div></div>
-    <div class="kpi"><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmt(t.salesAmount)}</div></div>
-    <div class="kpi"><div class="lbl">مرتجعات</div><div class="val" dir="ltr">${fmt(t.returnsAmount)}</div></div>
-    <div class="kpi"><div class="lbl">صافي اليوم</div><div class="val" dir="ltr">${fmt(t.netSales)}</div></div>
+    <div class="kpi"><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmtMoneySplit(t.byCurrency, 'salesAmount', t.salesAmount)}</div></div>
+    <div class="kpi"><div class="lbl">مرتجعات</div><div class="val" dir="ltr">${fmtMoneySplit(t.byCurrency, 'returnsAmount', t.returnsAmount)}</div></div>
+    <div class="kpi"><div class="lbl">صافي اليوم</div><div class="val" dir="ltr">${fmtMoneySplit(t.byCurrency, 'netSales', t.netSales)}</div></div>
     <div class="kpi"><div class="lbl">منتجات</div><div class="val">${data.products.total}</div></div>
-    <div class="kpi"><div class="lbl">إجمالي الديون</div><div class="val" dir="ltr">${fmt(data.accounts.totalDebt)}</div></div>
+    <div class="kpi"><div class="lbl">إجمالي الديون</div><div class="val" dir="ltr">${fmtDebtSplit(data.accounts)}</div></div>
     <div class="kpi${pending ? ' warn' : ''}"><div class="lbl">فواتير بانتظار المزامنة</div><div class="val">${pending}</div></div>
     <div class="kpi${edariPending ? ' warn' : ''}" id="edariSyncKpi"><div class="lbl">طابور مزامنة الإداري</div><div class="val">${edariPending}</div></div>
     <div class="kpi${invPending ? ' warn' : ''}"><div class="lbl">فواتير بانتظار الإداري</div><div class="val">${invPending}</div></div>
@@ -513,9 +545,9 @@ async function loadInvoices() {
           <td>${i.kind === 'return' ? 'مرتجع' : i.kind === 'issue' ? 'إخراج' : 'بيع'}</td>
           <td>${esc(i.customerName||'نقدي')}</td>
           <td>${esc(i.invoiceDate)}</td>
-          <td dir="ltr">${fmt(i.total)}</td>
-          <td dir="ltr">${fmt(i.paidAmount)}</td>
-          <td dir="ltr">${fmt(i.dueAmount)}</td>
+          <td dir="ltr">${fmtPrice(i.total, i.currency)}</td>
+          <td dir="ltr">${fmtPrice(i.paidAmount, i.currency)}</td>
+          <td dir="ltr">${fmtPrice(i.dueAmount, i.currency)}</td>
           <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}${i.edariBillNum ? `<br><small dir="ltr">${esc(i.edariBillNum)}</small>` : ''}</td>
         </tr>`).join('') || '<tr><td colspan="8">لا توجد فواتير</td></tr>'}
       </tbody>
@@ -550,7 +582,7 @@ function renderPrepTable(tableEl, rows, { labelHeader, labelFn }) {
           <td dir="ltr">${esc(i.prepOrderNo || '—')}</td>
           <td>${esc(i.customerName || 'نقدي')}</td>
           <td>${esc(i.invoiceDate)}</td>
-          <td dir="ltr">${fmt(i.total)}</td>
+          <td dir="ltr">${fmtPrice(i.total, i.currency)}</td>
           <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}${i.edariBillNum ? `<br><small dir="ltr">${esc(i.edariBillNum)}</small>` : ''}</td>
           <td>${i.edariSyncStatus === 'synced' && i.edariBillSeq
             ? '<span style="color:var(--ok)">✓</span>'
@@ -620,9 +652,10 @@ async function openInvoice(id) {
         <span>الوقت: <strong>${esc((inv.createdAt || '').slice(11, 16) || '—')}</strong></span>
         <span>العميل: <strong>${esc(inv.customerName || 'نقدي')}</strong></span>
         <span>الدفع: <strong>${esc(inv.paymentMethod === 'credit' ? 'آجل' : inv.paymentMethod === 'partial' ? 'جزئي' : 'نقدي')}</strong></span>
-        <span>الإجمالي: <strong dir="ltr">${fmt(inv.total)}</strong></span>
-        <span>مدفوع: <strong dir="ltr">${fmt(inv.paidAmount)}</strong></span>
-        <span>متبقي: <strong dir="ltr">${fmt(inv.dueAmount)}</strong></span>
+        <span>الإجمالي: <strong dir="ltr">${fmtPrice(inv.total, inv.currency)}</strong></span>
+        <span>مدفوع: <strong dir="ltr">${fmtPrice(inv.paidAmount, inv.currency)}</strong></span>
+        <span>متبقي: <strong dir="ltr">${fmtPrice(inv.dueAmount, inv.currency)}</strong></span>
+        <span>العملة: <strong>${currencyLabel(inv.currency)}</strong></span>
         <span>الإداري: ${edariSyncLabel(inv.edariSyncStatus, inv.edariSyncError)}</span>
         ${inv.notes ? `<span>ملاحظات: <strong>${esc(inv.notes)}</strong></span>` : ''}
       </div>
@@ -635,8 +668,8 @@ async function openInvoice(id) {
               <td dir="ltr">${esc(l.barcode)}</td>
               <td dir="ltr">${l.qty}</td>
               <td dir="ltr">${l.giftQty || 0}</td>
-              <td dir="ltr">${fmt(l.unitPrice)}</td>
-              <td dir="ltr">${fmt(l.lineTotal)}</td>
+              <td dir="ltr">${fmtPrice(l.unitPrice, inv.currency)}</td>
+              <td dir="ltr">${fmtPrice(l.lineTotal, inv.currency)}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -1296,6 +1329,7 @@ function renderPriceSelection() {
       <td>${esc(p.name)}</td>
       <td dir="ltr">${fmt(p.costPrice || 0)}</td>
       <td dir="ltr">${productPriceLabel(p)}</td>
+      <td>${p.priced ? currencyLabel(p.priceCurrency) : '—'}</td>
       <td dir="ltr">${fmt(p.stockQty)}</td>
       <td>
         <button type="button" class="btn btn-ghost btn-sm btn-refresh-price-row" data-barcode="${esc(p.barcode)}" title="تحديث من الإدارة">↻</button>
@@ -1347,7 +1381,7 @@ async function addPriceItem(forceRefresh = false) {
     input.focus();
     toast(existed
       ? `تم تحديث من الإداري: ${product.name}`
-      : `تمت الإضافة من الإداري: ${product.name} · نصف جملة ${fmt(product.price)}`);
+      : `تمت الإضافة من الإداري: ${product.name} · سعر البيع ${productPriceLabel(product)}`);
   } catch (err) {
     toast(err.message || 'المادة غير موجودة في الإداري (Edari)');
   }
@@ -1372,7 +1406,7 @@ async function refreshPriceBarcodeFromAdmin() {
       toast(`تم تحديث التفاصيل: ${product.name}`);
     } else {
       fillProductPreviewFromBarcode(product);
-      toast(`جاهز للإضافة: ${product.name} · نصف جملة ${fmt(product.price || 0)} · مخزون ${fmt(product.stockQty)}`);
+      toast(`جاهز للإضافة: ${product.name} · سعر البيع ${productPriceLabel(product)} · مخزون ${fmt(product.stockQty)}`);
     }
   } catch (err) {
     toast(err.message || 'فشل جلب المنتج');
@@ -1386,7 +1420,7 @@ function fillProductPreviewFromBarcode(product) {
   const hint = document.getElementById('priceSelectionHint');
   if (!hint || priceSelection.size) return;
   hint.classList.remove('hidden');
-  hint.innerHTML = `معاينة: <strong>${esc(product.name)}</strong> · جملة <span dir="ltr">${fmt(product.costPrice || 0)}</span> · نصف جملة <span dir="ltr">${fmt(product.price)}</span> · مخزون <span dir="ltr">${fmt(product.stockQty)}</span>`;
+  hint.innerHTML = `معاينة: <strong>${esc(product.name)}</strong> · سعر البيع <span dir="ltr">${productPriceLabel(product)}</span> · مخزون <span dir="ltr">${fmt(product.stockQty)}</span>`;
 }
 
 document.getElementById('btnAddPriceItem')?.addEventListener('click', () => addPriceItem(false));
@@ -1475,7 +1509,7 @@ async function openLedger(id) {
           <tbody>${pays.length ? pays.map((p) => `
             <tr>
               <td>${esc(p.paymentNo)}</td>
-              <td dir="ltr">${fmt(p.amount)}</td>
+              <td dir="ltr">${fmtPrice(p.amount, a.currency)}</td>
               <td>${esc(p.paymentDate)}</td>
               <td>${edariSyncLabel(p.edariSyncStatus, p.edariSyncError)}</td>
               <td>${esc(p.notes)}</td>
@@ -1493,7 +1527,7 @@ async function openLedger(id) {
             <tr>
               <td>${esc(e.entryNo)}</td>
               <td>${esc(journalKindLabel(e.kind))}</td>
-              <td dir="ltr">${fmt(e.amount)}</td>
+              <td dir="ltr">${fmtPrice(e.amount, a.currency)}</td>
               <td>${esc(e.description)}</td>
               <td>${esc(e.entryDate)}</td>
               <td><button type="button" class="btn btn-danger btn-sm" data-delete-journal="${e.id}" title="حذف من الشورجة فقط">حذف</button></td>
@@ -1621,7 +1655,7 @@ document.getElementById('accountForm')?.addEventListener('submit', async (e) => 
 async function loadPayments() {
   const acc = await api(`/admin/accounts?limit=500${scopeQuery()}`);
   const opts = (acc.accounts||[]).map((a) =>
-    `<option value="${a.id}" data-balance="${a.balance}">${esc(a.name)} — ${currencyLabel(a.currency)} — دين: ${fmtPrice(a.balance, a.currency)}</option>`
+    `<option value="${a.id}" data-balance="${a.balance}" data-currency="${a.currency || 'iqd'}">${esc(a.name)} — ${currencyLabel(a.currency)} — دين: ${fmtPrice(a.balance, a.currency)}</option>`
   ).join('');
   document.getElementById('payAcc').innerHTML = opts;
   const payParams = new URLSearchParams({ limit: '400' });
@@ -1644,21 +1678,21 @@ async function loadPayments() {
   const method = document.getElementById('payMethodFilter')?.value || '';
   if (method) rows = rows.filter((p) => p.method === method);
   const countEl = document.getElementById('payResultCount');
-  const totalAmt = rows.reduce((s, p) => s + Number(p.amount || 0), 0);
-  if (countEl) countEl.textContent = `${rows.length} تسديد · ${fmt(totalAmt)}`;
+  if (countEl) countEl.textContent = `${rows.length} تسديد · ${fmtPaySplit(rows)}`;
   document.getElementById('paymentsTable').innerHTML = `
     <table id="paymentsDataTable">
-      <thead><tr><th>الرقم</th><th>الحساب</th><th>المبلغ</th><th>التاريخ</th><th>الإداري</th><th>ملاحظات</th><th></th></tr></thead>
+      <thead><tr><th>الرقم</th><th>الحساب</th><th>العملة</th><th>المبلغ</th><th>التاريخ</th><th>الإداري</th><th>ملاحظات</th><th></th></tr></thead>
       <tbody>${rows.map((p) => `
         <tr>
           <td>${esc(p.paymentNo)}</td>
           <td>${esc(p.accountName)}</td>
-          <td dir="ltr">${fmt(p.amount)}</td>
+          <td>${currencyLabel(p.currency)}</td>
+          <td dir="ltr">${fmtPrice(p.amount, p.currency)}</td>
           <td>${esc(p.paymentDate)}</td>
           <td>${edariSyncLabel(p.edariSyncStatus, p.edariSyncError)}</td>
           <td>${esc(p.notes)}</td>
           <td><button type="button" class="btn btn-danger btn-sm" data-delete-payment-row="${p.id}">حذف</button></td>
-        </tr>`).join('') || '<tr><td colspan="7" class="empty-cell">لا توجد تسديدات مطابقة</td></tr>'}
+        </tr>`).join('') || '<tr><td colspan="8" class="empty-cell">لا توجد تسديدات مطابقة</td></tr>'}
       </tbody>
     </table>`;
   document.getElementById('paymentsTable').querySelectorAll('[data-delete-payment-row]').forEach((btn) => {
@@ -1746,21 +1780,21 @@ async function loadJournal() {
     );
   }
   const countEl = document.getElementById('journalResultCount');
-  const totalAmt = entries.reduce((s, e) => s + Number(e.amount || 0), 0);
-  if (countEl) countEl.textContent = `${entries.length} قيد · ${fmt(totalAmt)}`;
+  if (countEl) countEl.textContent = `${entries.length} قيد · ${fmtPaySplit(entries)}`;
   document.getElementById('journalTable').innerHTML = `
     <table id="journalDataTable">
-      <thead><tr><th>الرقم</th><th>النوع</th><th>الحساب</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th><th></th></tr></thead>
+      <thead><tr><th>الرقم</th><th>النوع</th><th>الحساب</th><th>العملة</th><th>المبلغ</th><th>الوصف</th><th>التاريخ</th><th></th></tr></thead>
       <tbody>${entries.map((e) => `
         <tr>
           <td>${esc(e.entryNo)}</td>
           <td>${esc(journalKindLabel(e.kind))}</td>
           <td>${esc(e.accountName || '—')}</td>
-          <td dir="ltr">${fmt(e.amount)}</td>
+          <td>${currencyLabel(e.currency)}</td>
+          <td dir="ltr">${fmtPrice(e.amount, e.currency)}</td>
           <td>${esc(e.description)}</td>
           <td>${esc(e.entryDate)}</td>
           <td><button type="button" class="btn btn-danger btn-sm" data-delete-journal-row="${e.id}">حذف</button></td>
-        </tr>`).join('') || '<tr><td colspan="7" class="empty-cell">لا توجد قيود مطابقة</td></tr>'}
+        </tr>`).join('') || '<tr><td colspan="8" class="empty-cell">لا توجد قيود مطابقة</td></tr>'}
       </tbody>
     </table>`;
   document.getElementById('journalTable').querySelectorAll('[data-delete-journal-row]').forEach((btn) => {

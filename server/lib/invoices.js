@@ -3,7 +3,7 @@ const { updateBalance, getAccount } = require('./accounts');
 const { adjustStock, getByBarcode } = require('./products');
 const { getBranchSettings } = require('./settings');
 const { getAppSettings } = require('./app-settings');
-const { normalizeCurrency, roundMoney } = require('./currency');
+const { normalizeCurrency, roundMoney, formatMoney } = require('./currency');
 const { queueInvoiceEdariSync, queuePaymentEdariSync } = require('./edari-sync');
 const { submitWarehousePrepOrder } = require('./warehouse-prep');
 const { localStamp, resolveInvoiceStamp } = require('./datetime');
@@ -481,6 +481,51 @@ function listInvoices({ branchId, dateFrom, dateTo, q, kind, paymentMethod, edar
   };
 }
 
+function emptyMoneyBuckets() {
+  return {
+    iqd: { count: 0, amount: 0, paid: 0, due: 0 },
+    usd: { count: 0, amount: 0, paid: 0, due: 0 }
+  };
+}
+
+function foldMoneyBuckets(rows) {
+  const map = emptyMoneyBuckets();
+  for (const r of rows || []) {
+    const k = normalizeCurrency(r.currency);
+    map[k].count += Number(r.count || 0);
+    map[k].amount += Number(r.amount || 0);
+    map[k].paid += Number(r.paid || 0);
+    map[k].due += Number(r.due || 0);
+  }
+  return map;
+}
+
+function byCurrencyPack(salesMap, returnsMap) {
+  const pack = (k) => ({
+    salesCount: salesMap[k].count,
+    salesAmount: salesMap[k].amount,
+    paidAmount: salesMap[k].paid,
+    dueAmount: salesMap[k].due,
+    returnsCount: returnsMap[k].count,
+    returnsAmount: returnsMap[k].amount,
+    netSales: salesMap[k].amount - returnsMap[k].amount
+  });
+  return { iqd: pack('iqd'), usd: pack('usd') };
+}
+
+function groupedInvoiceTotals(whereSql, params, kind) {
+  return db.prepare(`
+    SELECT LOWER(COALESCE(currency, 'iqd')) AS currency,
+      COUNT(*) AS count,
+      COALESCE(SUM(total), 0) AS amount,
+      COALESCE(SUM(paid_amount), 0) AS paid,
+      COALESCE(SUM(due_amount), 0) AS due
+    FROM invoices
+    WHERE ${whereSql} AND kind = ?
+    GROUP BY LOWER(COALESCE(currency, 'iqd'))
+  `).all(...params, kind);
+}
+
 function dailySummary({ branchId, date, excludePrepModes = ['delegate'] } = {}) {
   const d = date || localStamp().date;
   const where = ['invoice_date = ?'];
@@ -493,34 +538,38 @@ function dailySummary({ branchId, date, excludePrepModes = ['delegate'] } = {}) 
       params.push(...modes);
     }
   }
-  const sales = db.prepare(`
-    SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS amount,
-      COALESCE(SUM(paid_amount), 0) AS paid, COALESCE(SUM(due_amount), 0) AS due
-    FROM invoices WHERE ${where.join(' AND ')} AND kind = 'sale'
-  `).get(...params);
-  const returns = db.prepare(`
-    SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS amount
-    FROM invoices WHERE ${where.join(' AND ')} AND kind = 'return'
-  `).get(...params);
+  const whereSql = where.join(' AND ');
+  const salesMap = foldMoneyBuckets(groupedInvoiceTotals(whereSql, params, 'sale'));
+  const returnsMap = foldMoneyBuckets(groupedInvoiceTotals(whereSql, params, 'return'));
+  const byCurrency = byCurrencyPack(salesMap, returnsMap);
   return {
     date: d,
-    salesCount: sales.count,
-    salesAmount: Number(sales.amount),
-    paidAmount: Number(sales.paid),
-    dueAmount: Number(sales.due),
-    returnsCount: returns.count,
-    returnsAmount: Number(returns.amount),
-    netSales: Number(sales.amount) - Number(returns.amount)
+    salesCount: salesMap.iqd.count + salesMap.usd.count,
+    salesAmount: salesMap.iqd.amount,
+    salesAmountUsd: salesMap.usd.amount,
+    paidAmount: salesMap.iqd.paid,
+    paidAmountUsd: salesMap.usd.paid,
+    dueAmount: salesMap.iqd.due,
+    dueAmountUsd: salesMap.usd.due,
+    returnsCount: returnsMap.iqd.count + returnsMap.usd.count,
+    returnsAmount: returnsMap.iqd.amount,
+    returnsAmountUsd: returnsMap.usd.amount,
+    netSales: byCurrency.iqd.netSales,
+    netSalesUsd: byCurrency.usd.netSales,
+    byCurrency
   };
 }
 
 function createPayment({ accountId, amount, method, notes, branchId, createdBy, paymentDate }) {
   const acc = getAccount(accountId);
   if (!acc) throw new Error('الحساب غير موجود');
-  const payAmount = Number(amount);
+  const currency = normalizeCurrency(acc.currency);
+  const payAmount = roundMoney(amount, currency);
   if (!payAmount || payAmount <= 0) throw new Error('المبلغ غير صالح');
   const debt = Number(acc.balance || 0);
-  if (payAmount > debt) throw new Error(`المبلغ أكبر من الدين الحالي (${debt})`);
+  if (payAmount - debt > 1e-9) {
+    throw new Error(`المبلغ أكبر من الدين الحالي (${formatMoney(debt, currency)})`);
+  }
 
   const tx = db.transaction(() => {
     const paymentNo = nextPaymentNo();
@@ -553,6 +602,7 @@ function createPayment({ accountId, amount, method, notes, branchId, createdBy, 
       method: method || 'cash',
       notes: notes || '',
       paymentDate: paymentDate || new Date().toISOString().slice(0, 10),
+      currency,
       balanceAfter: updated.balance
     };
   });
@@ -575,7 +625,7 @@ function listPayments({ accountId, branchId, dateFrom, dateTo, accountScope = ''
     params.push(accountScope);
   }
   const rows = db.prepare(`
-    SELECT p.*, a.name AS account_name, a.code AS account_code
+    SELECT p.*, a.name AS account_name, a.code AS account_code, a.currency AS account_currency
     FROM payments p JOIN accounts a ON a.id = p.account_id
     WHERE ${where.join(' AND ')}
     ORDER BY p.created_at DESC LIMIT ?
@@ -586,6 +636,7 @@ function listPayments({ accountId, branchId, dateFrom, dateTo, accountScope = ''
     accountId: r.account_id,
     accountName: r.account_name,
     accountCode: r.account_code,
+    currency: normalizeCurrency(r.account_currency),
     amount: Number(r.amount),
     method: r.method,
     notes: r.notes,
@@ -612,7 +663,7 @@ function listJournal({ accountId, accountScope = '', limit = 100, dateFrom, date
   if (dateTo) { where.push('j.entry_date <= ?'); params.push(dateTo); }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const rows = db.prepare(`
-    SELECT j.*, a.name AS account_name FROM journal_entries j
+    SELECT j.*, a.name AS account_name, a.currency AS account_currency FROM journal_entries j
     LEFT JOIN accounts a ON a.id = j.account_id
     ${whereSql}
     ORDER BY j.created_at DESC LIMIT ?
@@ -622,6 +673,7 @@ function listJournal({ accountId, accountScope = '', limit = 100, dateFrom, date
     entryNo: r.entry_no,
     accountId: r.account_id,
     accountName: r.account_name || '',
+    currency: normalizeCurrency(r.account_currency),
     kind: r.kind,
     amount: Number(r.amount),
     balanceAfter: r.balance_after != null ? Number(r.balance_after) : null,
@@ -632,7 +684,8 @@ function listJournal({ accountId, accountScope = '', limit = 100, dateFrom, date
 }
 
 function createAdjustment({ accountId, amount, description, createdBy, branchId }) {
-  const delta = Number(amount);
+  const acc = getAccount(accountId);
+  const delta = roundMoney(amount, acc?.currency);
   if (!delta) throw new Error('المبلغ مطلوب');
   const tx = db.transaction(() => {
     updateBalance(accountId, delta);
@@ -670,56 +723,71 @@ function salesReport({ branchId, dateFrom, dateTo, excludePrepModes = ['delegate
     return clause;
   });
 
-  const sales = db.prepare(`
-    SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS amount,
-      COALESCE(SUM(paid_amount), 0) AS paid, COALESCE(SUM(due_amount), 0) AS due
-    FROM invoices WHERE ${where.join(' AND ')} AND kind = 'sale'
-  `).get(...params);
-  const returns = db.prepare(`
-    SELECT COUNT(*) AS count, COALESCE(SUM(total), 0) AS amount
-    FROM invoices WHERE ${where.join(' AND ')} AND kind = 'return'
-  `).get(...params);
+  const whereSql = where.join(' AND ');
+  const salesMap = foldMoneyBuckets(groupedInvoiceTotals(whereSql, params, 'sale'));
+  const returnsMap = foldMoneyBuckets(groupedInvoiceTotals(whereSql, params, 'return'));
+  const byCurrency = byCurrencyPack(salesMap, returnsMap);
 
   const byPayment = db.prepare(`
-    SELECT payment_method AS method, COUNT(*) AS count, COALESCE(SUM(total), 0) AS amount
-    FROM invoices WHERE ${where.join(' AND ')} AND kind = 'sale'
-    GROUP BY payment_method
+    SELECT payment_method AS method, LOWER(COALESCE(currency, 'iqd')) AS currency,
+      COUNT(*) AS count, COALESCE(SUM(total), 0) AS amount
+    FROM invoices WHERE ${whereSql} AND kind = 'sale'
+    GROUP BY payment_method, LOWER(COALESCE(currency, 'iqd'))
   `).all(...params);
 
   const topProducts = db.prepare(`
-    SELECT l.barcode, l.name, SUM(l.qty) AS qty, SUM(l.line_total) AS amount
+    SELECT l.barcode, l.name, LOWER(COALESCE(i.currency, 'iqd')) AS currency,
+      SUM(l.qty) AS qty, SUM(l.line_total) AS amount
     FROM invoice_lines l
     JOIN invoices i ON i.id = l.invoice_id
     WHERE ${invoiceWhere.join(' AND ')}
     AND i.kind = 'sale'
-    GROUP BY l.barcode, l.name
+    GROUP BY l.barcode, l.name, LOWER(COALESCE(i.currency, 'iqd'))
     ORDER BY amount DESC LIMIT 10
   `).all(...params);
 
-  const payments = db.prepare(`
-    SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
-    FROM payments WHERE payment_date >= ? AND payment_date <= ?
-    ${branchId ? 'AND branch_id = ?' : ''}
-  `).get(...(branchId ? [from, to, branchId] : [from, to]));
+  const paymentRows = db.prepare(`
+    SELECT LOWER(COALESCE(a.currency, 'iqd')) AS currency,
+      COALESCE(SUM(p.amount), 0) AS total, COUNT(*) AS count
+    FROM payments p
+    JOIN accounts a ON a.id = p.account_id
+    WHERE p.payment_date >= ? AND p.payment_date <= ?
+    ${branchId ? 'AND p.branch_id = ?' : ''}
+    GROUP BY LOWER(COALESCE(a.currency, 'iqd'))
+  `).all(...(branchId ? [from, to, branchId] : [from, to]));
+  const collectionsByCurrency = { iqd: 0, usd: 0 };
+  let collectionsCount = 0;
+  for (const row of paymentRows) {
+    collectionsByCurrency[normalizeCurrency(row.currency)] = Number(row.total || 0);
+    collectionsCount += Number(row.count || 0);
+  }
 
   return {
     dateFrom: from,
     dateTo: to,
-    salesCount: sales.count,
-    salesAmount: Number(sales.amount),
-    paidAmount: Number(sales.paid),
-    dueAmount: Number(sales.due),
-    returnsCount: returns.count,
-    returnsAmount: Number(returns.amount),
-    netSales: Number(sales.amount) - Number(returns.amount),
+    salesCount: salesMap.iqd.count + salesMap.usd.count,
+    salesAmount: salesMap.iqd.amount,
+    salesAmountUsd: salesMap.usd.amount,
+    paidAmount: salesMap.iqd.paid,
+    paidAmountUsd: salesMap.usd.paid,
+    dueAmount: salesMap.iqd.due,
+    dueAmountUsd: salesMap.usd.due,
+    returnsCount: returnsMap.iqd.count + returnsMap.usd.count,
+    returnsAmount: returnsMap.iqd.amount,
+    returnsAmountUsd: returnsMap.usd.amount,
+    netSales: byCurrency.iqd.netSales,
+    netSalesUsd: byCurrency.usd.netSales,
+    byCurrency,
     byPayment: byPayment.map((r) => ({
       method: r.method,
+      currency: normalizeCurrency(r.currency),
       count: r.count,
       amount: Number(r.amount)
     })),
     topProducts: topProducts.map((r) => ({
       barcode: r.barcode,
       name: r.name,
+      currency: normalizeCurrency(r.currency),
       qty: Number(r.qty),
       amount: Number(r.amount)
     })),
@@ -744,8 +812,10 @@ function salesReport({ branchId, dateFrom, dateTo, excludePrepModes = ['delegate
       returnsAmount: Number(r.returns_amount),
       net: Number(r.amount) - Number(r.returns_amount)
     })),
-    collectionsTotal: Number(payments.total),
-    collectionsCount: payments.count
+    collectionsTotal: collectionsByCurrency.iqd,
+    collectionsTotalUsd: collectionsByCurrency.usd,
+    collectionsByCurrency,
+    collectionsCount
   };
 }
 

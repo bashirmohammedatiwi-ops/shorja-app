@@ -452,7 +452,7 @@
     if (currentApp !== 'warehouse') {
       $('kpiGrid').innerHTML = `
         <div class="kpi premium-kpi kpi-link" data-goto="accounts"><div class="lbl">حسابات المندوبين</div><div class="val">${accStats.total || 0}</div></div>
-        <div class="kpi premium-kpi warn kpi-link" data-goto="accounts"><div class="lbl">ديون المندوبين</div><div class="val" dir="ltr">${fmt(accStats.totalDebt)}</div></div>
+        <div class="kpi premium-kpi warn kpi-link" data-goto="accounts"><div class="lbl">ديون المندوبين</div><div class="val" dir="ltr">${fmtDebtSplit(accStats)}</div></div>
         <div class="kpi premium-kpi kpi-link" data-goto="delegates"><div class="lbl">جاهزة للترحيل</div><div class="val">${delegate.pending || 0}</div></div>
         <div class="kpi premium-kpi kpi-link" data-goto="delegates"><div class="lbl">مرحّلة</div><div class="val">${delegate.synced || 0}</div></div>
         <div class="kpi premium-kpi${edariPending ? ' warn' : ''} kpi-link" data-goto="edariSync"><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>
@@ -464,7 +464,7 @@
         hub.innerHTML = `
           <div class="dash-row"><span>حسابات</span><strong>${accStats.total || 0}</strong></div>
           <div class="dash-row"><span>مدينون</span><strong>${accStats.withDebt || 0}</strong></div>
-          <div class="dash-row"><span>إجمالي الدين</span><strong dir="ltr">${fmt(accStats.totalDebt)}</strong></div>
+          <div class="dash-row"><span>إجمالي الدين</span><strong dir="ltr">${fmtDebtSplit(accStats)}</strong></div>
           <div class="dash-row"><span>طلبات بانتظار الترحيل</span><strong>${delegate.pending || 0}</strong></div>
           <p class="hint" style="margin-top:10px">طلبات المندوبين منفصلة تماماً عن فروع الشورجة ونقاط البيع.</p>`;
       }
@@ -473,11 +473,11 @@
 
     $('kpiGrid').innerHTML = `
         <div class="kpi premium-kpi kpi-link" data-goto="invoices"><div class="ico">🧾</div><div class="lbl">فواتير اليوم</div><div class="val">${t.salesCount}</div></div>
-        <div class="kpi premium-kpi kpi-link" data-goto="reports"><div class="ico">💵</div><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmt(t.salesAmount)}</div></div>
-        <div class="kpi premium-kpi kpi-link" data-goto="invoices"><div class="ico">↩️</div><div class="lbl">مرتجعات</div><div class="val" dir="ltr">${fmt(t.returnsAmount)}</div></div>
-        <div class="kpi premium-kpi accent kpi-link" data-goto="posMonitor"><div class="ico">📈</div><div class="lbl">صافي اليوم</div><div class="val" dir="ltr">${fmt(t.netSales)}</div></div>
+        <div class="kpi premium-kpi kpi-link" data-goto="reports"><div class="ico">💵</div><div class="lbl">مبيعات اليوم</div><div class="val" dir="ltr">${fmtMoneySplit(t.byCurrency, 'salesAmount', t.salesAmount)}</div></div>
+        <div class="kpi premium-kpi kpi-link" data-goto="invoices"><div class="ico">↩️</div><div class="lbl">مرتجعات</div><div class="val" dir="ltr">${fmtMoneySplit(t.byCurrency, 'returnsAmount', t.returnsAmount)}</div></div>
+        <div class="kpi premium-kpi accent kpi-link" data-goto="posMonitor"><div class="ico">📈</div><div class="lbl">صافي اليوم</div><div class="val" dir="ltr">${fmtMoneySplit(t.byCurrency, 'netSales', t.netSales)}</div></div>
         <div class="kpi premium-kpi kpi-link" data-goto="accounts"><div class="ico">👥</div><div class="lbl">حسابات الشورجة</div><div class="val">${accStats.total || 0}</div></div>
-        <div class="kpi premium-kpi warn kpi-link" data-goto="accounts"><div class="ico">💳</div><div class="lbl">ديون الشورجة</div><div class="val" dir="ltr">${fmt(accStats.totalDebt)}</div></div>
+        <div class="kpi premium-kpi warn kpi-link" data-goto="accounts"><div class="ico">💳</div><div class="lbl">ديون الشورجة</div><div class="val" dir="ltr">${fmtDebtSplit(accStats)}</div></div>
         <div class="kpi premium-kpi warehouse kpi-link" data-goto="warehousePrep"><div class="ico">🏪</div><div class="lbl">تجهيز للترحيل</div><div class="val">${warehouse.pending || 0}</div></div>
         <div class="kpi premium-kpi${edariPending ? ' warn' : ''} kpi-link" data-goto="edariSync"><div class="ico">🔄</div><div class="lbl">طابور الإداري</div><div class="val">${edariPending}</div></div>
         <div class="kpi premium-kpi kpi-link" data-goto="products"><div class="ico">📦</div><div class="lbl">منتجات</div><div class="val">${data.products.total}</div></div>
@@ -531,26 +531,26 @@
 
     $('reportKpis').innerHTML = `
       <div class="kpi premium-kpi"><div class="lbl">فواتير البيع</div><div class="val">${r.salesCount || 0}</div></div>
-      <div class="kpi premium-kpi"><div class="lbl">إجمالي المبيعات</div><div class="val" dir="ltr">${fmt(r.salesAmount)}</div></div>
+      <div class="kpi premium-kpi"><div class="lbl">إجمالي المبيعات</div><div class="val" dir="ltr">${fmtMoneySplit(r.byCurrency, 'salesAmount', r.salesAmount)}</div></div>
       <div class="kpi premium-kpi"><div class="lbl">عدد المرتجعات</div><div class="val">${r.returnsCount || 0}</div></div>
-      <div class="kpi premium-kpi"><div class="lbl">المرتجعات</div><div class="val" dir="ltr">${fmt(r.returnsAmount)}</div></div>
-      <div class="kpi premium-kpi accent"><div class="lbl">الصافي</div><div class="val" dir="ltr">${fmt(r.netSales)}</div></div>
-      <div class="kpi premium-kpi"><div class="lbl">المحصّل نقداً</div><div class="val" dir="ltr">${fmt(r.paidAmount)}</div></div>
-      <div class="kpi premium-kpi"><div class="lbl">تحصيلات حسابات</div><div class="val" dir="ltr">${fmt(r.collectionsTotal)}</div></div>
-      <div class="kpi premium-kpi"><div class="lbl">متوسط الفاتورة</div><div class="val" dir="ltr">${fmt(r.salesCount ? r.salesAmount / r.salesCount : 0)}</div></div>
-      <div class="kpi premium-kpi warn"><div class="lbl">دين الفترة</div><div class="val" dir="ltr">${fmt(r.dueAmount)}</div></div>`;
+      <div class="kpi premium-kpi"><div class="lbl">المرتجعات</div><div class="val" dir="ltr">${fmtMoneySplit(r.byCurrency, 'returnsAmount', r.returnsAmount)}</div></div>
+      <div class="kpi premium-kpi accent"><div class="lbl">الصافي</div><div class="val" dir="ltr">${fmtMoneySplit(r.byCurrency, 'netSales', r.netSales)}</div></div>
+      <div class="kpi premium-kpi"><div class="lbl">المحصّل نقداً</div><div class="val" dir="ltr">${fmtMoneySplit(r.byCurrency, 'paidAmount', r.paidAmount)}</div></div>
+      <div class="kpi premium-kpi"><div class="lbl">تحصيلات حسابات</div><div class="val" dir="ltr">${fmtMoneySplit({ iqd: { amount: r.collectionsByCurrency?.iqd ?? r.collectionsTotal }, usd: { amount: r.collectionsByCurrency?.usd ?? r.collectionsTotalUsd } }, 'amount')}</div></div>
+      <div class="kpi premium-kpi"><div class="lbl">متوسط الفاتورة</div><div class="val" dir="ltr">${fmtAvgTicket(r.byCurrency, r.salesCount, r.salesAmount)}</div></div>
+      <div class="kpi premium-kpi warn"><div class="lbl">دين الفترة</div><div class="val" dir="ltr">${fmtMoneySplit(r.byCurrency, 'dueAmount', r.dueAmount)}</div></div>`;
 
     const maxPay = Math.max(...(r.byPayment || []).map((x) => x.amount), 1);
     $('reportPaymentBars').innerHTML = (r.byPayment || []).map((p) => `
       <div class="report-bar">
         <i style="height:${Math.max(8, Math.round(p.amount / maxPay * 100))}%"></i>
-        <b dir="ltr">${fmt(p.amount)}</b>
-        <span>${p.method === 'credit' ? 'آجل' : p.method === 'cash' ? 'نقدي' : esc(p.method)}</span>
+        <b dir="ltr">${fmtPrice(p.amount, p.currency)}</b>
+        <span>${p.method === 'credit' ? 'آجل' : p.method === 'cash' ? 'نقدي' : esc(p.method)}${p.currency ? ` · ${currencyLabel(p.currency)}` : ''}</span>
       </div>`).join('') || '<p style="color:var(--muted)">لا توجد بيانات</p>';
 
     $('reportTopProducts').innerHTML = `<ul class="top-products-list">${
       (r.topProducts || []).map((p, i) => `
-        <li><span>${i + 1}. ${esc(p.name)} <small dir="ltr">${esc(p.barcode)}</small></span><strong dir="ltr">${fmt(p.amount)}</strong></li>
+        <li><span>${i + 1}. ${esc(p.name)} <small dir="ltr">${esc(p.barcode)}</small></span><strong dir="ltr">${fmtPrice(p.amount, p.currency)}</strong></li>
       `).join('') || '<li>لا توجد مبيعات في الفترة</li>'
     }</ul>`;
 
@@ -658,9 +658,9 @@
             <td>${kindBadgeHtml(i.kind)}</td>
             <td>${esc(i.customerName||'نقدي')}</td>
             <td>${esc(i.invoiceDate)}</td>
-            <td dir="ltr">${fmt(i.total)}</td>
-            <td dir="ltr">${fmt(i.paidAmount)}</td>
-            <td dir="ltr">${fmt(i.dueAmount)}</td>
+            <td dir="ltr">${fmtPrice(i.total, i.currency)}</td>
+            <td dir="ltr">${fmtPrice(i.paidAmount, i.currency)}</td>
+            <td dir="ltr">${fmtPrice(i.dueAmount, i.currency)}</td>
             <td>${payMethodLabel(i.paymentMethod)}</td>
             <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}</td>
             <td class="row-actions">
@@ -769,7 +769,7 @@
             <td dir="ltr">${esc(i.prepOrderNo || '—')}</td>
             <td>${esc(i.customerName || 'نقدي')}</td>
             <td>${esc(i.invoiceDate)}</td>
-            <td dir="ltr">${fmt(i.total)}</td>
+            <td dir="ltr">${fmtPrice(i.total, i.currency)}</td>
             <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}</td>
             <td class="row-actions">${i.edariSyncStatus === 'synced' ? '✓' : `<button type="button" class="btn btn-secondary btn-sm" data-queue-edari="${i.id}">ترحيل</button>`}</td>
           </tr>`).join('') : '<tr><td colspan="8" class="empty-cell">لا توجد فواتير</td></tr>'}
@@ -1149,8 +1149,8 @@
       ? (byPayment || []).map((p) => `
         <div class="report-bar">
           <i style="height:${Math.max(8, Math.round(p.amount / maxAmt * 100))}%"></i>
-          <b dir="ltr">${fmt(p.amount)}</b>
-          <span>${payMethodLabel(p.method)} (${p.count})</span>
+          <b dir="ltr">${fmtPrice(p.amount, p.currency)}</b>
+          <span>${payMethodLabel(p.method)}${p.currency ? ` · ${currencyLabel(p.currency)}` : ''} (${p.count})</span>
         </div>`).join('')
       : '<p class="empty-panel">لا توجد مبيعات اليوم</p>';
   }
@@ -1184,7 +1184,7 @@
           <strong>${esc(inv.invoiceNo)}</strong>
           <small>${esc(inv.branchName || 'فرع')} · ${esc(inv.customerName || 'نقدي')}</small>
         </span>
-        <span class="activity-amt" dir="ltr">${fmt(inv.total)}</span>
+        <span class="activity-amt" dir="ltr">${fmtPrice(inv.total, inv.currency)}</span>
         <span class="activity-time">${esc((inv.createdAt || '').slice(11, 16) || inv.invoiceDate)}</span>
       </button>`).join('');
     el.querySelectorAll('[data-invoice-id]').forEach((btn) => {
@@ -1320,7 +1320,7 @@
             <td>${esc(i.customerName || 'نقدي')}</td>
             <td>${esc(i.cashierName || '—')}</td>
             <td>${payMethodLabel(i.paymentMethod)}</td>
-            <td dir="ltr"><strong>${fmt(i.total)}</strong></td>
+            <td dir="ltr"><strong>${fmtPrice(i.total, i.currency)}</strong></td>
             <td>${edariSyncLabel(i.edariSyncStatus)}</td>
           </tr>`).join('') : '<tr><td colspan="9">لا توجد فواتير</td></tr>'}
         </tbody>

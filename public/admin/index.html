@@ -485,7 +485,7 @@
             <div class="table-wrap price-selection-wrap hidden" id="priceSelectionWrap">
               <table>
                 <thead>
-                  <tr><th>الباركود</th><th>الاسم</th><th>سعر الجملة</th><th>نصف الجملة</th><th>المخزون</th><th></th></tr>
+                  <tr><th>الباركود</th><th>الاسم</th><th>التكلفة</th><th>سعر البيع</th><th>العملة</th><th>المخزون</th><th></th></tr>
                 </thead>
                 <tbody id="priceSelectionBody"></tbody>
               </table>
@@ -572,7 +572,7 @@
           <div class="form-card">
             <select id="payAcc"></select>
             <button type="button" class="btn btn-ghost btn-sm" id="btnPayFillDebt" title="ملء مبلغ الدين">الدين كاملاً</button>
-            <input type="number" id="payAmt" placeholder="المبلغ">
+            <input type="number" id="payAmt" placeholder="المبلغ" min="0" step="any">
             <input type="text" id="payNote" placeholder="ملاحظات">
             <button type="button" class="btn btn-primary" id="btnPay">تسجيل تسديد</button>
           </div>
@@ -783,7 +783,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=33"></script>
-  <script src="premium.js?v=15"></script>
+  <script src="app.js?v=34"></script>
+  <script src="premium.js?v=16"></script>
 </body>
 </html>

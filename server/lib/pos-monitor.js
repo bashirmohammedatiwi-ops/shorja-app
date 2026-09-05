@@ -138,9 +138,10 @@ function getPosMonitor({
     payParams.push(branchId);
   }
   const byPayment = db.prepare(`
-    SELECT payment_method AS method, COUNT(*) AS count, COALESCE(SUM(total), 0) AS amount
+    SELECT payment_method AS method, LOWER(COALESCE(currency, 'iqd')) AS currency,
+      COUNT(*) AS count, COALESCE(SUM(total), 0) AS amount
     FROM invoices WHERE ${payWhere.join(' AND ')}
-    GROUP BY payment_method ORDER BY amount DESC
+    GROUP BY payment_method, LOWER(COALESCE(currency, 'iqd')) ORDER BY amount DESC
   `).all(...payParams);
 
   const totals = branchStats.reduce((acc, b) => {
@@ -181,6 +182,7 @@ function getPosMonitor({
     pendingSync: Number(pendingSync),
     byPayment: byPayment.map((p) => ({
       method: p.method,
+      currency: String(p.currency || 'iqd').toLowerCase() === 'usd' ? 'usd' : 'iqd',
       count: p.count,
       amount: Number(p.amount)
     })),
@@ -196,6 +198,7 @@ function getPosMonitor({
       paidAmount: Number(r.paid_amount || 0),
       dueAmount: Number(r.due_amount || 0),
       paymentMethod: r.payment_method,
+      currency: String(r.currency || 'iqd').toLowerCase() === 'usd' ? 'usd' : 'iqd',
       edariSyncStatus: r.edari_sync_status || 'none',
       invoiceDate: r.invoice_date,
       createdAt: r.created_at

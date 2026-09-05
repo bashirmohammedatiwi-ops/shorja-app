@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '47';
+const APP_VERSION = '48';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -360,6 +360,40 @@ function fmtAmt(n, currency) {
     maximumFractionDigits: usd ? 2 : 0
   });
   return usd ? `$${num}` : `${num} د.ع`;
+}
+
+function fmtInvAmt(n, inv) {
+  return fmtAmt(n, inv?.currency || 'iqd');
+}
+
+function fmtMoneySplit(byCurrency, field, fallback = 0) {
+  if (!byCurrency) return fmtAmt(fallback, 'iqd');
+  const iqd = Number(byCurrency.iqd?.[field] ?? 0);
+  const usd = Number(byCurrency.usd?.[field] ?? 0);
+  const parts = [];
+  if (iqd) parts.push(fmtAmt(iqd, 'iqd'));
+  if (usd) parts.push(fmtAmt(usd, 'usd'));
+  return parts.length ? parts.join(' · ') : fmtAmt(0, 'iqd');
+}
+
+function fmtAvgTicket(byCurrency, count, amount) {
+  if (byCurrency) {
+    const parts = [];
+    for (const k of ['iqd', 'usd']) {
+      const c = Number(byCurrency[k]?.salesCount || 0);
+      const amt = Number(byCurrency[k]?.salesAmount || 0);
+      if (c > 0) parts.push(fmtAmt(amt / c, k));
+    }
+    if (parts.length) return parts.join(' · ');
+  }
+  const c = Number(count || 0);
+  return c ? fmtAmt(Number(amount || 0) / c, 'iqd') : fmtAmt(0, 'iqd');
+}
+
+function fmtPaySplit(pays) {
+  const iqd = (pays || []).filter((p) => (p.currency || 'iqd') !== 'usd').reduce((s, p) => s + Number(p.amount || 0), 0);
+  const usd = (pays || []).filter((p) => p.currency === 'usd').reduce((s, p) => s + Number(p.amount || 0), 0);
+  return fmtMoneySplit({ iqd: { amount: iqd }, usd: { amount: usd } }, 'amount');
 }
 
 function isPricedProduct(p) {
@@ -2052,7 +2086,7 @@ async function loadPosReturnCandidates() {
           <strong>${esc(i.invoiceNo)}</strong>
           <div style="font-size:0.78rem;color:var(--text-muted)">${esc(i.customerName || 'نقدي')} · ${esc(i.invoiceDate)}</div>
         </div>
-        <span dir="ltr" style="font-weight:800;color:var(--primary-dark)">${fmt(i.total)}</span>
+        <span dir="ltr" style="font-weight:800;color:var(--primary-dark)">${fmtInvAmt(i.total, i)}</span>
       </button>
     `).join('');
     list.querySelectorAll('.return-picker-card').forEach((card) => {
@@ -2096,7 +2130,7 @@ async function selectReturnParent(id) {
     document.getElementById('viewPos')?.classList.remove('show-return-link');
     const banner = document.getElementById('returnParentBanner');
     const label = document.getElementById('returnParentLabel');
-    if (label) label.textContent = `${inv.invoiceNo} — ${inv.customerName || 'نقدي'} — ${fmt(inv.total)}`;
+    if (label) label.textContent = `${inv.invoiceNo} — ${inv.customerName || 'نقدي'} — ${fmtInvAmt(inv.total, inv)}`;
     banner?.classList.remove('hidden');
     document.getElementById('posReturnPanel')?.classList.add('hidden');
     renderCart();
@@ -2261,8 +2295,8 @@ function renderBranchPaymentBars(el, byPayment) {
     ? (byPayment || []).map((p) => `
       <div class="pay-bar-item">
         <i style="height:${Math.max(8, Math.round(p.amount / maxAmt * 100))}%"></i>
-        <b dir="ltr">${fmt(p.amount)}</b>
-        <span>${payLabel(p.method)}</span>
+        <b dir="ltr">${fmtAmt(p.amount, p.currency)}</b>
+        <span>${payLabel(p.method)}${p.currency ? ` · ${currencyLabel(p.currency)}` : ''}</span>
       </div>`).join('')
     : '<p class="hint">لا توجد مبيعات اليوم</p>';
 }
@@ -2280,12 +2314,12 @@ async function loadDashboard() {
     const r = repData.report || {};
     document.getElementById('dashboardKpis').innerHTML = `
       <div class="kpi-card clickable" data-goto="invoices"><div class="kpi-lbl">فواتير البيع</div><div class="kpi-val">${s.salesCount}</div></div>
-      <div class="kpi-card clickable" data-goto="invoices"><div class="kpi-lbl">إجمالي المبيعات</div><div class="kpi-val" dir="ltr">${fmt(s.salesAmount)}</div></div>
-      <div class="kpi-card danger clickable" data-goto="pos" data-inv-type="return"><div class="kpi-lbl">المرتجعات</div><div class="kpi-val" dir="ltr">${fmt(s.returnsAmount)}</div></div>
-      <div class="kpi-card highlight clickable" data-goto="reports"><div class="kpi-lbl">صافي اليوم</div><div class="kpi-val" dir="ltr">${fmt(s.netSales)}</div></div>
-      <div class="kpi-card clickable" data-goto="payments"><div class="kpi-lbl">نقدي محصّل</div><div class="kpi-val" dir="ltr">${fmt(s.paidAmount)}</div></div>
-      <div class="kpi-card clickable" data-goto="accounts"><div class="kpi-lbl">آجل / دين جديد</div><div class="kpi-val" dir="ltr">${fmt(s.dueAmount)}</div></div>
-      <div class="kpi-card"><div class="kpi-lbl">متوسط الفاتورة</div><div class="kpi-val" dir="ltr">${fmt(s.salesCount ? s.salesAmount / s.salesCount : 0)}</div></div>
+      <div class="kpi-card clickable" data-goto="invoices"><div class="kpi-lbl">إجمالي المبيعات</div><div class="kpi-val" dir="ltr">${fmtMoneySplit(s.byCurrency, 'salesAmount', s.salesAmount)}</div></div>
+      <div class="kpi-card danger clickable" data-goto="pos" data-inv-type="return"><div class="kpi-lbl">المرتجعات</div><div class="kpi-val" dir="ltr">${fmtMoneySplit(s.byCurrency, 'returnsAmount', s.returnsAmount)}</div></div>
+      <div class="kpi-card highlight clickable" data-goto="reports"><div class="kpi-lbl">صافي اليوم</div><div class="kpi-val" dir="ltr">${fmtMoneySplit(s.byCurrency, 'netSales', s.netSales)}</div></div>
+      <div class="kpi-card clickable" data-goto="payments"><div class="kpi-lbl">نقدي محصّل</div><div class="kpi-val" dir="ltr">${fmtMoneySplit(s.byCurrency, 'paidAmount', s.paidAmount)}</div></div>
+      <div class="kpi-card clickable" data-goto="accounts"><div class="kpi-lbl">آجل / دين جديد</div><div class="kpi-val" dir="ltr">${fmtMoneySplit(s.byCurrency, 'dueAmount', s.dueAmount)}</div></div>
+      <div class="kpi-card"><div class="kpi-lbl">متوسط الفاتورة</div><div class="kpi-val" dir="ltr">${fmtAvgTicket(s.byCurrency, s.salesCount, s.salesAmount)}</div></div>
       <div class="kpi-card clickable" data-goto="held"><div class="kpi-lbl">فواتير معلّقة</div><div class="kpi-val">${getHeld().length}</div></div>
       <div class="kpi-card"><div class="kpi-lbl">بانتظار الرفع</div><div class="kpi-val">${getOutbox().length}</div></div>`;
     const stamp = document.getElementById('dashUpdated');
@@ -2318,14 +2352,14 @@ async function loadDashboard() {
               <span class="kind-badge ${kindBadgeClass(i.kind)}">${kindLabel(i.kind)}</span>
               <div class="inv-meta">${esc(i.customerName || 'نقدي')} · ${payLabel(i.paymentMethod)}</div>
             </div>
-            <div dir="ltr" class="inv-amt">${fmt(i.total)}</div>
+            <div dir="ltr" class="inv-amt">${fmtInvAmt(i.total, i)}</div>
           </div>`).join('')
         : '<p class="hint">لا توجد فواتير اليوم بعد</p>';
       recentEl.querySelectorAll('.invoice-card[data-id]').forEach((card) => {
         card.addEventListener('click', () => openInvoiceModal(Number(card.dataset.id)));
       });
     }
-    updateDayStatsDisplay(s.salesCount, s.netSales);
+    updateDayStatsDisplay(s.salesCount, fmtMoneySplit(s.byCurrency, 'netSales', s.netSales));
   } catch { toast('تعذّر تحميل الملخص', 'err'); }
 }
 
@@ -2333,7 +2367,7 @@ async function loadTodaySummary() {
   try {
     const data = await api('/branch/summary/today');
     const s = data.summary;
-    updateDayStatsDisplay(s.salesCount, s.netSales);
+    updateDayStatsDisplay(s.salesCount, fmtMoneySplit(s.byCurrency, 'netSales', s.netSales));
   } catch { /* */ }
 }
 
@@ -2575,13 +2609,13 @@ async function loadReportsView() {
     document.getElementById('reportBody').innerHTML = `
       <div class="kpi-grid">
         <div class="kpi-card"><div class="kpi-lbl">فواتير البيع</div><div class="kpi-val">${r.salesCount}</div></div>
-        <div class="kpi-card"><div class="kpi-lbl">إجمالي المبيعات</div><div class="kpi-val" dir="ltr">${fmt(r.salesAmount)}</div></div>
-        <div class="kpi-card danger"><div class="kpi-lbl">المرتجعات (${r.returnsCount || 0})</div><div class="kpi-val" dir="ltr">${fmt(r.returnsAmount)}</div></div>
-        <div class="kpi-card highlight"><div class="kpi-lbl">صافي المبيعات</div><div class="kpi-val" dir="ltr">${fmt(r.netSales)}</div></div>
-        <div class="kpi-card"><div class="kpi-lbl">المحصّل نقداً</div><div class="kpi-val" dir="ltr">${fmt(r.paidAmount)}</div></div>
-        <div class="kpi-card"><div class="kpi-lbl">تحصيلات حسابات</div><div class="kpi-val" dir="ltr">${fmt(r.collectionsTotal)}</div></div>
-        <div class="kpi-card"><div class="kpi-lbl">ديون جديدة</div><div class="kpi-val" dir="ltr">${fmt(r.dueAmount)}</div></div>
-        <div class="kpi-card"><div class="kpi-lbl">متوسط الفاتورة</div><div class="kpi-val" dir="ltr">${fmt(r.salesCount ? r.salesAmount / r.salesCount : 0)}</div></div>
+        <div class="kpi-card"><div class="kpi-lbl">إجمالي المبيعات</div><div class="kpi-val" dir="ltr">${fmtMoneySplit(r.byCurrency, 'salesAmount', r.salesAmount)}</div></div>
+        <div class="kpi-card danger"><div class="kpi-lbl">المرتجعات (${r.returnsCount || 0})</div><div class="kpi-val" dir="ltr">${fmtMoneySplit(r.byCurrency, 'returnsAmount', r.returnsAmount)}</div></div>
+        <div class="kpi-card highlight"><div class="kpi-lbl">صافي المبيعات</div><div class="kpi-val" dir="ltr">${fmtMoneySplit(r.byCurrency, 'netSales', r.netSales)}</div></div>
+        <div class="kpi-card"><div class="kpi-lbl">المحصّل نقداً</div><div class="kpi-val" dir="ltr">${fmtMoneySplit(r.byCurrency, 'paidAmount', r.paidAmount)}</div></div>
+        <div class="kpi-card"><div class="kpi-lbl">تحصيلات حسابات</div><div class="kpi-val" dir="ltr">${fmtMoneySplit({ iqd: { amount: r.collectionsByCurrency?.iqd ?? r.collectionsTotal }, usd: { amount: r.collectionsByCurrency?.usd ?? r.collectionsTotalUsd } }, 'amount')}</div></div>
+        <div class="kpi-card"><div class="kpi-lbl">ديون جديدة</div><div class="kpi-val" dir="ltr">${fmtMoneySplit(r.byCurrency, 'dueAmount', r.dueAmount)}</div></div>
+        <div class="kpi-card"><div class="kpi-lbl">متوسط الفاتورة</div><div class="kpi-val" dir="ltr">${fmtAvgTicket(r.byCurrency, r.salesCount, r.salesAmount)}</div></div>
       </div>
       <div class="report-panels">
         <div class="panel-card">
@@ -2589,7 +2623,7 @@ async function loadReportsView() {
           <table class="data-table">
             <thead><tr><th>الطريقة</th><th>عدد</th><th>المبلغ</th></tr></thead>
             <tbody>${(r.byPayment || []).length ? r.byPayment.map((p) => `
-              <tr><td>${payLabel(p.method)}</td><td>${p.count}</td><td dir="ltr">${fmt(p.amount)}</td></tr>
+              <tr><td>${payLabel(p.method)} · ${currencyLabel(p.currency)}</td><td>${p.count}</td><td dir="ltr">${fmtAmt(p.amount, p.currency)}</td></tr>
             `).join('') : '<tr><td colspan="3">لا توجد بيانات</td></tr>'}</tbody>
           </table>
         </div>
@@ -2598,7 +2632,7 @@ async function loadReportsView() {
           <table class="data-table">
             <thead><tr><th>المنتج</th><th>كمية</th><th>مبيعات</th></tr></thead>
             <tbody>${(r.topProducts || []).length ? r.topProducts.map((p) => `
-              <tr><td>${esc(p.name)}</td><td>${p.qty}</td><td dir="ltr">${fmt(p.amount)}</td></tr>
+              <tr><td>${esc(p.name)}</td><td>${p.qty}</td><td dir="ltr">${fmtAmt(p.amount, p.currency)}</td></tr>
             `).join('') : '<tr><td colspan="3">لا توجد بيانات</td></tr>'}</tbody>
           </table>
         </div>
@@ -2621,13 +2655,14 @@ document.getElementById('btnExportReport')?.addEventListener('click', () => {
   if (!r) { toast('اعرض التقرير أولاً', 'warn'); return; }
   downloadCsv(`تقرير-${r.dateFrom}-${r.dateTo}.csv`, [
     ['من', r.dateFrom, 'إلى', r.dateTo],
-    ['فواتير البيع', r.salesCount, 'إجمالي', r.salesAmount],
-    ['مرتجعات', r.returnsCount, 'قيمة', r.returnsAmount],
-    ['صافي', r.netSales, 'محصّل', r.paidAmount],
-    ['تحصيلات', r.collectionsTotal, 'ديون جديدة', r.dueAmount],
+    ['فواتير البيع', r.salesCount, 'إجمالي دينار', r.salesAmount, 'إجمالي دولار', r.salesAmountUsd],
+    ['مرتجعات دينار', r.returnsAmount, 'مرتجعات دولار', r.returnsAmountUsd],
+    ['صافي دينار', r.netSales, 'صافي دولار', r.netSalesUsd],
+    ['محصّل دينار', r.paidAmount, 'محصّل دولار', r.paidAmountUsd],
+    ['تحصيلات دينار', r.collectionsByCurrency?.iqd ?? r.collectionsTotal, 'تحصيلات دولار', r.collectionsByCurrency?.usd ?? r.collectionsTotalUsd],
     [],
-    ['المنتج', 'كمية', 'مبيعات'],
-    ...(r.topProducts || []).map((p) => [p.name, p.qty, p.amount])
+    ['المنتج', 'كمية', 'مبيعات', 'العملة'],
+    ...(r.topProducts || []).map((p) => [p.name, p.qty, p.amount, p.currency || 'iqd'])
   ]);
 });
 document.getElementById('btnPrintReport')?.addEventListener('click', () => {
@@ -2745,8 +2780,8 @@ function renderInvoiceList(el, invs, { returnMode = false } = {}) {
           <td><span class="kind-badge ${kindBadgeClass(i.kind)}">${kindLabel(i.kind)}</span></td>
           <td>${esc(i.customerName || (i.kind === 'issue' ? '—' : 'نقدي'))}</td>
           <td>${payLabel(i.paymentMethod, i)}</td>
-          <td dir="ltr">${i.kind === 'issue' ? '—' : fmt(i.paidAmount)}</td>
-          <td dir="ltr" class="inv-amt ${i.kind === 'return' ? 'neg' : ''}">${i.kind === 'issue' ? '—' : fmt(i.total)}</td>
+          <td dir="ltr">${i.kind === 'issue' ? '—' : fmtInvAmt(i.paidAmount, i)}</td>
+          <td dir="ltr" class="inv-amt ${i.kind === 'return' ? 'neg' : ''}">${i.kind === 'issue' ? '—' : fmtInvAmt(i.total, i)}</td>
         </tr>`).join('')}
       </tbody>
     </table>`;
@@ -3072,7 +3107,7 @@ async function openAccountModal(id) {
         <tbody>${journal.length ? journal.map((j) => `
           <tr>
             <td>${esc(j.description)}</td>
-            <td dir="ltr" style="color:${j.amount < 0 ? 'var(--success)' : 'var(--danger)'}">${fmt(j.amount)}</td>
+            <td dir="ltr" style="color:${j.amount < 0 ? 'var(--success)' : 'var(--danger)'}">${fmtAmt(j.amount, data.account.currency)}</td>
             <td>${esc(j.entryDate)}</td>
           </tr>`).join('') : '<tr><td colspan="3">لا توجد حركات</td></tr>'}
         </tbody>
@@ -3081,7 +3116,7 @@ async function openAccountModal(id) {
       <table class="data-table">
         <thead><tr><th>الرقم</th><th>المبلغ</th><th>التاريخ</th></tr></thead>
         <tbody>${payments.length ? payments.map((p) => `
-          <tr><td>${esc(p.paymentNo)}</td><td dir="ltr">${fmt(p.amount)}</td><td>${esc(p.paymentDate)}</td></tr>
+          <tr><td>${esc(p.paymentNo)}</td><td dir="ltr">${fmtAmt(p.amount, data.account.currency)}</td><td>${esc(p.paymentDate)}</td></tr>
         `).join('') : '<tr><td colspan="3">لا توجد تسديدات</td></tr>'}
         </tbody>
       </table>
@@ -3145,7 +3180,8 @@ function updatePayBalanceHint() {
   if (!sel || !hint) return;
   const opt = sel.selectedOptions[0];
   const bal = Number(opt?.dataset.balance || 0);
-  hint.textContent = opt ? `الدين الحالي: ${fmt(bal)}` : 'اختر حساباً لعرض الدين';
+  const cur = opt?.dataset.currency || 'iqd';
+  hint.textContent = opt ? `الدين الحالي: ${fmtAmt(bal, cur)}` : 'اختر حساباً لعرض الدين';
 }
 
 function fillPayDebt() {
@@ -3176,7 +3212,7 @@ async function loadPaymentsView() {
     const sel = document.getElementById('payAccount');
     const accounts = (accData.accounts || []).sort((a, b) => b.balance - a.balance);
     sel.innerHTML = accounts.map((a) =>
-      `<option value="${a.id}" data-balance="${Number(a.balance) || 0}">${esc(a.name)} — دين: ${fmt(a.balance)}</option>`
+      `<option value="${a.id}" data-balance="${Number(a.balance) || 0}" data-currency="${a.currency || 'iqd'}">${esc(a.name)} — ${currencyLabel(a.currency)} — دين: ${fmtAmt(a.balance, a.currency)}</option>`
     ).join('');
     if (state.pendingPayAccountId) {
       sel.value = String(state.pendingPayAccountId);
@@ -3192,18 +3228,18 @@ async function loadPaymentsView() {
     const filtered = q
       ? pays.filter((p) => String(p.paymentNo || '').toLowerCase().includes(q) || String(p.accountName || '').toLowerCase().includes(q))
       : pays;
-    const todayTotal = filtered.reduce((s, p) => s + Number(p.amount || 0), 0);
     document.getElementById('paymentsList').innerHTML = `
-      <div class="pay-summary">إجمالي المعروض: <strong dir="ltr">${fmt(todayTotal)}</strong> (${filtered.length})</div>
+      <div class="pay-summary">إجمالي المعروض: <strong dir="ltr">${fmtPaySplit(filtered)}</strong> (${filtered.length})</div>
       ${filtered.length ? `
       <table class="data-table">
-        <thead><tr><th>الرقم</th><th>الحساب</th><th>الطريقة</th><th>المبلغ</th><th>التاريخ</th></tr></thead>
+        <thead><tr><th>الرقم</th><th>الحساب</th><th>العملة</th><th>الطريقة</th><th>المبلغ</th><th>التاريخ</th></tr></thead>
         <tbody>${filtered.map((p) => `
           <tr>
             <td>${esc(p.paymentNo)}</td>
             <td>${esc(p.accountName)}</td>
+            <td>${currencyLabel(p.currency)}</td>
             <td>${esc(p.method === 'transfer' ? 'تحويل' : p.method === 'check' ? 'شيك' : 'نقدي')}</td>
-            <td dir="ltr">${fmt(p.amount)}</td>
+            <td dir="ltr">${fmtAmt(p.amount, p.currency)}</td>
             <td>${esc(p.paymentDate)}</td>
           </tr>`).join('')}
         </tbody>
@@ -3225,7 +3261,8 @@ document.getElementById('btnSubmitPayment').addEventListener('click', async () =
         notes: document.getElementById('payNotes').value
       })
     });
-    result.textContent = `تم التسديد — الرصيد المتبقي: ${fmt(data.payment.balanceAfter)}`;
+    const cur = document.getElementById('payAccount')?.selectedOptions?.[0]?.dataset.currency || 'iqd';
+    result.textContent = `تم التسديد — الرصيد المتبقي: ${fmtAmt(data.payment.balanceAfter, data.payment.currency || cur)}`;
     result.classList.remove('hidden');
     document.getElementById('payAmount').value = '';
     document.getElementById('payNotes').value = '';

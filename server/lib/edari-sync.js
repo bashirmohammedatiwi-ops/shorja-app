@@ -266,7 +266,7 @@ function hydrateQueuePayload(item) {
 
   if (item.kind === 'payment' && item.ref_type === 'payment') {
     const pay = db.prepare(`
-      SELECT p.account_id, a.edari_seq, a.edari_sync_status, a.name AS account_name
+      SELECT p.account_id, a.edari_seq, a.edari_sync_status, a.name AS account_name, a.currency AS account_currency
       FROM payments p
       LEFT JOIN accounts a ON a.id = p.account_id
       WHERE p.id = ?
@@ -275,6 +275,7 @@ function hydrateQueuePayload(item) {
     if (pay?.edari_seq) payload.edariSeq = String(pay.edari_seq);
     payload.accountEdariSyncStatus = pay?.edari_sync_status || '';
     payload.customerName = payload.customerName || pay?.account_name || '';
+    if (pay?.account_currency) payload.currency = pay.account_currency;
   }
 
   return payload;
@@ -688,7 +689,8 @@ function queuePaymentEdariSync(payment, account) {
       amount: payment.amount,
       method: payment.method,
       notes: payment.notes,
-      paymentDate: payment.paymentDate
+      paymentDate: payment.paymentDate,
+      currency: account?.currency || payment.currency || 'iqd'
     }
   });
   db.prepare(`
