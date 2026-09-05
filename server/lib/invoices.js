@@ -2,6 +2,8 @@ const db = require('../db');
 const { updateBalance, getAccount } = require('./accounts');
 const { adjustStock, getByBarcode } = require('./products');
 const { getBranchSettings } = require('./settings');
+const { getAppSettings } = require('./app-settings');
+const { normalizeCurrency, roundMoney } = require('./currency');
 const { queueInvoiceEdariSync, queuePaymentEdariSync } = require('./edari-sync');
 const { submitWarehousePrepOrder } = require('./warehouse-prep');
 const { localStamp, resolveInvoiceStamp } = require('./datetime');
@@ -116,6 +118,8 @@ function mapInvoice(row, lines = []) {
     paidAmount: Number(row.paid_amount || 0),
     dueAmount: Number(row.due_amount || 0),
     paymentMethod: row.payment_method,
+    currency: normalizeCurrency(row.currency),
+    exchangeRate: Number(row.exchange_rate || 0),
     notes: row.notes || '',
     syncStatus: row.sync_status,
     edariBillSeq: row.edari_bill_seq || '',
@@ -169,19 +173,28 @@ async function createInvoice(data, user) {
     ? 'warehouse'
     : 'branch';
 
+  const accountForCurrency = data.accountId ? getAccount(data.accountId) : null;
+  let currency = normalizeCurrency(accountForCurrency?.currency || data.currency || 'iqd');
+  if (kind === 'return' && data.parentInvoiceId) {
+    const parentInv = loadInvoice(data.parentInvoiceId);
+    if (parentInv?.currency) currency = normalizeCurrency(parentInv.currency);
+  }
+  const exchangeRate = Number(getAppSettings().usdToIqd || 0);
+
   let subtotal = 0;
   const normalized = lines.map((l) => {
     const qty = Math.max(0, Number(l.qty || 0));
     const giftQty = Math.max(0, Math.round(Number(l.giftQty || 0)));
     const unitPrice = kind === 'issue' ? 0 : Number(l.unitPrice || 0);
     const lineDiscount = kind === 'issue' ? 0 : Number(l.lineDiscount || 0);
-    const lineTotal = kind === 'issue' ? 0 : Math.round(qty * unitPrice - lineDiscount);
+    const lineTotal = kind === 'issue' ? 0 : roundMoney(qty * unitPrice - lineDiscount, currency);
     subtotal += lineTotal;
     return { ...l, qty, giftQty, unitPrice, lineDiscount, lineTotal };
   });
+  subtotal = roundMoney(subtotal, currency);
 
   const discount = kind === 'issue' ? 0 : Number(data.discount || 0);
-  const total = kind === 'issue' ? 0 : Math.max(0, subtotal - discount);
+  const total = kind === 'issue' ? 0 : Math.max(0, roundMoney(subtotal - discount, currency));
   let paymentMethod = kind === 'issue' ? 'issue' : (data.paymentMethod || 'cash');
   let paidAmount = kind === 'issue' ? 0 : Number(data.paidAmount ?? (paymentMethod === 'cash' ? total : 0));
   let dueAmount = kind === 'issue' ? 0 : Math.max(0, total - paidAmount);
@@ -263,15 +276,15 @@ async function createInvoice(data, user) {
       INSERT INTO invoices
         (local_id, invoice_no, branch_id, cashier_id, account_id, customer_name, kind,
          parent_invoice_id, status, subtotal, discount, total, paid_amount, due_amount,
-         payment_method, notes, sync_status, invoice_date, created_at, prep_mode)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         payment_method, notes, sync_status, invoice_date, created_at, prep_mode, currency, exchange_rate)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING id
     `).get(
       localId, invoiceNo, branchId, user.id, data.accountId || null, customerName, kind,
       data.parentInvoiceId || null, subtotal, discount, total, paidAmount, dueAmount,
       paymentMethod, data.notes || '', data.syncStatus || 'synced',
       stamp.date, stamp.datetime,
-      prepMode
+      prepMode, currency, exchangeRate
     );
     const invoiceId = Number(row.id);
     const insertLine = db.prepare(`

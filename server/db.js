@@ -288,6 +288,7 @@ function migrateSchema() {
   migrateEdariSync();
   migrateAccountScope();
   migrateEdariQueueScope();
+  migrateCurrency();
 }
 
 function migrateAccountScope() {
@@ -364,6 +365,29 @@ function migrateEdariQueueScope() {
         JOIN accounts a ON a.id = p.account_id
         WHERE COALESCE(a.account_scope, 'warehouse') = 'warehouse'
       )
+  `);
+}
+
+function migrateCurrency() {
+  const alters = [
+    "ALTER TABLE accounts ADD COLUMN currency TEXT NOT NULL DEFAULT 'iqd'",
+    "ALTER TABLE products ADD COLUMN price_currency TEXT NOT NULL DEFAULT 'iqd'",
+    'ALTER TABLE products ADD COLUMN priced INTEGER NOT NULL DEFAULT 0',
+    "ALTER TABLE invoices ADD COLUMN currency TEXT NOT NULL DEFAULT 'iqd'",
+    'ALTER TABLE invoices ADD COLUMN exchange_rate REAL DEFAULT 0',
+    "ALTER TABLE price_package_items ADD COLUMN price_currency TEXT NOT NULL DEFAULT 'iqd'",
+    'ALTER TABLE price_package_items ADD COLUMN priced INTEGER NOT NULL DEFAULT 0'
+  ];
+  for (const sql of alters) {
+    try { db.exec(sql); } catch { /* exists */ }
+  }
+  db.exec(`
+    UPDATE products SET priced = 1
+    WHERE priced = 0 AND COALESCE(price, 0) > 0
+  `);
+  db.exec(`
+    UPDATE price_package_items SET priced = 1
+    WHERE priced = 0 AND COALESCE(price, 0) > 0
   `);
 }
 

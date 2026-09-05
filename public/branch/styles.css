@@ -1404,6 +1404,21 @@ kbd {
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
+.currency-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  background: var(--primary-soft, #d1fae5);
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.currency-chip.usd {
+  background: #fef3c7;
+}
+
 .customer-chip-ico {
   width: 36px;
   height: 36px;

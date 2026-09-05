@@ -11,6 +11,7 @@ const {
   shorjaRemarksTag
 } = require('./edari-safety');
 const { syncAutoIncTables, withEdariRetry } = require('./edari-post-write');
+const { edariCurrCode, roundMoney, normalizeCurrency } = require('./currency');
 
 const SALES_ACCOUNT_SEQ = Number(process.env.EDARI_SALES_ACCOUNT_SEQ || 41);
 const RETURNS_ACCOUNT_SEQ = Number(process.env.EDARI_RETURNS_ACCOUNT_SEQ || 42);
@@ -39,8 +40,8 @@ const KIND_RETURN = 5;
 
 let cachedWalkInSeq = null;
 
-function roundAmount(n) {
-  return Math.round(Number(n || 0));
+function roundAmount(n, currency = 'iqd') {
+  return roundMoney(n, currency);
 }
 
 function formatEdariTimestamp(dateStr) {
@@ -470,10 +471,11 @@ async function postJournalPair({
 }
 
 function invoiceAmounts(payload) {
-  const discount = roundAmount(payload.discount);
-  const netTotal = roundAmount(payload.total);
-  const grossTotal = roundAmount(payload.subtotal) || (netTotal + discount);
-  const paid = roundAmount(payload.paidAmount);
+  const currency = normalizeCurrency(payload.currency);
+  const discount = roundAmount(payload.discount, currency);
+  const netTotal = roundAmount(payload.total, currency);
+  const grossTotal = roundAmount(payload.subtotal, currency) || (netTotal + discount);
+  const paid = roundAmount(payload.paidAmount, currency);
   return { discount, netTotal, grossTotal, paid };
 }
 
@@ -538,6 +540,8 @@ async function createEdariInvoice(payload) {
 
   const dateStr = payload.invoiceDate || new Date().toISOString().slice(0, 10);
   const { discount, grossTotal, paid } = invoiceAmounts(payload);
+  const currCode = edariCurrCode(payload.currency);
+  const currency = normalizeCurrency(payload.currency);
   const lines = (payload.lines || []).filter((l) => Number(l.qty) > 0 || Number(l.giftQty) > 0);
   if (!lines.length) {
     return { ok: false, error: 'لا توجد أسطر منتجات في الفاتورة — تعذر الترحيل إلى إداري' };
@@ -563,7 +567,7 @@ async function createEdariInvoice(payload) {
         Two = ${customerSeq}, remarks = ${edariSqlLiteral(remarks)}, DayBillN = ${bondNum},
         DKindRecNo = ${kindRecNo}, DCash = ${cashRec}, DDiscntR = ${DISCOUNT_ACCOUNT_SEQ},
         Three = 0, PrGrp = ${PRICE_GROUP}, BillDayKind = 1, Book = ${invoiceBook},
-        Equa = 1, curr = 0, DPurcash = 0, PayMethod = 0, NoteKind = 0, DExpR = 0,
+        Equa = 1, curr = ${currCode}, DPurcash = 0, PayMethod = 0, NoteKind = 0, DExpR = 0,
         DTaxRecNo = ${TAX_REC_NO}, ExtraInt1 = ${INVOICE_PERSON}, ExtraInt2 = 0,
         PackList = 0, NoteClosed = False, UnPosted = False
        WHERE Seq = ${billSeq}`
@@ -578,7 +582,7 @@ async function createEdariInvoice(payload) {
         PayMethod, NoteKind, DExpR, DTaxRecNo, ExtraInt1, ExtraInt2, PackList, NoteClosed, UnPosted)
       VALUES (${billNum}, ${edariKind}, ${formatEdariTimestamp(dateStr)},
         ${grossTotal}, ${paid}, ${discount}, ${lineCount}, ${customerSeq}, ${edariSqlLiteral(remarks)},
-        ${bondNum}, ${kindRecNo}, ${cashRec}, ${DISCOUNT_ACCOUNT_SEQ}, 0, ${PRICE_GROUP}, 1, ${invoiceBook}, 1, 0, 0,
+        ${bondNum}, ${kindRecNo}, ${cashRec}, ${DISCOUNT_ACCOUNT_SEQ}, 0, ${PRICE_GROUP}, 1, ${invoiceBook}, 1, ${currCode}, 0,
         0, 0, 0, ${TAX_REC_NO}, ${INVOICE_PERSON}, 0, 0, False, False)`;
     const headerIns = await runExecute(headerSql);
     if (!headerIns.ok) return { ok: false, error: headerIns.error || 'فشل إنشاء رأس الفاتورة في إداري' };
@@ -592,13 +596,13 @@ async function createEdariInvoice(payload) {
     const mat = await resolveMaterial(line);
     const qty = Math.max(0, Number(line.qty || 0));
     const giftQty = Math.max(0, Number(line.giftQty || 0));
-    const price = roundAmount(line.unitPrice);
-    const lineDiscount = roundAmount(line.lineDiscount || 0);
-    const lineTotal = roundAmount(line.lineTotal ?? (qty * price - lineDiscount));
+    const price = roundAmount(line.unitPrice, currency);
+    const lineDiscount = roundAmount(line.lineDiscount || 0, currency);
+    const lineTotal = roundAmount(line.lineTotal ?? (qty * price - lineDiscount), currency);
     const lineSql = `INSERT INTO file14n (BillSeq, BillNo, Mat, MatName, Quant, Price, OBonus, Kind, MatRem, Two, Equa, Frst, Mst, person, Book, Curr, "Date", "Sum")
       VALUES (${billSeq}, ${billNum}, ${Number(mat.seq || 0)}, '',
         ${qty}, ${price}, ${giftQty}, ${edariKind}, '', ${customerSeq},
-        1, ${kindRecNo}, 1, ${INVOICE_PERSON}, ${invoiceBook}, 0, ${formatEdariTimestamp(dateStr)}, 0)`;
+        1, ${kindRecNo}, 1, ${INVOICE_PERSON}, ${invoiceBook}, ${currCode}, ${formatEdariTimestamp(dateStr)}, 0)`;
     const lineIns = await runExecute(lineSql);
     if (!lineIns.ok) return { ok: false, error: lineIns.error || `فشل سطر الفاتورة: ${line.name}` };
 

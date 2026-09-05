@@ -98,7 +98,10 @@ function mapEdariToShorjaProduct(material) {
     name: String(material.name || material.name1 || material.Name1 || '').trim(),
     unit: String(material.unit || 'قطعة').trim() || 'قطعة',
     costPrice: 0,
-    price: halfWholesale,
+    price: 0,
+    priced: false,
+    priceCurrency: 'iqd',
+    edariHintPrice: halfWholesale,
     stockQty: Number(material.stockQty ?? material.qty ?? 0),
     category: '',
     edariSeq: String(material.seq || material.Seq || '')

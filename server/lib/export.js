@@ -25,12 +25,17 @@ function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function fmt(n) {
-  return Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+function fmt(n, currency = 'iqd') {
+  const usd = String(currency || '').toLowerCase() === 'usd';
+  return Number(n || 0).toLocaleString('en-US', {
+    minimumFractionDigits: usd ? 2 : 0,
+    maximumFractionDigits: usd ? 2 : 0
+  });
 }
 
-function fmtMoney(n) {
-  return `${fmt(n)} د.ع`;
+function fmtMoney(n, currency = 'iqd') {
+  const usd = String(currency || '').toLowerCase() === 'usd';
+  return usd ? `$${fmt(n, currency)}` : `${fmt(n, currency)} د.ع`;
 }
 
 function payLabel(method) {
@@ -126,12 +131,13 @@ function thermalLineItems(invoice) {
 }
 
 function a4LineItems(invoice, { showGifts = false, showMoney = true } = {}) {
+  const cur = invoice.currency || 'iqd';
   return (invoice.lines || []).map((l, i) => {
     const edited = l.priceEdited && l.originalPrice != null && l.originalPrice !== l.unitPrice;
     const gift = Number(l.giftQty || 0);
     const moneyCells = showMoney ? `
-        <td class="t-price" dir="ltr">${fmt(l.unitPrice)}${edited ? `<div class="was">${fmt(l.originalPrice)}</div>` : ''}</td>
-        <td class="t-total" dir="ltr">${fmt(l.lineTotal)}</td>` : '';
+        <td class="t-price" dir="ltr">${fmt(l.unitPrice, cur)}${edited ? `<div class="was">${fmt(l.originalPrice, cur)}</div>` : ''}</td>
+        <td class="t-total" dir="ltr">${fmt(l.lineTotal, cur)}</td>` : '';
     const giftCell = showGifts ? `<td class="t-gift" dir="ltr">${gift > 0 ? `<span class="gift-val">${gift}</span>` : '—'}</td>` : '';
     return `
       <tr>
@@ -158,16 +164,17 @@ function totGrid(cells) {
 }
 
 function a4TotalsPanel(invoice, accent, debtInfo) {
-  const top = [totCell('المجموع الفرعي', fmt(invoice.subtotal))];
+  const cur = invoice.currency || 'iqd';
+  const top = [totCell('المجموع الفرعي', fmt(invoice.subtotal, cur))];
   if (Number(invoice.discount)) {
-    top.push(totCell('الخصم', `− ${fmt(invoice.discount)}`, 'disc'));
+    top.push(totCell('الخصم', `− ${fmt(invoice.discount, cur)}`, 'disc'));
   }
   let html = totGrid(top);
-  html += `<div class="tot-grand"><span>الصافي</span><b dir="ltr">${fmtMoney(invoice.total)}</b></div>`;
+  html += `<div class="tot-grand"><span>الصافي</span><b dir="ltr">${fmtMoney(invoice.total, cur)}</b></div>`;
 
   const after = [];
   if (Number(invoice.paidAmount)) {
-    after.push(totCell('المدفوع', fmt(invoice.paidAmount), 'paid'));
+    after.push(totCell('المدفوع', fmt(invoice.paidAmount, cur), 'paid'));
   }
 
   if (isAccountCustomer(invoice)) {
@@ -178,14 +185,14 @@ function a4TotalsPanel(invoice, accent, debtInfo) {
       html += totGrid(after);
       html += `<div class="tot-sep">حساب العميل</div>`;
       const debt = [];
-      if (prev > 0) debt.push(totCell('ديون سابقة', fmtMoney(prev), 'debt-prev'));
-      if (due > 0) debt.push(totCell('دين هذه الفاتورة', fmtMoney(due), 'due'));
-      if (total > 0 && prev > 0) debt.push(totCell('إجمالي الدين', fmtMoney(total), 'debt-total'));
+      if (prev > 0) debt.push(totCell('ديون سابقة', fmtMoney(prev, cur), 'debt-prev'));
+      if (due > 0) debt.push(totCell('دين هذه الفاتورة', fmtMoney(due, cur), 'due'));
+      if (total > 0 && prev > 0) debt.push(totCell('إجمالي الدين', fmtMoney(total, cur), 'debt-total'));
       html += totGrid(debt);
       return html;
     }
   } else if (Number(invoice.dueAmount)) {
-    after.push(totCell('المتبقي', fmtMoney(invoice.dueAmount), 'due'));
+    after.push(totCell('المتبقي', fmtMoney(invoice.dueAmount, cur), 'due'));
   }
   html += totGrid(after);
   return html;
@@ -232,7 +239,7 @@ function buildA4InvoiceHtml(invoice, branchName, opts) {
         </div>
         <div class="info-cell">
           <span class="k">${isIssue ? 'النوع' : 'طريقة الدفع'}</span>
-          <span class="v">${esc(isIssue ? title : payLabel(invoice.paymentMethod))}</span>
+          <span class="v">${esc(isIssue ? title : `${payLabel(invoice.paymentMethod)} · ${(invoice.currency || 'iqd') === 'usd' ? 'دولار' : 'دينار'}`)}</span>
         </div>
       </div>
       <div class="tbl-box">

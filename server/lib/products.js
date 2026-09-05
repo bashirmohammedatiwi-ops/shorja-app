@@ -1,15 +1,20 @@
 const db = require('../db');
 const { bumpDataRevision } = require('./data-revision');
+const { normalizeCurrency } = require('./currency');
 
 function mapProduct(row) {
   if (!row) return null;
+  const priced = Number(row.priced || 0) === 1;
+  const price = Number(row.price || 0);
   return {
     id: row.id,
     barcode: row.barcode,
     sku: row.sku || '',
     name: row.name,
     unit: row.unit || 'قطعة',
-    price: Number(row.price || 0),
+    price,
+    priceCurrency: normalizeCurrency(row.price_currency),
+    priced: priced && price > 0,
     costPrice: Number(row.cost_price || 0),
     stockQty: Number(row.stock_qty || 0),
     category: row.category || '',
@@ -27,6 +32,7 @@ function listProducts({
   limit = 100,
   offset = 0,
   activeOnly = true,
+  pricedOnly = false,
   stockFilter = 'all',
   lowThreshold = 5,
   sort = 'name'
@@ -34,6 +40,7 @@ function listProducts({
   const where = [];
   const params = [];
   if (activeOnly) where.push('is_active = 1');
+  if (pricedOnly) where.push('priced = 1 AND COALESCE(price, 0) > 0');
   if (category) {
     where.push('category = ?');
     params.push(category);
@@ -112,16 +119,20 @@ function deactivateProduct(id) {
 function upsertProduct(data) {
   const barcode = String(data.barcode || '').trim();
   if (!barcode) throw new Error('الباركود مطلوب');
+  const price = Number(data.price || 0);
+  const priceCurrency = normalizeCurrency(data.priceCurrency);
+  const priced = data.priced === false || data.priced === 0 ? 0 : (price > 0 ? 1 : 0);
   const existing = db.prepare('SELECT id FROM products WHERE barcode = ?').get(barcode);
   if (existing) {
     db.prepare(`
       UPDATE products SET
-        name = ?, sku = ?, unit = ?, price = ?, cost_price = ?, stock_qty = ?,
+        name = ?, sku = ?, unit = ?, price = ?, price_currency = ?, priced = ?,
+        cost_price = ?, stock_qty = ?,
         category = ?, has_offer = ?, offer_name = ?, original_price = ?,
         is_active = 1, updated_at = datetime('now')
       WHERE barcode = ?
     `).run(
-      data.name, data.sku || '', data.unit || 'قطعة', data.price || 0,
+      data.name, data.sku || '', data.unit || 'قطعة', price, priceCurrency, priced,
       data.costPrice || 0, data.stockQty || 0, data.category || '',
       data.hasOffer ? 1 : 0, data.offerName || null, data.originalPrice || null,
       barcode
@@ -129,21 +140,57 @@ function upsertProduct(data) {
     return getByBarcode(barcode);
   }
   const r = db.prepare(`
-    INSERT INTO products (barcode, sku, name, unit, price, cost_price, stock_qty, category, has_offer, offer_name, original_price)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO products (barcode, sku, name, unit, price, price_currency, priced, cost_price, stock_qty, category, has_offer, offer_name, original_price)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    barcode, data.sku || '', data.name, data.unit || 'قطعة', data.price || 0,
+    barcode, data.sku || '', data.name, data.unit || 'قطعة', price, priceCurrency, priced,
     data.costPrice || 0, data.stockQty || 0, data.category || '',
     data.hasOffer ? 1 : 0, data.offerName || null, data.originalPrice || null
   );
   return getProduct(r.lastInsertRowid);
 }
 
-function bulkUpsert(items = []) {
+function upsertCatalogProduct(data) {
+  const barcode = String(data.barcode || '').trim();
+  if (!barcode) throw new Error('الباركود مطلوب');
+  const existing = db.prepare('SELECT * FROM products WHERE barcode = ?').get(barcode);
+  if (existing) {
+    db.prepare(`
+      UPDATE products SET
+        name = ?, sku = ?, unit = ?, stock_qty = ?,
+        category = COALESCE(NULLIF(?, ''), category),
+        is_active = 1, updated_at = datetime('now')
+      WHERE barcode = ?
+    `).run(
+      data.name || existing.name,
+      data.sku || existing.sku || '',
+      data.unit || existing.unit || 'قطعة',
+      data.stockQty != null ? Number(data.stockQty) : existing.stock_qty,
+      data.category || '',
+      barcode
+    );
+    return getByBarcode(barcode);
+  }
+  const r = db.prepare(`
+    INSERT INTO products (barcode, sku, name, unit, price, price_currency, priced, cost_price, stock_qty, category)
+    VALUES (?, ?, ?, ?, 0, 'iqd', 0, 0, ?, ?)
+  `).run(
+    barcode,
+    data.sku || '',
+    data.name,
+    data.unit || 'قطعة',
+    Number(data.stockQty || 0),
+    data.category || ''
+  );
+  return getProduct(r.lastInsertRowid);
+}
+
+function bulkUpsert(items = [], { fromEdari = false } = {}) {
   const tx = db.transaction((rows) => {
     let count = 0;
     for (const item of rows) {
-      upsertProduct(item);
+      if (fromEdari) upsertCatalogProduct(item);
+      else upsertProduct(item);
       count += 1;
     }
     return count;
@@ -173,10 +220,11 @@ function stats() {
   return { total, withStock, offers };
 }
 
-function listLowStock(threshold = 5, limit = 100) {
+function listLowStock(threshold = 5, limit = 100, { pricedOnly = false } = {}) {
+  const pricedSql = pricedOnly ? ' AND priced = 1 AND COALESCE(price, 0) > 0' : '';
   const rows = db.prepare(`
     SELECT * FROM products
-    WHERE is_active = 1 AND stock_qty <= ?
+    WHERE is_active = 1 AND stock_qty <= ?${pricedSql}
     ORDER BY stock_qty ASC, name LIMIT ?
   `).all(threshold, limit);
   return rows.map(mapProduct);
@@ -189,6 +237,7 @@ module.exports = {
   getProduct,
   deactivateProduct,
   upsertProduct,
+  upsertCatalogProduct,
   bulkUpsert,
   adjustStock,
   categories,

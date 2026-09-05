@@ -94,6 +94,19 @@ function setPageTitle(view) {
 
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
 function fmt(n) { return Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0}); }
+function currencyLabel(c) { return String(c || '').toLowerCase() === 'usd' ? 'دولار' : 'دينار'; }
+function fmtPrice(n, currency) {
+  const usd = String(currency || '').toLowerCase() === 'usd';
+  const num = Number(n || 0).toLocaleString('en-US', {
+    minimumFractionDigits: usd ? 2 : 0,
+    maximumFractionDigits: usd ? 2 : 0
+  });
+  return usd ? `$${num}` : `${num} د.ع`;
+}
+function productPriceLabel(p) {
+  if (!p?.priced || !(Number(p.price) > 0)) return 'بدون سعر';
+  return fmtPrice(p.price, p.priceCurrency);
+}
 
 function branchOnline(lastSeen) {
   if (!lastSeen) return false;
@@ -192,6 +205,10 @@ document.querySelectorAll('.nav').forEach((btn) => {
 
 async function loadDashboard() {
   const data = await api('/admin/dashboard');
+  const fxInput = document.getElementById('usdToIqdInput');
+  if (fxInput && data.appSettings && !fxInput.matches(':focus')) {
+    fxInput.value = data.appSettings.usdToIqd || '';
+  }
   const t = data.today;
   const pending = data.pendingSync || 0;
   const edari = data.edariSync || {};
@@ -665,7 +682,7 @@ function productCardHtml(p, opts = {}) {
       <div class="prod-name">${esc(p.name)}</div>
       <div class="prod-barcode">${esc(p.barcode)}</div>
       <div class="prod-meta">
-        <span class="prod-price" dir="ltr">${fmt(p.price)}</span>
+        <span class="prod-price" dir="ltr">${productPriceLabel(p)}</span>
         <span class="prod-stock ${stockCls}">${stockLbl}</span>
       </div>
       ${showAdd || showEdit || showDelete ? `
@@ -735,8 +752,8 @@ function openProductView(p) {
     <h2>${esc(p.name)}</h2>
     <div class="product-detail-grid">
       <div class="detail-item"><label>الباركود</label><strong dir="ltr">${esc(p.barcode)}</strong></div>
-      <div class="detail-item"><label>سعر الجملة</label><strong dir="ltr">${fmt(p.costPrice || 0)}</strong></div>
-      <div class="detail-item"><label>نصف الجملة</label><strong dir="ltr">${fmt(p.price)}</strong></div>
+      <div class="detail-item"><label>سعر الجملة</label><strong dir="ltr">${fmtPrice(p.costPrice || 0, p.priceCurrency)}</strong></div>
+      <div class="detail-item"><label>سعر البيع</label><strong dir="ltr">${productPriceLabel(p)}</strong></div>
       <div class="detail-item"><label>المخزون</label><strong dir="ltr">${fmt(p.stockQty)}</strong></div>
       <div class="detail-item"><label>القسم</label><strong>${esc(p.category || '—')}</strong></div>
       <div class="detail-item"><label>الوحدة</label><strong>${esc(p.unit || 'قطعة')}</strong></div>
@@ -813,19 +830,20 @@ function renderProductTable(products) {
   if (!el) return;
   el.innerHTML = `
     <table id="productsDataTable">
-      <thead><tr><th>باركود</th><th>الاسم</th><th>السعر</th><th>المخزون</th><th>القسم</th><th></th></tr></thead>
+      <thead><tr><th>باركود</th><th>الاسم</th><th>السعر</th><th>العملة</th><th>المخزون</th><th>القسم</th><th></th></tr></thead>
       <tbody>${products.length ? products.map((p) => `
         <tr class="clickable-row" data-barcode="${esc(p.barcode)}">
           <td dir="ltr">${esc(p.barcode)}</td>
           <td>${esc(p.name)}</td>
-          <td dir="ltr">${fmt(p.price)}</td>
+          <td dir="ltr">${productPriceLabel(p)}</td>
+          <td>${p.priced ? currencyLabel(p.priceCurrency) : '—'}</td>
           <td dir="ltr">${fmt(p.stockQty)}</td>
           <td>${esc(p.category)}</td>
           <td class="row-actions">
             <button type="button" class="btn btn-ghost btn-sm btn-edit-prod" data-barcode="${esc(p.barcode)}">تعديل</button>
             <button type="button" class="btn btn-danger btn-sm btn-delete-prod" data-id="${p.id}">حذف</button>
           </td>
-        </tr>`).join('') : '<tr><td colspan="6" class="empty-cell">لا توجد منتجات مطابقة</td></tr>'}
+        </tr>`).join('') : '<tr><td colspan="7" class="empty-cell">لا توجد منتجات مطابقة</td></tr>'}
       </tbody>
     </table>`;
 
@@ -930,8 +948,9 @@ function openProductModal(product = null) {
   document.getElementById('prodBarcode').value = product?.barcode || '';
   document.getElementById('prodBarcode').readOnly = !!product;
   document.getElementById('prodName').value = product?.name || '';
-  document.getElementById('prodCostPrice').value = product?.costPrice ?? 0;
-  document.getElementById('prodPrice').value = product?.price ?? 0;
+  document.getElementById('prodCostPrice').value = product?.costPrice || '';
+  document.getElementById('prodPrice').value = product?.priced ? (product.price ?? '') : '';
+  document.getElementById('prodPriceCurrency').value = product?.priceCurrency || 'iqd';
   document.getElementById('prodStock').value = product?.stockQty ?? 0;
   document.getElementById('prodFormCategory').value = product?.category || '';
   document.getElementById('prodUnit').value = product?.unit || 'قطعة';
@@ -965,8 +984,11 @@ function fillProductForm(product) {
   if (!product) return;
   document.getElementById('prodBarcode').value = product.barcode || '';
   document.getElementById('prodName').value = product.name || '';
-  document.getElementById('prodCostPrice').value = product.costPrice ?? 0;
-  document.getElementById('prodPrice').value = product.price ?? 0;
+  document.getElementById('prodCostPrice').value = product.costPrice || '';
+  document.getElementById('prodPrice').value = product.priced ? (product.price ?? '') : '';
+  if (document.getElementById('prodPriceCurrency')) {
+    document.getElementById('prodPriceCurrency').value = product.priceCurrency || 'iqd';
+  }
   document.getElementById('prodStock').value = product.stockQty ?? 0;
   document.getElementById('prodFormCategory').value = product.category || '';
   document.getElementById('prodUnit').value = product.unit || 'قطعة';
@@ -1030,7 +1052,7 @@ async function refreshProductFormFromAdmin() {
   try {
     const product = await fetchProductFromEdari(code);
     fillProductForm(product);
-    toast(`تم جلب من الإداري: ${product.name} · نصف جملة ${fmt(product.price)} · مخزون ${fmt(product.stockQty)}`);
+    toast(`تم جلب من الإداري: ${product.name} · مخزون ${fmt(product.stockQty)} — أدخل سعر البيع يدوياً`);
   } catch (err) {
     toast(err.message || 'فشل جلب المنتج');
   } finally {
@@ -1065,9 +1087,10 @@ async function importAllProductsFromEdari() {
   }
 
   const confirmed = confirm(
-    `رفع ${total.toLocaleString('ar-IQ')} منتج من الإداري دفعة واحدة؟\n\n` +
-    '• السعر = نصف الجملة (SellPr2 فقط — عمود نصف الجملة في الإداري)\n' +
-    '• بدون إدخال باركود منتج منتج\n' +
+    `جلب ${total.toLocaleString('ar-IQ')} منتج من الإداري؟\n\n` +
+    '• يُجلب الاسم والباركود والمخزون فقط\n' +
+    '• سعر البيع يبقى يدوياً من لوحة التحكم (دينار أو دولار)\n' +
+    '• المنتجات بلا سعر لا تظهر في نقطة البيع\n' +
     `• المنتجات الحالية في الشورجة: ${local.toLocaleString('ar-IQ')}\n\n` +
     'اضغط OK للمتابعة.'
   );
@@ -1114,7 +1137,7 @@ async function importAllProductsFromEdari() {
         method: 'POST',
         body: JSON.stringify({
           all: true,
-          note: 'استيراد كامل من الإداري — سعر نصف الجملة'
+          note: 'جلب منتجات من الإداري — بدون أسعار تلقائية'
         })
       });
       publishMsg = ` · حزمة v${pub.version}`;
@@ -1159,6 +1182,7 @@ document.getElementById('productForm')?.addEventListener('submit', async (e) => 
         name: document.getElementById('prodName').value.trim(),
         costPrice: Number(document.getElementById('prodCostPrice').value || 0),
         price: Number(document.getElementById('prodPrice').value || 0),
+        priceCurrency: document.getElementById('prodPriceCurrency')?.value || 'iqd',
         stockQty: Number(document.getElementById('prodStock').value || 0),
         category: document.getElementById('prodFormCategory').value.trim(),
         unit: document.getElementById('prodUnit').value.trim() || 'قطعة'
@@ -1221,6 +1245,13 @@ document.getElementById('csvImport')?.addEventListener('change', async (e) => {
 });
 
 async function loadPrices() {
+  try {
+    const fx = await api('/admin/app-settings');
+    const fxInput = document.getElementById('usdToIqdInput');
+    if (fxInput && fx.settings && !fxInput.matches(':focus')) {
+      fxInput.value = fx.settings.usdToIqd || '';
+    }
+  } catch { /* ignore */ }
   const data = await api('/admin/prices/packages');
   document.getElementById('packagesList').innerHTML = (data.packages||[]).length
     ? `<div class="packages-list">${(data.packages || []).map((p) => `
@@ -1264,7 +1295,7 @@ function renderPriceSelection() {
       <td dir="ltr">${esc(p.barcode)}</td>
       <td>${esc(p.name)}</td>
       <td dir="ltr">${fmt(p.costPrice || 0)}</td>
-      <td dir="ltr">${fmt(p.price)}</td>
+      <td dir="ltr">${productPriceLabel(p)}</td>
       <td dir="ltr">${fmt(p.stockQty)}</td>
       <td>
         <button type="button" class="btn btn-ghost btn-sm btn-refresh-price-row" data-barcode="${esc(p.barcode)}" title="تحديث من الإدارة">↻</button>
@@ -1403,16 +1434,17 @@ async function loadAccounts() {
   const data = await api(`/admin/accounts?q=${encodeURIComponent(q)}${scopeQuery()}`);
   document.getElementById('accountTable').innerHTML = `
     <table>
-      <thead><tr><th>الرمز</th><th>الاسم</th><th>الهاتف</th><th>الرصيد / الدين</th><th>حد الائتمان</th><th>الإداري</th></tr></thead>
+      <thead><tr><th>الرمز</th><th>الاسم</th><th>العملة</th><th>الهاتف</th><th>الرصيد / الدين</th><th>حد الائتمان</th><th>الإداري</th></tr></thead>
       <tbody>${(data.accounts||[]).map((a) => `
         <tr class="clickable-row" data-account-id="${a.id}">
           <td>${esc(a.code)}</td>
           <td>${esc(a.name)}</td>
+          <td>${currencyLabel(a.currency)}</td>
           <td dir="ltr">${esc(a.phone)}</td>
-          <td dir="ltr" style="color:var(--danger);font-weight:700">${fmt(a.balance)}</td>
-          <td dir="ltr">${fmt(a.creditLimit)}</td>
+          <td dir="ltr" style="color:var(--danger);font-weight:700">${fmtPrice(a.balance, a.currency)}</td>
+          <td dir="ltr">${fmtPrice(a.creditLimit, a.currency)}</td>
           <td>${edariSyncLabel(a.edariSyncStatus, a.edariSyncError)}${a.edariNum ? `<br><small dir="ltr">${esc(a.edariNum)}</small>` : ''}</td>
-        </tr>`).join('') || '<tr><td colspan="6">لا توجد حسابات</td></tr>'}
+        </tr>`).join('') || '<tr><td colspan="7">لا توجد حسابات</td></tr>'}
       </tbody>
     </table>`;
   document.getElementById('accountTable').querySelectorAll('[data-account-id]').forEach((row) => {
@@ -1431,8 +1463,9 @@ async function openLedger(id) {
       <h2>كشف حساب — ${esc(a.name)}</h2>
       <div class="ledger-summary">
         <span>الرمز: <strong>${esc(a.code)}</strong></span>
-        <span>الدين: <strong dir="ltr" style="color:var(--danger)">${fmt(a.balance)}</strong></span>
-        <span>حد الائتمان: <strong dir="ltr">${fmt(a.creditLimit)}</strong></span>
+        <span>العملة: <strong>${currencyLabel(a.currency)}</strong></span>
+        <span>الدين: <strong dir="ltr" style="color:var(--danger)">${fmtPrice(a.balance, a.currency)}</strong></span>
+        <span>حد الائتمان: <strong dir="ltr">${fmtPrice(a.creditLimit, a.currency)}</strong></span>
         <span>الإداري: <strong>${edariSyncLabel(a.edariSyncStatus, a.edariSyncError)}</strong>${a.edariNum ? ` <small dir="ltr">(${esc(a.edariNum)})</small>` : ''}</span>
       </div>
       <h3 style="font-size:0.95rem;margin:12px 0 8px">آخر التسديدات</h3>
@@ -1500,6 +1533,24 @@ async function openLedger(id) {
   } catch (err) { toast(err.message); }
 }
 
+document.getElementById('btnEditAccount')?.addEventListener('click', async () => {
+  if (!activeAccountId) return;
+  try {
+    const data = await api(`/admin/accounts/${activeAccountId}`);
+    const a = data.account;
+    document.getElementById('accFormId').value = String(a.id);
+    document.getElementById('accountModalTitle').textContent = 'تعديل الحساب';
+    document.getElementById('accFormName').value = a.name || '';
+    document.getElementById('accFormPhone').value = a.phone || '';
+    document.getElementById('accFormAddress').value = a.address || '';
+    document.getElementById('accFormCredit').value = a.creditLimit || 0;
+    document.getElementById('accFormNotes').value = a.notes || '';
+    document.getElementById('accFormCurrency').value = a.currency || 'iqd';
+    document.getElementById('ledgerModal')?.close();
+    document.getElementById('accountModal').showModal();
+  } catch (err) { toast(err.message); }
+});
+
 document.getElementById('btnDeleteAccount')?.addEventListener('click', async () => {
   if (!activeAccountId) return;
   if (!confirm('حذف هذا الحساب من لوحة التحكم ونقطة البيع مع كل فواتيره وتسديداته وقيوده؟\nحتى البيانات المرحّلة تُحذف هنا فقط ولا تُلغى من برنامج الإداري.')) return;
@@ -1518,9 +1569,22 @@ document.getElementById('btnDeleteAccount')?.addEventListener('click', async () 
 
 document.getElementById('accSearch')?.addEventListener('input', debounce(loadAccounts, 250));
 
+document.getElementById('btnSaveFxRate')?.addEventListener('click', async () => {
+  try {
+    const data = await api('/admin/app-settings', {
+      method: 'PUT',
+      body: JSON.stringify({ usdToIqd: Number(document.getElementById('usdToIqdInput')?.value || 0) })
+    });
+    toast(`تم حفظ سعر الصرف: 1 دولار = ${fmt(data.settings.usdToIqd)} دينار`);
+  } catch (err) { toast(err.message); }
+});
+
 document.getElementById('btnNewAccount').addEventListener('click', () => {
   document.getElementById('accountForm').reset();
+  document.getElementById('accFormId').value = '';
+  document.getElementById('accountModalTitle').textContent = 'حساب جديد';
   document.getElementById('accFormCredit').value = '0';
+  document.getElementById('accFormCurrency').value = 'iqd';
   document.getElementById('accountModal').showModal();
 });
 
@@ -1531,19 +1595,24 @@ document.getElementById('btnAccCancel')?.addEventListener('click', () => {
 document.getElementById('accountForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    await api('/admin/accounts', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: document.getElementById('accFormName').value.trim(),
-        phone: document.getElementById('accFormPhone').value.trim(),
-        address: document.getElementById('accFormAddress').value.trim(),
-        creditLimit: Number(document.getElementById('accFormCredit').value || 0),
-        notes: document.getElementById('accFormNotes').value.trim(),
-        accountScope: adminAppScope()
-      })
-    });
+    const id = document.getElementById('accFormId').value;
+    const payload = {
+      name: document.getElementById('accFormName').value.trim(),
+      phone: document.getElementById('accFormPhone').value.trim(),
+      address: document.getElementById('accFormAddress').value.trim(),
+      creditLimit: Number(document.getElementById('accFormCredit').value || 0),
+      notes: document.getElementById('accFormNotes').value.trim(),
+      currency: document.getElementById('accFormCurrency').value || 'iqd',
+      accountScope: adminAppScope()
+    };
+    if (id) {
+      await api(`/admin/accounts/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      toast('تم تحديث الحساب');
+    } else {
+      await api('/admin/accounts', { method: 'POST', body: JSON.stringify(payload) });
+      toast('تم إنشاء الحساب');
+    }
     document.getElementById('accountModal').close();
-    toast('تم إنشاء الحساب');
     loadAccounts();
     loadDashboard();
   } catch (err) { toast(err.message); }
@@ -1552,7 +1621,7 @@ document.getElementById('accountForm')?.addEventListener('submit', async (e) => 
 async function loadPayments() {
   const acc = await api(`/admin/accounts?limit=500${scopeQuery()}`);
   const opts = (acc.accounts||[]).map((a) =>
-    `<option value="${a.id}" data-balance="${a.balance}">${esc(a.name)} — دين: ${fmt(a.balance)}</option>`
+    `<option value="${a.id}" data-balance="${a.balance}">${esc(a.name)} — ${currencyLabel(a.currency)} — دين: ${fmtPrice(a.balance, a.currency)}</option>`
   ).join('');
   document.getElementById('payAcc').innerHTML = opts;
   const payParams = new URLSearchParams({ limit: '400' });
@@ -1655,7 +1724,7 @@ function journalKindLabel(k) {
 async function loadJournal() {
   const acc = await api(`/admin/accounts?limit=500${scopeQuery()}`);
   document.getElementById('adjAcc').innerHTML = (acc.accounts||[]).map((a) =>
-    `<option value="${a.id}">${esc(a.name)} — ${fmt(a.balance)}</option>`
+    `<option value="${a.id}">${esc(a.name)} — ${currencyLabel(a.currency)} — ${fmtPrice(a.balance, a.currency)}</option>`
   ).join('');
   const from = document.getElementById('journalFrom')?.value || '';
   const to = document.getElementById('journalTo')?.value || '';

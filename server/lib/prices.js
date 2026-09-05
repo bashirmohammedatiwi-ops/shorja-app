@@ -19,15 +19,16 @@ function publishPricePackage({ items = [], branchId = null, note = '' } = {}) {
     const packageId = r.id;
     const insert = db.prepare(`
       INSERT INTO price_package_items
-        (package_id, barcode, name, unit, price, cost_price, stock_qty, category, has_offer, offer_name, original_price)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (package_id, barcode, name, unit, price, cost_price, stock_qty, category, has_offer, offer_name, original_price, price_currency, priced)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const item of items) {
       insert.run(
         packageId, item.barcode, item.name, item.unit || 'قطعة',
         item.price || 0, item.costPrice || 0, item.stockQty || 0,
         item.category || '', item.hasOffer ? 1 : 0,
-        item.offerName || null, item.originalPrice || null
+        item.offerName || null, item.originalPrice || null,
+        item.priceCurrency || 'iqd', item.priced === false || item.priced === 0 ? 0 : (Number(item.price) > 0 ? 1 : 0)
       );
       upsertProduct(item);
     }
@@ -67,7 +68,9 @@ function getPricePackage(version, branchId = null) {
       category: i.category,
       hasOffer: !!i.has_offer,
       offerName: i.offer_name,
-      originalPrice: i.original_price != null ? Number(i.original_price) : null
+      originalPrice: i.original_price != null ? Number(i.original_price) : null,
+      priceCurrency: i.price_currency || 'iqd',
+      priced: Number(i.priced || 0) === 1 && Number(i.price) > 0
     }))
   };
 }
@@ -110,7 +113,9 @@ function applyPricePackage(branchId, version) {
     category: i.category,
     hasOffer: i.hasOffer,
     offerName: i.offerName,
-    originalPrice: i.originalPrice
+    originalPrice: i.originalPrice,
+    priceCurrency: i.priceCurrency,
+    priced: i.priced
   }));
   bulkUpsert(items);
   if (branchId) {

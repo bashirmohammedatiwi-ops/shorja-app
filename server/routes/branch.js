@@ -2,10 +2,11 @@ const express = require('express');
 const { authRequired } = require('../lib/auth');
 const { listProducts, getByBarcode, categories, listLowStock, stockSummary } = require('../lib/products');
 const { createInvoice, listInvoices, loadInvoice, dailySummary, createPayment, listPayments, createReturn, salesReport } = require('../lib/invoices');
-const { listAccounts, getAccount, createAccount, resolveInvoiceDebtInfo } = require('../lib/accounts');
+const { listAccounts, getAccount, createAccount, updateAccount, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { checkPriceUpdate, applyPricePackage } = require('../lib/prices');
 const { invoicePrintHtml } = require('../lib/export');
 const { getBranchSettings, saveBranchSettings } = require('../lib/settings');
+const { getAppSettings } = require('../lib/app-settings');
 const { getDataRevision } = require('../lib/data-revision');
 const { localStamp } = require('../lib/datetime');
 const db = require('../db');
@@ -30,6 +31,7 @@ router.get('/products', (req, res) => {
     category,
     limit,
     offset,
+    pricedOnly: !syncAll,
     stockFilter: ['all', 'in', 'low', 'out'].includes(stockFilter) ? stockFilter : 'all',
     lowThreshold,
     sort
@@ -50,7 +52,7 @@ router.get('/products/barcode/:code', (req, res) => {
 router.get('/products/low-stock', (req, res) => {
   const settings = getBranchSettings(req.user.branchId);
   const threshold = Number(req.query.threshold) || settings.lowStockThreshold || 5;
-  res.json({ ok: true, products: listLowStock(threshold), threshold });
+  res.json({ ok: true, products: listLowStock(threshold, 100, { pricedOnly: true }), threshold });
 });
 
 router.get('/categories', (_req, res) => {
@@ -74,8 +76,23 @@ router.post('/accounts', async (req, res) => {
       address: body.address || '',
       creditLimit: Number(body.creditLimit || 0),
       notes: body.notes || '',
+      currency: body.currency,
       accountScope: 'warehouse'
     });
+    res.json({ ok: true, account });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.put('/accounts/:id', async (req, res) => {
+  try {
+    const current = getAccount(Number(req.params.id));
+    if (!current) return res.status(404).json({ ok: false, error: 'الحساب غير موجود' });
+    if (current.accountScope && current.accountScope !== 'warehouse') {
+      return res.status(403).json({ ok: false, error: 'لا يمكن تعديل هذا الحساب من نقطة البيع' });
+    }
+    const account = await updateAccount(current.id, req.body || {});
     res.json({ ok: true, account });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
@@ -186,7 +203,11 @@ router.get('/reports/sales', (req, res) => {
 });
 
 router.get('/settings', (req, res) => {
-  res.json({ ok: true, settings: getBranchSettings(req.user.branchId) });
+  const settings = {
+    ...getBranchSettings(req.user.branchId),
+    usdToIqd: getAppSettings().usdToIqd
+  };
+  res.json({ ok: true, settings });
 });
 
 router.put('/settings', (req, res) => {

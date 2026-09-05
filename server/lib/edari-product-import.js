@@ -14,7 +14,9 @@ function mapProductForPackage(p) {
     category: p.category,
     hasOffer: p.hasOffer,
     offerName: p.offerName,
-    originalPrice: p.originalPrice
+    originalPrice: p.originalPrice,
+    priceCurrency: p.priceCurrency || 'iqd',
+    priced: !!p.priced
   };
 }
 
@@ -40,7 +42,7 @@ function importMaterialRows(rows = []) {
     imported += 1;
   }
 
-  if (products.length) bulkUpsert(products);
+  if (products.length) bulkUpsert(products, { fromEdari: true });
   return { imported, skipped, products };
 }
 
@@ -61,7 +63,7 @@ async function importAllEdariProducts({
   maxBatches = 0,
   onBatch = null,
   publish = false,
-  publishNote = 'استيراد كامل من الإداري — سعر نصف الجملة'
+  publishNote = 'استيراد كامل من الإداري — بدون أسعار بيع'
 } = {}) {
   const totalInEdari = await countEdariMaterials();
   let afterSeq = 0;

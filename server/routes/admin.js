@@ -1,11 +1,11 @@
 const express = require('express');
 const { authRequired } = require('../lib/auth');
-const { listProducts, upsertProduct, bulkUpsert, stats, getByBarcode, getProduct, deactivateProduct } = require('../lib/products');
+const { listProducts, upsertProduct, upsertCatalogProduct, bulkUpsert, stats, getByBarcode, getProduct, deactivateProduct } = require('../lib/products');
 const { resolveEdariMaterial, cacheEdariMaterial, mapEdariToShorjaProduct } = require('../lib/edari-materials');
 const { importEdariProductsBatch, importAllEdariProducts } = require('../lib/edari-product-import');
 const { countEdariMaterials } = require('../lib/edari-lookup');
 const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment, salesReport } = require('../lib/invoices');
-const { listAccounts, createAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
+const { listAccounts, createAccount, updateAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { getEdariParentInfo } = require('../lib/edari-accounts');
 const { listPendingSync, listPendingSyncEnriched, processEdariQueue, syncAccountToEdari, syncQueueStats, resetSyncItemsForRetry } = require('../lib/edari-sync');
 const { listDelegateInvoices, listWarehousePrepInvoices, delegateInvoiceStats, warehousePrepStats, queueInvoiceForEdari, DELEGATE_BRANCH_CODE } = require('../lib/delegate-processed');
@@ -17,6 +17,7 @@ const { parseProductsCsv, invoicePrintHtml } = require('../lib/export');
 const { deleteInvoiceById, deletePaymentById, deleteAccountById, deleteJournalEntryById } = require('../lib/deletions');
 const { getDataRevision } = require('../lib/data-revision');
 const { getPosMonitor } = require('../lib/pos-monitor');
+const { getAppSettings, saveAppSettings } = require('../lib/app-settings');
 const db = require('../db');
 
 const router = express.Router();
@@ -58,8 +59,22 @@ router.get('/dashboard', (req, res) => {
     warehousePrep,
     delegatePrep,
     lowStock: Number(lowStock),
-    priceVersion: getLatestVersion()
+    priceVersion: getLatestVersion(),
+    appSettings: getAppSettings()
   });
+});
+
+router.get('/app-settings', (_req, res) => {
+  res.json({ ok: true, settings: getAppSettings() });
+});
+
+router.put('/app-settings', (req, res) => {
+  try {
+    const settings = saveAppSettings(req.body || {});
+    res.json({ ok: true, settings });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
 });
 
 router.get('/reports/sales', (req, res) => {
@@ -138,15 +153,26 @@ router.post('/products/from-edari', async (req, res) => {
       return res.status(404).json({ ok: false, error: 'المادة غير موجودة في الإداري (Edari)' });
     }
     const payload = mapEdariToShorjaProduct(material);
-    const product = upsertProduct({
+    const product = upsertCatalogProduct({
       ...payload,
       category: body.category || payload.category || '',
       unit: body.unit || payload.unit || 'قطعة',
-      costPrice: body.costPrice != null ? Number(body.costPrice) : payload.costPrice,
-      price: body.price != null ? Number(body.price) : payload.price,
       stockQty: body.stockQty != null ? Number(body.stockQty) : payload.stockQty
     });
-    res.json({ ok: true, material, product });
+    const hasManualPrice = Number(body.price) > 0;
+    const saved = hasManualPrice
+      ? upsertProduct({
+        ...product,
+        ...payload,
+        category: body.category || product.category || '',
+        unit: body.unit || product.unit || 'قطعة',
+        costPrice: body.costPrice != null ? Number(body.costPrice) : product.costPrice,
+        price: Number(body.price),
+        priceCurrency: body.priceCurrency || product.priceCurrency,
+        stockQty: body.stockQty != null ? Number(body.stockQty) : product.stockQty
+      })
+      : product;
+    res.json({ ok: true, material, product: saved });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }
@@ -172,7 +198,9 @@ function mapProductForPackage(p) {
     category: p.category,
     hasOffer: p.hasOffer,
     offerName: p.offerName,
-    originalPrice: p.originalPrice
+    originalPrice: p.originalPrice,
+    priceCurrency: p.priceCurrency || 'iqd',
+    priced: !!p.priced
   };
 }
 
@@ -271,7 +299,7 @@ router.post('/products/import-edari-all', async (req, res) => {
       batchSize,
       maxBatches,
       publish,
-      publishNote: req.body?.note || 'استيراد كامل من الإداري — سعر نصف الجملة'
+      publishNote: req.body?.note || 'استيراد كامل من الإداري — بدون أسعار بيع'
     });
     res.json(result);
   } catch (err) {
@@ -402,6 +430,15 @@ router.post('/accounts', async (req, res) => {
       ...body,
       accountScope: body.accountScope === 'delegate' ? 'delegate' : 'warehouse'
     });
+    res.json({ ok: true, account });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.put('/accounts/:id', async (req, res) => {
+  try {
+    const account = await updateAccount(Number(req.params.id), req.body || {});
     res.json({ ok: true, account });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });

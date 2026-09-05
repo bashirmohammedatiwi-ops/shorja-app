@@ -1,5 +1,6 @@
 const db = require('../db');
 const { syncAccountToEdari } = require('./edari-sync');
+const { normalizeCurrency } = require('./currency');
 
 function mapAccount(row) {
   if (!row) return null;
@@ -11,6 +12,7 @@ function mapAccount(row) {
     address: row.address || '',
     balance: Number(row.balance || 0),
     creditLimit: Number(row.credit_limit || 0),
+    currency: normalizeCurrency(row.currency),
     isActive: !!row.is_active,
     notes: row.notes || '',
     edariSeq: row.edari_seq || '',
@@ -62,18 +64,41 @@ async function createAccount(data) {
   const code = String(data.code || '').trim() || nextAccountCode();
   const scope = data.accountScope === 'delegate' ? 'delegate' : 'warehouse';
   const row = db.prepare(`
-    INSERT INTO accounts (code, name, phone, address, balance, credit_limit, notes, edari_sync_status, account_scope)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    INSERT INTO accounts (code, name, phone, address, balance, credit_limit, notes, edari_sync_status, account_scope, currency)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
     RETURNING id
   `).get(
     code, data.name, data.phone || '', data.address || '',
-    Number(data.balance || 0), Number(data.creditLimit || 0), data.notes || '', scope
+    Number(data.balance || 0), Number(data.creditLimit || 0), data.notes || '', scope,
+    normalizeCurrency(data.currency)
   );
   const account = getAccount(Number(row.id));
   if (process.env.EDARI_SYNC_ACCOUNTS !== '0') {
     await syncAccountToEdari(account, data);
   }
   return getAccount(Number(row.id));
+}
+
+async function updateAccount(id, data = {}) {
+  const current = getAccount(id);
+  if (!current) throw new Error('الحساب غير موجود');
+  const name = String(data.name != null ? data.name : current.name).trim();
+  if (!name) throw new Error('اسم الحساب مطلوب');
+  db.prepare(`
+    UPDATE accounts SET
+      name = ?, phone = ?, address = ?, credit_limit = ?, notes = ?, currency = ?,
+      updated_at = datetime('now')
+    WHERE id = ?
+  `).run(
+    name,
+    data.phone != null ? String(data.phone) : current.phone,
+    data.address != null ? String(data.address) : current.address,
+    data.creditLimit != null ? Number(data.creditLimit) : current.creditLimit,
+    data.notes != null ? String(data.notes) : current.notes,
+    data.currency != null ? normalizeCurrency(data.currency) : current.currency,
+    id
+  );
+  return getAccount(id);
 }
 
 function nextAccountCode() {
@@ -122,6 +147,7 @@ module.exports = {
   listAccounts,
   getAccount,
   createAccount,
+  updateAccount,
   updateBalance,
   accountStats,
   resolveInvoiceDebtInfo

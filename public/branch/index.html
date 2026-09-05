@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=46">
-  <link rel="stylesheet" href="official.css?v=46">
+  <link rel="stylesheet" href="styles.css?v=47">
+  <link rel="stylesheet" href="official.css?v=47">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -201,6 +201,7 @@
                     <span class="customer-val" id="customerLabel">نقدي</span>
                   </span>
                 </button>
+                <span class="currency-chip" id="saleCurrencyChip" title="عملة الفاتورة">دينار</span>
                 <button type="button" class="btn-pos-clear" id="btnClearCart" title="تفريغ الفاتورة">تفريغ</button>
               </div>
             </div>
@@ -389,6 +390,11 @@
               <input type="text" id="accNewAddress" class="field" placeholder="اختياري">
               <label>حد الائتمان</label>
               <input type="number" id="accNewCredit" class="field" min="0" value="0" placeholder="0">
+              <label>عملة الحساب</label>
+              <select id="accNewCurrency" class="field">
+                <option value="iqd">دينار عراقي</option>
+                <option value="usd">دولار</option>
+              </select>
               <label>ملاحظات</label>
               <input type="text" id="accNewNotes" class="field" placeholder="اختياري">
               <button type="button" class="btn btn-primary btn-block" id="btnAddAccount">حفظ الحساب</button>
@@ -520,7 +526,7 @@
                 <div><span>إصدار الواجهة</span><strong id="setAppVersion">—</strong></div>
                 <div><span>نسخة الأسعار</span><strong id="setPriceVersion">—</strong></div>
                 <div><span>مراجعة البيانات</span><strong id="setDataRevision">—</strong></div>
-                <div><span>الاتصال</span><strong id="setConnStatus">—</strong></div>
+                <div><span>سعر الصرف</span><strong id="setFxRate">—</strong></div>
               </div>
             </div>
             <div class="settings-sync-block">
@@ -580,6 +586,11 @@
         <input type="text" id="newCustomerName" class="field" placeholder="الاسم الكامل">
         <label>الهاتف</label>
         <input type="text" id="newCustomerPhone" class="field" placeholder="اختياري">
+        <label>عملة الحساب</label>
+        <select id="newCustomerCurrency" class="field">
+          <option value="iqd">دينار عراقي</option>
+          <option value="usd">دولار</option>
+        </select>
         <button type="button" class="btn btn-primary btn-sm" id="btnCreateCustomer">إنشاء واختيار</button>
       </div>
       <div class="picker-list" id="customerList"></div>
@@ -644,6 +655,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=46"></script>
+  <script src="app.js?v=47"></script>
 </body>
 </html>

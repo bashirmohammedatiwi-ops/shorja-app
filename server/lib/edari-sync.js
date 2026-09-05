@@ -221,7 +221,8 @@ function hydrateQueuePayload(item) {
     const inv = db.prepare(`
       SELECT i.account_id, i.customer_name, i.subtotal, i.total, i.discount,
              i.paid_amount, i.due_amount, i.payment_method, i.invoice_date, i.notes, i.kind,
-             a.edari_seq, a.edari_sync_status, a.name AS account_name,
+             i.currency, i.exchange_rate,
+             a.edari_seq, a.edari_sync_status, a.name AS account_name, a.currency AS account_currency,
              b.name AS branch_name
       FROM invoices i
       LEFT JOIN accounts a ON a.id = i.account_id
@@ -243,6 +244,8 @@ function hydrateQueuePayload(item) {
       payload.invoiceDate = inv.invoice_date || payload.invoiceDate;
       payload.notes = inv.notes ?? payload.notes;
       payload.kind = inv.kind || payload.kind;
+      payload.currency = inv.currency || inv.account_currency || payload.currency || 'iqd';
+      payload.exchangeRate = inv.exchange_rate ?? payload.exchangeRate;
     }
     const lineRows = db.prepare(`
       SELECT barcode, name, qty, gift_qty, unit_price, line_discount, line_total
@@ -651,6 +654,8 @@ function queueInvoiceEdariSync(invoice) {
       branchName: invoice.branchName || '',
       notes: invoice.notes,
       invoiceDate: invoice.invoiceDate,
+      currency: invoice.currency || 'iqd',
+      exchangeRate: invoice.exchangeRate || 0,
       lines: (invoice.lines || []).map((l) => ({
         barcode: l.barcode,
         name: l.name,

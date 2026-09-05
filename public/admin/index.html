@@ -123,7 +123,7 @@
           <button type="button" class="quick-action warehouse" data-goto="warehousePrep">🏪 تجهيز الشورجة</button>
           <button type="button" class="quick-action" data-goto="edariSync">🔄 مزامنة الإداري</button>
           <button type="button" class="quick-action" data-goto="prices">💰 رفع الأسعار</button>
-          <button type="button" class="quick-action primary" data-import-edari-all">📦 رفع كل المنتجات من الإداري</button>
+          <button type="button" class="quick-action primary" data-import-edari-all">📦 جلب المنتجات من الإداري</button>
           <button type="button" class="quick-action" data-goto="accounts">👥 حسابات الشورجة</button>
         </div>
         <div class="quick-actions del-only hidden" id="quickActionsDelegate">
@@ -402,7 +402,7 @@
               </select>
               <button type="button" class="btn btn-secondary" id="btnExportProducts">تصدير CSV</button>
               <button type="button" class="btn btn-primary" id="btnNewProduct">+ منتج جديد</button>
-              <button type="button" class="btn btn-primary" data-import-edari-all title="رفع كل مواد Edari دفعة واحدة بسعر نصف الجملة">📦 رفع كل المنتجات من الإداري</button>
+              <button type="button" class="btn btn-primary" data-import-edari-all title="جلب مواد الإداري بدون أسعار البيع">📦 جلب المنتجات من الإداري</button>
               <label class="file-btn btn btn-secondary">استيراد CSV
                 <input type="file" id="csvImport" accept=".csv,.txt" hidden>
               </label>
@@ -432,13 +432,24 @@
         <div class="section-panel prices-layout">
           <div class="action-card import-edari-hero">
             <div>
-              <h2>رفع كل المنتجات من الإداري</h2>
-              <p class="hint">زر واحد يرفع كل مواد Edari (~48,000+) إلى الشورجة — السعر من عمود <strong>نصف الجملة (SellPr2)</strong> فقط.</p>
-              <p class="hint subtle">يتطلب تطبيق Windows للإدارة مع EdariNX. بعد الرفع يمكن إرسال الأسعار لنقاط البيع.</p>
+              <h2>جلب المنتجات من الإداري</h2>
+              <p class="hint">يُجلب الاسم والباركود والمخزون من Edari — <strong>سعر البيع يُدخل يدوياً</strong> في تعديل المنتج (دينار أو دولار). المنتجات بلا سعر لا تظهر في نقطة البيع.</p>
+              <p class="hint subtle">يتطلب تطبيق Windows للإدارة مع EdariNX.</p>
             </div>
-            <button type="button" class="btn btn-primary btn-lg" data-import-edari-all">📦 رفع كل المنتجات الآن</button>
+            <button type="button" class="btn btn-primary btn-lg" data-import-edari-all">📦 جلب المنتجات من الإداري</button>
           </div>
-          <p class="hint hidden" id="edariImportProgressPrices"></p>
+          <div class="action-card compact-card" id="fxRateCard">
+            <div>
+              <h3>سعر الصرف</h3>
+              <p class="hint">كم دينار عراقي يساوي دولاراً واحداً. يُستخدم في نقطة البيع عند اختلاف عملة المنتج عن عملة الحساب.</p>
+            </div>
+            <div class="price-add-bar">
+              <label for="usdToIqdInput">1 دولار =</label>
+              <input type="number" id="usdToIqdInput" class="field" min="0" step="any" placeholder="مثال 1500">
+              <span>دينار</span>
+              <button type="button" class="btn btn-primary" id="btnSaveFxRate">حفظ سعر الصرف</button>
+            </div>
+          </div>
 
           <div class="price-steps">
             <div class="step-card">
@@ -649,7 +660,7 @@
 
   <dialog id="accountModal" class="modal-dialog">
     <form id="accountForm" method="dialog">
-      <h2>حساب جديد</h2>
+      <h2 id="accountModalTitle">حساب جديد</h2>
       <label>اسم الحساب *</label>
       <input type="text" id="accFormName" class="field" required>
       <label>الهاتف</label>
@@ -658,6 +669,12 @@
       <input type="text" id="accFormAddress" class="field">
       <label>حد الائتمان</label>
       <input type="number" id="accFormCredit" class="field" min="0" value="0">
+      <label>عملة الحساب</label>
+      <select id="accFormCurrency" class="field">
+        <option value="iqd">دينار عراقي</option>
+        <option value="usd">دولار</option>
+      </select>
+      <input type="hidden" id="accFormId" value="">
       <label>ملاحظات</label>
       <input type="text" id="accFormNotes" class="field">
       <div class="modal-actions">
@@ -683,12 +700,19 @@
           <input type="text" id="prodName" class="field" required>
         </div>
         <div>
-          <label>سعر الجملة (مرجع)</label>
-          <input type="number" id="prodCostPrice" class="field" min="0" value="0">
+          <label>سعر البيع *</label>
+          <input type="number" id="prodPrice" class="field" min="0" step="any" value="" placeholder="أدخل السعر يدوياً">
         </div>
         <div>
-          <label>سعر نصف الجملة (البيع)</label>
-          <input type="number" id="prodPrice" class="field" min="0" value="0">
+          <label>عملة السعر</label>
+          <select id="prodPriceCurrency" class="field">
+            <option value="iqd">دينار عراقي</option>
+            <option value="usd">دولار</option>
+          </select>
+        </div>
+        <div>
+          <label>سعر الجملة (مرجع اختياري)</label>
+          <input type="number" id="prodCostPrice" class="field" min="0" step="any" value="">
         </div>
         <div>
           <label>المخزون</label>
@@ -723,6 +747,7 @@
   <dialog id="ledgerModal" class="modal-dialog modal-wide">
     <div id="ledgerDetail"></div>
     <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" id="btnEditAccount">تعديل العملة</button>
       <button type="button" class="btn btn-danger" id="btnDeleteAccount">حذف الحساب</button>
       <button type="button" class="btn btn-ghost" data-close>إغلاق</button>
     </div>
@@ -758,7 +783,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=32"></script>
+  <script src="app.js?v=33"></script>
   <script src="premium.js?v=15"></script>
 </body>
 </html>
