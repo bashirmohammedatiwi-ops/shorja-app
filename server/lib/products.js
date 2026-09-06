@@ -2,6 +2,14 @@ const db = require('../db');
 const { bumpDataRevision } = require('./data-revision');
 const { normalizeCurrency } = require('./currency');
 
+function isManuallyPriced(p) {
+  if (!p) return false;
+  const price = Number(p.price || 0);
+  if (!(price > 0)) return false;
+  if (p.priced === false || p.priced === 0) return false;
+  return true;
+}
+
 function mapProduct(row) {
   if (!row) return null;
   const priced = Number(row.priced || 0) === 1;
@@ -33,6 +41,7 @@ function listProducts({
   offset = 0,
   activeOnly = true,
   pricedOnly = false,
+  pricedFilter = '',
   stockFilter = 'all',
   lowThreshold = 5,
   sort = 'name'
@@ -40,10 +49,14 @@ function listProducts({
   const where = [];
   const params = [];
   if (activeOnly) where.push('is_active = 1');
-  if (pricedOnly) where.push('priced = 1 AND COALESCE(price, 0) > 0');
-  if (category) {
+  if (pricedOnly || pricedFilter === 'priced') where.push('priced = 1 AND COALESCE(price, 0) > 0');
+  if (pricedFilter === 'unpriced') where.push('(priced = 0 OR COALESCE(price, 0) <= 0)');
+  const cat = String(category || '').trim();
+  if (cat === '__none__') {
+    where.push("(TRIM(COALESCE(category, '')) = '')");
+  } else if (cat) {
     where.push('category = ?');
-    params.push(category);
+    params.push(cat);
   }
   if (q) {
     where.push('(barcode LIKE ? OR name LIKE ? OR sku LIKE ?)');
@@ -116,6 +129,42 @@ function deactivateProduct(id) {
   return product;
 }
 
+function wipeCatalogProducts() {
+  const before = Number(db.prepare('SELECT COUNT(*) AS c FROM products').get().c || 0);
+  const tx = db.transaction(() => {
+    try { db.exec('DELETE FROM price_package_items'); } catch { /* optional table */ }
+    try { db.exec('DELETE FROM price_packages'); } catch { /* optional table */ }
+    try { db.exec('DELETE FROM edari_materials'); } catch { /* optional table */ }
+    db.exec('DELETE FROM products');
+  });
+  tx();
+  bumpDataRevision();
+  return before;
+}
+
+function deactivateProductsNotInBarcodes(barcodes = []) {
+  const codes = [...new Set((barcodes || []).map((b) => String(b || '').trim()).filter(Boolean))];
+  if (!codes.length) return wipeCatalogProducts();
+
+  const tx = db.transaction(() => {
+    db.prepare(`CREATE TEMP TABLE IF NOT EXISTS _keep_barcodes (barcode TEXT PRIMARY KEY)`).run();
+    db.prepare(`DELETE FROM _keep_barcodes`).run();
+    const ins = db.prepare(`INSERT OR IGNORE INTO _keep_barcodes (barcode) VALUES (?)`);
+    for (const code of codes) ins.run(code);
+    const r = db.prepare(`
+      UPDATE products SET is_active = 0, updated_at = datetime('now')
+      WHERE is_active = 1
+        AND barcode NOT IN (SELECT barcode FROM _keep_barcodes)
+        AND (sku IS NULL OR sku = '' OR sku NOT IN (SELECT barcode FROM _keep_barcodes))
+    `).run();
+    db.prepare(`DROP TABLE IF EXISTS _keep_barcodes`).run();
+    return Number(r.changes || 0);
+  });
+  const changes = tx();
+  bumpDataRevision();
+  return changes;
+}
+
 function upsertProduct(data) {
   const barcode = String(data.barcode || '').trim();
   if (!barcode) throw new Error('الباركود مطلوب');
@@ -185,6 +234,66 @@ function upsertCatalogProduct(data) {
   return getProduct(r.lastInsertRowid);
 }
 
+function patchProduct(barcode, patch = {}) {
+  const existing = getByBarcode(barcode);
+  if (!existing) throw new Error(`المنتج غير موجود: ${barcode}`);
+  const nextPrice = patch.price != null && patch.price !== ''
+    ? Number(patch.price)
+    : existing.price;
+  return upsertProduct({
+    barcode: existing.barcode,
+    name: patch.name != null ? (String(patch.name).trim() || existing.name) : existing.name,
+    sku: existing.sku,
+    unit: patch.unit != null ? patch.unit : existing.unit,
+    price: Number.isFinite(nextPrice) ? nextPrice : existing.price,
+    priceCurrency: patch.priceCurrency || existing.priceCurrency,
+    costPrice: patch.costPrice != null && patch.costPrice !== ''
+      ? Number(patch.costPrice)
+      : existing.costPrice,
+    stockQty: existing.stockQty,
+    category: patch.category != null ? String(patch.category).trim() : existing.category,
+    hasOffer: existing.hasOffer,
+    offerName: existing.offerName,
+    originalPrice: existing.originalPrice
+  });
+}
+
+function bulkPatchProducts(items = []) {
+  if (!items.length) return [];
+  const tx = db.transaction((rows) => rows.map((row) => {
+    const code = String(row.barcode || '').trim();
+    if (!code) throw new Error('الباركود مطلوب');
+    return patchProduct(code, row);
+  }));
+  const updated = tx(items);
+  bumpDataRevision();
+  return updated;
+}
+
+function assignProductsCategory(barcodes = [], category = '') {
+  const codes = [...new Set((barcodes || []).map((b) => String(b || '').trim()).filter(Boolean))];
+  if (!codes.length) throw new Error('حدد منتجاً واحداً على الأقل');
+  return bulkPatchProducts(codes.map((barcode) => ({ barcode, category: String(category || '').trim() })));
+}
+
+function categoryStats() {
+  const rows = db.prepare(`
+    SELECT
+      TRIM(COALESCE(category, '')) AS name,
+      COUNT(*) AS count,
+      SUM(CASE WHEN priced = 1 AND COALESCE(price, 0) > 0 THEN 1 ELSE 0 END) AS pricedCount
+    FROM products
+    WHERE is_active = 1
+    GROUP BY TRIM(COALESCE(category, ''))
+    ORDER BY CASE WHEN TRIM(COALESCE(category, '')) = '' THEN 0 ELSE 1 END, name COLLATE NOCASE
+  `).all();
+  return rows.map((r) => ({
+    name: String(r.name || ''),
+    count: Number(r.count || 0),
+    pricedCount: Number(r.pricedCount || 0)
+  }));
+}
+
 function bulkUpsert(items = [], { fromEdari = false } = {}) {
   const tx = db.transaction((rows) => {
     let count = 0;
@@ -236,6 +345,8 @@ module.exports = {
   getByBarcode,
   getProduct,
   deactivateProduct,
+  wipeCatalogProducts,
+  deactivateProductsNotInBarcodes,
   upsertProduct,
   upsertCatalogProduct,
   bulkUpsert,
@@ -243,5 +354,10 @@ module.exports = {
   categories,
   stats,
   listLowStock,
-  stockSummary
+  stockSummary,
+  patchProduct,
+  bulkPatchProducts,
+  assignProductsCategory,
+  categoryStats,
+  isManuallyPriced
 };

@@ -1,4 +1,10 @@
-const { listEdariMaterials, countEdariMaterials } = require('./edari-lookup');
+const {
+  listEdariMaterials,
+  countEdariMaterials,
+  listEdariWarehouseMaterials,
+  countEdariWarehouseMaterials,
+  resolveShorjaWarehouse
+} = require('./edari-lookup');
 const { cacheEdariMaterial, mapEdariToShorjaProduct } = require('./edari-materials');
 const { bulkUpsert, listProducts } = require('./products');
 const { publishPricePackage } = require('./prices');
@@ -58,6 +64,23 @@ async function importEdariProductsBatch({ afterSeq = 0, limit = 500 } = {}) {
   };
 }
 
+async function importEdariWarehouseBatch({ afterSeq = 0, limit = 500, warehouse = null } = {}) {
+  const { rows, lastSeq, hasMore, warehouse: resolved } = await listEdariWarehouseMaterials({
+    afterSeq,
+    limit,
+    warehouse
+  });
+  const result = importMaterialRows(rows);
+  return {
+    ...result,
+    afterSeq: Number(afterSeq) || 0,
+    lastSeq,
+    hasMore,
+    batchSize: rows.length,
+    warehouse: resolved
+  };
+}
+
 async function importAllEdariProducts({
   batchSize = 500,
   maxBatches = 0,
@@ -87,7 +110,10 @@ async function importAllEdariProducts({
 
   let publishResult = null;
   if (publish && imported > 0) {
-    const { products } = listProducts({ limit: 500000, activeOnly: true });
+    const { products } = listProducts({ limit: 500000, activeOnly: true, pricedFilter: 'priced' });
+    if (!products.length) {
+      throw new Error('لا توجد منتجات مسعّرة يدوياً للرفع إلى نقطة البيع');
+    }
     publishResult = publishPricePackage({
       items: products.map(mapProductForPackage),
       note: publishNote
@@ -109,5 +135,8 @@ async function importAllEdariProducts({
 module.exports = {
   importMaterialRows,
   importEdariProductsBatch,
-  importAllEdariProducts
+  importEdariWarehouseBatch,
+  importAllEdariProducts,
+  resolveShorjaWarehouse,
+  countEdariWarehouseMaterials
 };

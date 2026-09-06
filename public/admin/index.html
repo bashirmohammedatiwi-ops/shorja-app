@@ -123,7 +123,8 @@
           <button type="button" class="quick-action warehouse" data-goto="warehousePrep">🏪 تجهيز الشورجة</button>
           <button type="button" class="quick-action" data-goto="edariSync">🔄 مزامنة الإداري</button>
           <button type="button" class="quick-action" data-goto="prices">💰 رفع الأسعار</button>
-          <button type="button" class="quick-action primary" data-import-edari-all">📦 جلب المنتجات من الإداري</button>
+          <button type="button" class="quick-action primary" data-import-edari-warehouse">📦 جلب من مستودع الشورجة</button>
+          <button type="button" class="quick-action" data-refresh-edari-warehouse>↻ تحديث من المستودع</button>
           <button type="button" class="quick-action" data-goto="accounts">👥 حسابات الشورجة</button>
         </div>
         <div class="quick-actions del-only hidden" id="quickActionsDelegate">
@@ -402,7 +403,8 @@
               </select>
               <button type="button" class="btn btn-secondary" id="btnExportProducts">تصدير CSV</button>
               <button type="button" class="btn btn-primary" id="btnNewProduct">+ منتج جديد</button>
-              <button type="button" class="btn btn-primary" data-import-edari-all title="جلب مواد الإداري بدون أسعار البيع">📦 جلب المنتجات من الإداري</button>
+              <button type="button" class="btn btn-primary" data-import-edari-warehouse title="جلب مواد مستودع محل الشورجه وحذف المنتجات القديمة">📦 جلب من مستودع الشورجة</button>
+              <button type="button" class="btn btn-secondary" data-refresh-edari-warehouse title="تحديث الاسم والباركود والمخزون فقط دون تغيير الأسعار">↻ تحديث من المستودع</button>
               <label class="file-btn btn btn-secondary">استيراد CSV
                 <input type="file" id="csvImport" accept=".csv,.txt" hidden>
               </label>
@@ -432,12 +434,16 @@
         <div class="section-panel prices-layout">
           <div class="action-card import-edari-hero">
             <div>
-              <h2>جلب المنتجات من الإداري</h2>
-              <p class="hint">يُجلب الاسم والباركود والمخزون من Edari — <strong>سعر البيع يُدخل يدوياً</strong> في تعديل المنتج (دينار أو دولار). المنتجات بلا سعر لا تظهر في نقطة البيع.</p>
-              <p class="hint subtle">يتطلب تطبيق Windows للإدارة مع EdariNX.</p>
+              <h2>أسعار المواد</h2>
+              <p class="hint">عدّل الأسعار في جدول يشبه إكسل، وصنّف المنتجات في أقسام ليسهل الرجوع إليها لاحقاً. المنتجات بلا سعر لا تظهر في نقطة البيع.</p>
+              <p class="hint subtle">يُجلب الاسم والباركود والمخزون من مستودع «محل الشورجه» فقط — سعر البيع يُدخل هنا يدوياً ولا يُرسل لنقطة البيع إلا بعد التسعير.</p>
             </div>
-            <button type="button" class="btn btn-primary btn-lg" data-import-edari-all">📦 جلب المنتجات من الإداري</button>
+            <div class="toolbar-actions">
+              <button type="button" class="btn btn-primary btn-lg" data-import-edari-warehouse>📦 جلب من مستودع الشورجة</button>
+              <button type="button" class="btn btn-secondary btn-lg" data-refresh-edari-warehouse>↻ تحديث من المستودع</button>
+            </div>
           </div>
+          <p class="hint hidden" id="edariImportProgressPrices"></p>
           <div class="action-card compact-card" id="fxRateCard">
             <div>
               <h3>سعر الصرف</h3>
@@ -451,72 +457,67 @@
             </div>
           </div>
 
-          <div class="price-steps">
-            <div class="step-card">
-              <div class="step-num">1</div>
-              <div>
-                <h3>تحديث يدوي (اختياري)</h3>
-                <p>باركود منتج واحد أو منتجات محددة</p>
+          <div class="price-workspace">
+            <aside class="price-cat-panel">
+              <h3>الأقسام</h3>
+              <p class="hint">أنشئ قسماً ثم عيّن المنتجات المحددة إليه.</p>
+              <div class="new-cat-row">
+                <input type="text" id="newCategoryName" class="field" placeholder="اسم قسم جديد...">
+                <button type="button" class="btn btn-secondary" id="btnCreateCategory" title="إنشاء قسم">+</button>
               </div>
-            </div>
-            <div class="step-card">
-              <div class="step-num">2</div>
-              <div>
-                <h3>راجع القائمة</h3>
-                <p>تأكد من المنتجات والأسعار</p>
+              <div id="priceCategoryList" class="price-cat-list"></div>
+            </aside>
+
+            <div class="price-sheet-main">
+              <div class="price-sheet-toolbar">
+                <div class="search-box">
+                  <span class="search-ico" aria-hidden="true">⌕</span>
+                  <input type="search" id="priceBrowseSearch" placeholder="بحث بالاسم أو الباركود...">
+                </div>
+                <div class="filter-chip-row" id="priceSheetFilters">
+                  <button type="button" class="filter-chip active" data-price-filter="">الكل</button>
+                  <button type="button" class="filter-chip" data-price-filter="unpriced">بدون سعر</button>
+                  <button type="button" class="filter-chip" data-price-filter="priced">مسعّر</button>
+                </div>
+                <div class="price-add-bar sheet-scan-bar">
+                  <input type="text" id="priceBarcode" class="field" placeholder="امسح الباركود للانتقال إلى السعر..." dir="ltr" autocomplete="off">
+                  <button type="button" class="btn btn-secondary" id="btnAddPriceItem">فتح المادة</button>
+                </div>
               </div>
-            </div>
-            <div class="step-card">
-              <div class="step-num">3</div>
-              <div>
-                <h3>ارفع للفروع</h3>
-                <p>يصل إشعار فوراً لتطبيق الفرع</p>
+
+              <div class="price-sheet-actions">
+                <label class="sheet-assign">
+                  نقل المحدد إلى
+                  <select id="priceAssignCategory" class="field"></select>
+                </label>
+                <button type="button" class="btn btn-secondary" id="btnAssignCategory">تعيين القسم</button>
+                <span class="sheet-spacer"></span>
+                <span class="sheet-dirty hidden" id="priceSheetDirty">0 تعديلات غير محفوظة</span>
+                <button type="button" class="btn btn-primary" id="btnSavePriceSheet" disabled>حفظ التعديلات</button>
+                <button type="button" class="btn btn-secondary" id="btnPublishPrices" disabled>رفع المحدد للفروع</button>
+                <button type="button" class="btn btn-ghost" id="btnPublishPriced">رفع المسعّر</button>
               </div>
+              <p class="hint" id="priceSelectionHint">اختر قسماً أو ابحث، ثم عدّل السعر مباشرة في الجدول. Enter ينتقل للصف التالي.</p>
+              <div class="table-wrap sheet-wrap" id="priceSelectionWrap">
+                <table class="sheet-table" id="priceSheetTable">
+                  <thead>
+                    <tr>
+                      <th class="sheet-check"><input type="checkbox" id="priceSheetSelectAll" title="تحديد الكل"></th>
+                      <th>الباركود</th>
+                      <th>الاسم</th>
+                      <th>القسم</th>
+                      <th>سعر البيع</th>
+                      <th>العملة</th>
+                      <th>الحالة</th>
+                    </tr>
+                  </thead>
+                  <tbody id="priceSelectionBody"></tbody>
+                </table>
+              </div>
+              <p class="sheet-meta" id="priceSheetMeta"></p>
+              <p id="publishResult" class="result"></p>
             </div>
           </div>
-
-          <div class="action-card compact-card">
-            <div class="price-add-bar">
-              <input type="text" id="priceBarcode" class="field" placeholder="امسح أو اكتب الباركود ثم Enter..." dir="ltr" autocomplete="off">
-              <button type="button" class="btn-fetch-barcode" id="btnRefreshPriceBarcode" title="تحديث التفاصيل من الإدارة">↻</button>
-              <button type="button" class="btn btn-secondary" id="btnAddPriceItem">إضافة للقائمة</button>
-            </div>
-            <p class="hint" id="priceSelectionHint">لم تُضف منتجات بعد</p>
-            <div class="table-wrap price-selection-wrap hidden" id="priceSelectionWrap">
-              <table>
-                <thead>
-                  <tr><th>الباركود</th><th>الاسم</th><th>التكلفة</th><th>سعر البيع</th><th>العملة</th><th>المخزون</th><th></th></tr>
-                </thead>
-                <tbody id="priceSelectionBody"></tbody>
-              </table>
-            </div>
-            <div class="price-actions">
-              <button type="button" class="btn btn-ghost" id="btnClearPriceSelection">تفريغ القائمة</button>
-              <button type="button" class="btn btn-primary btn-lg" id="btnPublishPrices" disabled>رفع المحدد للفروع</button>
-            </div>
-            <p id="publishResult" class="result"></p>
-          </div>
-
-          <div class="section-divider">
-            <h2>استعراض المنتجات</h2>
-            <p>اختر من الأقسام أو ابحث ثم اضغط إضافة</p>
-          </div>
-
-          <div class="section-panel-toolbar">
-            <div class="search-box">
-              <span class="search-ico" aria-hidden="true">⌕</span>
-              <input type="search" id="priceBrowseSearch" placeholder="بحث في المنتجات...">
-            </div>
-          </div>
-
-          <div class="category-bar-sticky">
-            <div class="category-bar-label">الأقسام</div>
-            <div class="category-bar-scroll">
-              <div class="category-bar" id="priceCategoryBar"></div>
-            </div>
-          </div>
-
-          <div id="priceBrowseGrid" class="prod-grid price-browse-grid"></div>
 
           <div class="section-divider">
             <h2>سجل حزم الأسعار</h2>
@@ -720,7 +721,8 @@
         </div>
         <div>
           <label>القسم</label>
-          <input type="text" id="prodFormCategory" class="field">
+          <input type="text" id="prodFormCategory" class="field" list="categoryOptions" placeholder="مثال: مواد غذائية">
+          <datalist id="categoryOptions"></datalist>
         </div>
         <div>
           <label>الوحدة</label>
@@ -783,7 +785,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=34"></script>
-  <script src="premium.js?v=16"></script>
+  <script src="app.js?v=36"></script>
+  <script src="premium.js?v=17"></script>
 </body>
 </html>

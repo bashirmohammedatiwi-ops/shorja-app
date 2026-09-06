@@ -47,6 +47,7 @@ function applyEdariEnv() {
     EDARI_SHORJA_PARENT_NUM: process.env.EDARI_SHORJA_PARENT_NUM || '12111',
     EDARI_SHORJA_CHILD_SUFFIX_FLOOR: process.env.EDARI_SHORJA_CHILD_SUFFIX_FLOOR || '9001',
     EDARI_SHORJA_BILL_NUM_START: process.env.EDARI_SHORJA_BILL_NUM_START || '9000000',
+    EDARI_SHORJA_STORE_NAME: process.env.EDARI_SHORJA_STORE_NAME || 'محل الشورجه',
     ...connectionToEnv()
   });
 }
@@ -109,6 +110,30 @@ ipcMain.handle('edari-product-import-batch', async (_e, options) => {
     return await fetchEdariProductImportBatch(options || {});
   } catch (err) {
     return { ok: false, error: err.message || 'فشل جلب الدفعة من Edari' };
+  }
+});
+
+ipcMain.handle('edari-warehouse-import-status', async () => {
+  try {
+    applyEdariEnv();
+    const workerPath = path.join(__dirname, 'edari-product-import-worker.js');
+    delete require.cache[require.resolve(workerPath)];
+    const { getEdariWarehouseImportStatus } = require(workerPath);
+    return await getEdariWarehouseImportStatus();
+  } catch (err) {
+    return { ok: false, error: err.message || 'فشل الاتصال بـ Edari' };
+  }
+});
+
+ipcMain.handle('edari-warehouse-import-batch', async (_e, options) => {
+  try {
+    applyEdariEnv();
+    const workerPath = path.join(__dirname, 'edari-product-import-worker.js');
+    delete require.cache[require.resolve(workerPath)];
+    const { fetchEdariWarehouseImportBatch } = require(workerPath);
+    return await fetchEdariWarehouseImportBatch(options || {});
+  } catch (err) {
+    return { ok: false, error: err.message || 'فشل جلب مستودع الشورجة' };
   }
 });
 

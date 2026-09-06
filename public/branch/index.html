@@ -497,10 +497,14 @@
           <div class="panel-card settings-panel">
             <h3>سلوك نقطة البيع</h3>
             <div class="form-stack">
-              <label>حد تنبيه المخزون المنخفض</label>
-              <input type="number" id="setLowStock" class="field" min="0" value="5">
-              <label class="check-label wide"><input type="checkbox" id="setBlockZero"> منع بيع المنتجات النافدة</label>
-              <label class="check-label wide"><input type="checkbox" id="setBlockOver" checked> منع تجاوز الكمية المتاحة</label>
+              <label class="check-label wide"><input type="checkbox" id="setTrackStock"> تتبع المخزون عند البيع</label>
+              <p class="settings-hint">عند الإيقاف: البيع بأي كمية دون الرجوع لرصيد المخزون (الوضع الحالي).</p>
+              <div id="stockGuardFields">
+                <label>حد تنبيه المخزون المنخفض</label>
+                <input type="number" id="setLowStock" class="field" min="0" value="5">
+                <label class="check-label wide"><input type="checkbox" id="setBlockZero"> منع بيع المنتجات النافدة</label>
+                <label class="check-label wide"><input type="checkbox" id="setBlockOver"> منع تجاوز الكمية المتاحة</label>
+              </div>
               <label class="check-label wide"><input type="checkbox" id="setAllowPrice" checked> السماح بتعديل السعر يدوياً</label>
               <label class="check-label wide"><input type="checkbox" id="setScanSound" checked> صوت تأكيد المسح</label>
               <label class="check-label wide"><input type="checkbox" id="setThermal"> طباعة حرارية 80mm <span class="settings-hint-inline">(بدون تفعيل = فاتورة A4)</span></label>
@@ -655,6 +659,6 @@
   <div id="toast" class="toast hidden"></div>
   <div id="scanFlash" class="scan-flash hidden"><span>✓</span></div>
 
-  <script src="app.js?v=48"></script>
+  <script src="app.js?v=50"></script>
 </body>
 </html>

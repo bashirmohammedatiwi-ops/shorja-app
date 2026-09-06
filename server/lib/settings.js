@@ -3,6 +3,7 @@ const db = require('../db');
 const { STORE_NAME } = require('./config');
 
 const DEFAULTS = {
+  trackStock: false,
   lowStockThreshold: 5,
   blockZeroStock: false,
   blockOverStock: true,
@@ -11,6 +12,10 @@ const DEFAULTS = {
   thermalPrint: false,
   scanSound: true
 };
+
+function isStockTracked(settings) {
+  return (settings || DEFAULTS).trackStock === true;
+}
 
 function key(branchId) {
   return `branch_settings_${branchId}`;
@@ -30,6 +35,7 @@ function getBranchSettings(branchId) {
 function saveBranchSettings(branchId, patch = {}) {
   const current = getBranchSettings(branchId);
   const next = { ...current, ...patch };
+  if (patch.trackStock != null) next.trackStock = !!patch.trackStock;
   db.prepare(`
     INSERT INTO sync_meta (key, value) VALUES (?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
@@ -37,4 +43,4 @@ function saveBranchSettings(branchId, patch = {}) {
   return next;
 }
 
-module.exports = { DEFAULTS, getBranchSettings, saveBranchSettings };
+module.exports = { DEFAULTS, getBranchSettings, saveBranchSettings, isStockTracked };

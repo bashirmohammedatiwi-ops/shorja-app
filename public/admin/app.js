@@ -12,6 +12,11 @@ let categoryCatalog = [];
 let prodActiveCategory = '';
 let prodStockFilter = '';
 let priceBrowseActiveCategory = '';
+let priceSheetRows = [];
+let priceSheetDirty = new Map();
+let priceSheetSelected = new Set();
+let priceSheetFilter = '';
+let extraCategories = new Set();
 let viewingProduct = null;
 
 const CATEGORY_ICONS = {
@@ -29,7 +34,7 @@ const PAGE_TITLES = {
   warehousePrep: ['تجهيز الشورجة', 'فواتير فروع الشورجة الجاهزة للترحيل بعد التجهيز'],
   delegates: ['المندوبين', 'طلبات المندوبين الجاهزة للترحيل — منفصلة عن الشورجة'],
   products: ['المنتجات', 'استعراض وإدارة مخزون المنتجات'],
-  prices: ['إدارة الأسعار', 'حدد المنتجات بالباركود ثم ارفعها للفروع'],
+  prices: ['أسعار المواد', 'جدول أسعار مثل إكسل مع أقسام للمنتجات'],
   accounts: ['حسابات العملاء', 'الديون وحدود الائتمان'],
   payments: ['التسديدات', 'تسجيل دفعات العملاء'],
   journal: ['سجل القيود', 'الحركات والتسويات اليدوية'],
@@ -206,11 +211,14 @@ document.getElementById('btnLogout').addEventListener('click', () => {
 });
 
 document.querySelectorAll('.nav').forEach((btn) => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     const view = btn.dataset.view;
     if (window.viewAllowed && !window.viewAllowed(view)) {
       toast('هذا القسم غير متاح في التطبيق الحالي');
       return;
+    }
+    if (view !== 'prices' && priceSheetDirty.size) {
+      if (!confirm(`لديك ${priceSheetDirty.size} تعديل سعر غير محفوظ. مغادرة الصفحة بدون حفظ؟`)) return;
     }
     document.querySelectorAll('.nav').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
@@ -744,10 +752,38 @@ function buildCategoryCatalog(products) {
 
 async function loadCategoryCatalog() {
   try {
-    const data = await api('/admin/products?limit=5000');
-    categoryCatalog = buildCategoryCatalog(data.products || []);
+    const data = await api('/admin/products/categories');
+    const stats = data.categories || [];
+    categoryCatalog = stats.map((c) => ({
+      name: c.name || 'بدون قسم',
+      count: Number(c.count || 0),
+      pricedCount: Number(c.pricedCount || 0),
+      key: c.name ? c.name : '__none__'
+    }));
   } catch {
-    categoryCatalog = buildCategoryCatalog(allProductsCache);
+    categoryCatalog = buildCategoryCatalog(allProductsCache).map((c) => ({
+      ...c,
+      key: c.name === 'بدون قسم' ? '__none__' : c.name,
+      pricedCount: 0
+    }));
+  }
+  fillCategoryOptions();
+}
+
+function fillCategoryOptions() {
+  const names = [
+    ...extraCategories,
+    ...categoryCatalog.map((c) => c.name).filter((n) => n && n !== 'بدون قسم')
+  ];
+  const unique = [...new Set(names)].sort((a, b) => a.localeCompare(b, 'ar'));
+  const list = document.getElementById('categoryOptions');
+  if (list) list.innerHTML = unique.map((n) => `<option value="${esc(n)}"></option>`).join('');
+  const assign = document.getElementById('priceAssignCategory');
+  if (assign) {
+    const current = assign.value;
+    assign.innerHTML = `<option value="">— اختر قسماً —</option>`
+      + unique.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    if (current && unique.includes(current)) assign.value = current;
   }
 }
 
@@ -830,14 +866,11 @@ function renderProductGrid(products, containerId, opts = {}) {
       e.stopPropagation();
       const p = products.find((x) => x.barcode === btn.dataset.barcode);
       if (!p) return;
-      if (priceSelection.has(p.barcode)) {
-        toast('المنتج مضاف مسبقاً');
-        return;
-      }
-      priceSelection.set(p.barcode, p);
-      renderPriceSelection();
-      renderPriceBrowse();
-      toast(`تمت الإضافة: ${p.name}`);
+      document.querySelector('.nav[data-view="prices"]')?.click();
+      setTimeout(() => {
+        document.getElementById('priceBrowseSearch').value = p.barcode;
+        loadPriceSheet().then(() => focusPriceCell(p.barcode));
+      }, 50);
     });
   });
 
@@ -905,16 +938,12 @@ function renderProductTable(products) {
   });
 }
 
-async function fetchProductsList({ q = '', category = '', limit = 500, stock = '' } = {}) {
+async function fetchProductsList({ q = '', category = '', limit = 500, stock = '', priced = '' } = {}) {
   const params = new URLSearchParams({ q, limit: String(limit) });
-  if (category && category !== '__none__') params.set('category', category);
+  if (category) params.set('category', category);
   if (stock) params.set('stock', stock);
-  const data = await api(`/admin/products?${params}`);
-  if (category === '__none__') {
-    const products = (data.products || []).filter((p) => !p.category);
-    return { products, total: products.length };
-  }
-  return data;
+  if (priced) params.set('priced', priced);
+  return api(`/admin/products?${params}`);
 }
 
 async function loadProducts() {
@@ -952,31 +981,254 @@ async function loadProducts() {
   setProductViewMode(productViewMode);
 }
 
-async function loadPriceBrowse() {
+async function loadPriceSheet() {
   const q = document.getElementById('priceBrowseSearch')?.value || '';
-  const data = await fetchProductsList({ q, category: priceBrowseActiveCategory, limit: 500 });
-  const products = data.products || [];
-  if (!q) await loadCategoryCatalog();
-  renderCategoryBar('priceCategoryBar', priceBrowseActiveCategory, (cat) => {
-    priceBrowseActiveCategory = cat;
-    loadPriceBrowse();
+  const data = await fetchProductsList({
+    q,
+    category: priceBrowseActiveCategory,
+    priced: priceSheetFilter,
+    limit: 2000
   });
-  renderPriceBrowse(products);
+  priceSheetRows = data.products || [];
+  await loadCategoryCatalog();
+  renderPriceCategoryList();
+  renderPriceSheet();
 }
 
-function renderPriceBrowse(products = null) {
-  if (!products) {
-    const q = document.getElementById('priceBrowseSearch')?.value || '';
-    products = allProductsCache.length && !q && !priceBrowseActiveCategory
-      ? allProductsCache
-      : [];
-    if (!products.length) return loadPriceBrowse();
+function renderPriceCategoryList() {
+  const el = document.getElementById('priceCategoryList');
+  if (!el) return;
+  const total = categoryCatalog.reduce((s, c) => s + c.count, 0);
+  const extra = [...extraCategories]
+    .filter((name) => !categoryCatalog.some((c) => c.name === name))
+    .map((name) => ({ name, count: 0, pricedCount: 0, key: name }));
+  const items = [
+    { name: 'الكل', count: total, pricedCount: 0, key: '' },
+    ...categoryCatalog,
+    ...extra
+  ];
+  el.innerHTML = items.map((c) => {
+    const active = (priceBrowseActiveCategory || '') === (c.key || '');
+    const priced = c.key && c.pricedCount != null
+      ? `<span class="cat-priced">${c.pricedCount} مسعّر</span>`
+      : '';
+    return `<button type="button" class="price-cat-item${active ? ' active' : ''}" data-category="${esc(c.key)}">
+      <span>${esc(c.name)}</span>
+      ${priced}
+      <span class="cat-count">${c.count}</span>
+    </button>`;
+  }).join('');
+  el.querySelectorAll('.price-cat-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (priceSheetDirty.size && !confirm('تغيير القسم يُخفي الجدول الحالي. المتابعة بدون حفظ؟')) return;
+      priceBrowseActiveCategory = btn.dataset.category || '';
+      priceSheetSelected.clear();
+      loadPriceSheet();
+    });
+  });
+}
+
+function mergedSheetProduct(p) {
+  const patch = priceSheetDirty.get(p.barcode) || {};
+  const price = patch.price != null ? Number(patch.price) : Number(p.price || 0);
+  const category = patch.category != null ? patch.category : (p.category || '');
+  const name = patch.name != null ? patch.name : p.name;
+  const priceCurrency = patch.priceCurrency || p.priceCurrency || 'iqd';
+  return {
+    ...p,
+    name,
+    category,
+    price,
+    priceCurrency,
+    priced: price > 0
+  };
+}
+
+function renderPriceSheet() {
+  const tbody = document.getElementById('priceSelectionBody');
+  const hint = document.getElementById('priceSelectionHint');
+  const meta = document.getElementById('priceSheetMeta');
+  const publishBtn = document.getElementById('btnPublishPrices');
+  if (!tbody) return;
+  const rows = priceSheetRows.map(mergedSheetProduct);
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">لا توجد منتجات مطابقة — غيّر القسم أو البحث</td></tr>';
+  } else {
+    tbody.innerHTML = rows.map((p) => {
+      const dirty = priceSheetDirty.has(p.barcode);
+      const checked = priceSheetSelected.has(p.barcode);
+      const cats = [
+        ...extraCategories,
+        ...categoryCatalog.map((c) => c.name).filter((n) => n && n !== 'بدون قسم')
+      ];
+      const uniqueCats = [...new Set(cats)].sort((a, b) => a.localeCompare(b, 'ar'));
+      const catOpts = `<option value="">بدون قسم</option>`
+        + uniqueCats.map((n) => `<option value="${esc(n)}"${p.category === n ? ' selected' : ''}>${esc(n)}</option>`).join('');
+      return `<tr class="${dirty ? 'dirty' : ''}${p.priced ? '' : ' unpriced'}" data-barcode="${esc(p.barcode)}">
+        <td class="sheet-check"><input type="checkbox" class="sheet-select" ${checked ? 'checked' : ''}></td>
+        <td><input class="sheet-cell" data-field="barcode" value="${esc(p.barcode)}" dir="ltr" readonly></td>
+        <td><input class="sheet-cell" data-field="name" value="${esc(p.name)}"></td>
+        <td><select class="sheet-cell" data-field="category">${catOpts}</select></td>
+        <td><input class="sheet-cell" data-field="price" type="number" min="0" step="any" dir="ltr" value="${p.priced || dirty ? p.price || '' : ''}" placeholder="—"></td>
+        <td>
+          <select class="sheet-cell" data-field="priceCurrency">
+            <option value="iqd"${p.priceCurrency === 'usd' ? '' : ' selected'}>دينار</option>
+            <option value="usd"${p.priceCurrency === 'usd' ? ' selected' : ''}>دولار</option>
+          </select>
+        </td>
+        <td><span class="sheet-status ${p.priced ? 'ok' : 'miss'}">${p.priced ? 'مسعّر' : 'بدون سعر'}</span></td>
+      </tr>`;
+    }).join('');
   }
-  renderProductGrid(products, 'priceBrowseGrid', { showAdd: true });
+  if (hint) hint.classList.toggle('hidden', rows.length > 0);
+  if (meta) {
+    const priced = rows.filter((p) => p.priced).length;
+    meta.textContent = `معروض ${rows.length} منتج · مسعّر ${priced} · بدون سعر ${rows.length - priced}`;
+  }
+  if (publishBtn) publishBtn.disabled = !priceSheetSelected.size;
+  updatePriceSheetDirtyUi();
+  const selectAll = document.getElementById('priceSheetSelectAll');
+  if (selectAll) {
+    selectAll.checked = rows.length > 0 && rows.every((p) => priceSheetSelected.has(p.barcode));
+  }
+}
+
+function updatePriceSheetDirtyUi() {
+  const n = priceSheetDirty.size;
+  const badge = document.getElementById('priceSheetDirty');
+  const saveBtn = document.getElementById('btnSavePriceSheet');
+  if (badge) {
+    badge.textContent = `${n} تعديلات غير محفوظة`;
+    badge.classList.toggle('hidden', n === 0);
+  }
+  if (saveBtn) saveBtn.disabled = n === 0 || priceSheetSaving;
+}
+
+function markPriceSheetDirty(barcode, field, value) {
+  const row = priceSheetRows.find((p) => p.barcode === barcode);
+  if (!row) return;
+  const patch = { ...(priceSheetDirty.get(barcode) || {}) };
+  patch[field] = value;
+  const origPrice = Number(row.price || 0);
+  const origName = row.name || '';
+  const origCat = row.category || '';
+  const origCur = row.priceCurrency || 'iqd';
+  const nextPrice = patch.price != null ? Number(patch.price || 0) : origPrice;
+  const nextName = patch.name != null ? patch.name : origName;
+  const nextCat = patch.category != null ? patch.category : origCat;
+  const nextCur = patch.priceCurrency || origCur;
+  const unchanged = nextName === origName
+    && nextCat === origCat
+    && nextCur === origCur
+    && nextPrice === origPrice;
+  if (unchanged) priceSheetDirty.delete(barcode);
+  else priceSheetDirty.set(barcode, patch);
+  const tr = document.querySelector(`#priceSelectionBody tr[data-barcode="${CSS.escape(barcode)}"]`);
+  tr?.classList.toggle('dirty', priceSheetDirty.has(barcode));
+  const status = tr?.querySelector('.sheet-status');
+  if (status) {
+    const priced = nextPrice > 0;
+    status.textContent = priced ? 'مسعّر' : 'بدون سعر';
+    status.classList.toggle('ok', priced);
+    status.classList.toggle('miss', !priced);
+  }
+  updatePriceSheetDirtyUi();
+}
+
+function selectedSheetBarcodes() {
+  return [...priceSheetSelected];
+}
+
+async function savePriceSheet() {
+  const items = [...priceSheetDirty.entries()].map(([barcode, patch]) => ({ barcode, ...patch }));
+  if (!items.length) return true;
+  priceSheetSaving = true;
+  updatePriceSheetDirtyUi();
+  try {
+    await api('/admin/products/bulk-patch', {
+      method: 'POST',
+      body: JSON.stringify({ items })
+    });
+    priceSheetDirty.clear();
+    toast(`تم حفظ ${items.length} منتج`);
+    await loadPriceSheet();
+    return true;
+  } catch (err) {
+    toast(err.message || 'فشل حفظ الأسعار');
+    return false;
+  } finally {
+    priceSheetSaving = false;
+    updatePriceSheetDirtyUi();
+  }
+}
+
+function focusPriceCell(barcode) {
+  const tr = document.querySelector(`#priceSelectionBody tr[data-barcode="${CSS.escape(barcode)}"]`);
+  if (!tr) return false;
+  tr.scrollIntoView({ block: 'center' });
+  document.querySelectorAll('#priceSelectionBody tr').forEach((r) => r.classList.remove('sheet-focus'));
+  tr.classList.add('sheet-focus');
+  const input = tr.querySelector('input[data-field="price"]');
+  input?.focus();
+  input?.select();
+  return true;
+}
+
+async function loadPrices() {
+  try {
+    const fx = await api('/admin/app-settings');
+    const fxInput = document.getElementById('usdToIqdInput');
+    if (fxInput && fx.settings && !fxInput.matches(':focus')) {
+      fxInput.value = fx.settings.usdToIqd || '';
+    }
+  } catch { /* ignore */ }
+  const data = await api('/admin/prices/packages');
+  document.getElementById('packagesList').innerHTML = (data.packages || []).length
+    ? `<div class="packages-list">${(data.packages || []).map((p) => `
+        <div class="package-row">
+          <strong>v${p.version}</strong>
+          <span>${p.itemCount} منتج</span>
+          <span class="muted">${esc(p.createdAt || '')}</span>
+          <span class="muted">${esc(p.branchName || 'الإدارة')}</span>
+        </div>`).join('')}</div>`
+    : '<p class="empty-cell">لا توجد حزم أسعار بعد — احفظ الأسعار ثم ارفعها للفروع</p>';
+  await loadPriceSheet();
+  document.getElementById('priceBarcode')?.focus();
+}
+
+async function addPriceItem() {
+  const input = document.getElementById('priceBarcode');
+  const code = input?.value.trim();
+  if (!code) { toast('أدخل الباركود'); return; }
+  if (focusPriceCell(code)) {
+    input.value = '';
+    return;
+  }
+  try {
+    let product = null;
+    try {
+      const local = await api(`/admin/products/barcode/${encodeURIComponent(code)}`);
+      product = local.product;
+    } catch { /* fetch from edari */ }
+    if (!product) {
+      product = await saveProductFromEdari(code);
+    }
+    priceBrowseActiveCategory = product.category || '__none__';
+    document.getElementById('priceBrowseSearch').value = product.barcode;
+    await loadPriceSheet();
+    if (!focusPriceCell(product.barcode)) {
+      toast('تم جلب المادة — ابحث عنها في الجدول');
+    }
+    input.value = '';
+    input.focus();
+  } catch (err) {
+    toast(err.message || 'المادة غير موجودة');
+  }
 }
 
 function openProductModal(product = null) {
   editingProduct = product;
+  fillCategoryOptions();
   document.getElementById('productModalTitle').textContent = product ? 'تعديل منتج' : 'منتج جديد';
   document.getElementById('prodBarcode').value = product?.barcode || '';
   document.getElementById('prodBarcode').readOnly = !!product;
@@ -996,17 +1248,15 @@ async function deleteProduct(product) {
   if (!confirm(`حذف المنتج «${product.name}»؟\nسيُخفى من القوائم ويبقى في الفواتير السابقة.`)) return;
   try {
     await api(`/admin/products/${product.id}`, { method: 'DELETE' });
-    if (priceSelection.has(product.barcode)) {
-      priceSelection.delete(product.barcode);
-      renderPriceSelection();
-    }
+    if (priceSheetSelected.has(product.barcode)) priceSheetSelected.delete(product.barcode);
+    priceSheetDirty.delete(product.barcode);
     document.getElementById('productModal')?.close();
     document.getElementById('productViewModal')?.close();
     toast('تم حذف المنتج');
     loadProducts();
     loadDashboard();
     if (!document.getElementById('viewPrices')?.classList.contains('hidden')) {
-      loadPriceBrowse();
+      loadPriceSheet();
     }
   } catch (err) {
     toast(err.message || 'فشل حذف المنتج');
@@ -1093,105 +1343,153 @@ async function refreshProductFormFromAdmin() {
   }
 }
 
-async function importAllProductsFromEdari() {
-  const buttons = document.querySelectorAll('[data-import-edari-all]');
-  const progressEls = document.querySelectorAll('#edariImportProgress, #edariImportProgressPrices');
+function warehouseImportButtons() {
+  return document.querySelectorAll('[data-import-edari-warehouse], [data-refresh-edari-warehouse]');
+}
+
+function warehouseImportProgressEls() {
+  return document.querySelectorAll('#edariImportProgress, #edariImportProgressPrices');
+}
+
+function setWarehouseImportProgress(text) {
+  warehouseImportProgressEls().forEach((el) => {
+    if (text) {
+      el.classList.remove('hidden');
+      el.textContent = text;
+    } else {
+      el.classList.add('hidden');
+      el.textContent = '';
+    }
+  });
+}
+
+async function importWarehouseProductsFromEdari({ replace = false } = {}) {
+  const buttons = warehouseImportButtons();
   if ([...buttons].some((b) => b.disabled)) return;
 
-  const useDesktop = !!window.edariDesktop?.fetchEdariProductImportBatch;
+  const useDesktop = !!window.edariDesktop?.fetchEdariWarehouseImportBatch;
   if (!useDesktop) {
-    toast('رفع كل المنتجات يتطلب تطبيق الإدارة v1.0.24 على Windows (ليس المتصفح)', 'err');
+    toast('جلب مستودع الشورجة يتطلب تطبيق الإدارة على Windows (ليس المتصفح)', 'err');
     return;
   }
 
   let total = 0;
   let local = 0;
+  let warehouse = null;
+  let storeName = 'محل الشورجه';
   try {
     const [st, dash] = await Promise.all([
-      window.edariDesktop.getEdariProductImportStatus(),
+      window.edariDesktop.getEdariWarehouseImportStatus(),
       api('/admin/dashboard').catch(() => ({ products: { total: 0 } }))
     ]);
     if (!st?.ok) throw new Error(st?.error || 'تعذر الاتصال بـ Edari');
     total = Number(st.totalInEdari || 0);
     local = Number(dash.products?.total || 0);
+    warehouse = st.warehouse || null;
+    storeName = warehouse?.name || storeName;
   } catch (err) {
     toast(err.message || 'تعذر الاتصال بالإداري — تأكد من EdariNX', 'err');
     return;
   }
 
-  const confirmed = confirm(
-    `جلب ${total.toLocaleString('ar-IQ')} منتج من الإداري؟\n\n` +
-    '• يُجلب الاسم والباركود والمخزون فقط\n' +
-    '• سعر البيع يبقى يدوياً من لوحة التحكم (دينار أو دولار)\n' +
-    '• المنتجات بلا سعر لا تظهر في نقطة البيع\n' +
-    `• المنتجات الحالية في الشورجة: ${local.toLocaleString('ar-IQ')}\n\n` +
-    'اضغط OK للمتابعة.'
-  );
+  if (!total) {
+    toast(`لا توجد مواد في مستودع «${storeName}»`, 'err');
+    return;
+  }
+
+  const confirmed = replace
+    ? confirm(
+      `جلب ${total.toLocaleString('ar-IQ')} منتج من مستودع «${storeName}»؟\n\n` +
+      `• سيُحذف كل المنتجات الحالية في لوحة التحكم (${local.toLocaleString('ar-IQ')})\n` +
+      '• يُجلب الاسم والباركود والمخزون فقط — بدون إعداد أو أسعار\n' +
+      '• سعر البيع تضيفه يدوياً هنا بعد الجلب\n' +
+      '• المنتجات بلا سعر لا تظهر في نقطة البيع\n\n' +
+      'اضغط OK للمتابعة.'
+    )
+    : confirm(
+      `تحديث ${total.toLocaleString('ar-IQ')} منتج من مستودع «${storeName}»؟\n\n` +
+      '• يُحدَّث الاسم والباركود والمخزون فقط\n' +
+      '• الأسعار اليدوية الحالية تبقى كما هي\n' +
+      '• المنتجات التي لم تعد في المستودع تُحذف من اللوحة\n' +
+      '• لا يُرفع شيء إلى نقطة البيع تلقائياً\n\n' +
+      'اضغط OK للمتابعة.'
+    );
   if (!confirmed) return;
-  const pushToBranches = confirm('هل تريد إرسال الأسعار لنقاط البيع (الفروع) بعد الانتهاء؟');
 
   buttons.forEach((b) => { b.disabled = true; });
-  if (progressEls.length) {
-    progressEls.forEach((el) => {
-      el.classList.remove('hidden');
-      el.textContent = 'جاري رفع كل المنتجات من الإداري...';
-    });
-  }
+  setWarehouseImportProgress(replace ? 'جاري حذف المنتجات القديمة...' : 'جاري التحديث من المستودع...');
 
   let afterSeq = 0;
   let imported = 0;
   let skipped = 0;
   let hasMore = true;
+  const keepBarcodes = [];
 
   try {
+    if (replace) {
+      await api('/admin/products/wipe-catalog', { method: 'POST', body: JSON.stringify({}) });
+    }
+
     while (hasMore) {
-      const batch = await window.edariDesktop.fetchEdariProductImportBatch({ afterSeq, limit: 500 });
-      if (!batch?.ok) throw new Error(batch?.error || 'فشل جلب دفعة من Edari');
+      const batch = await window.edariDesktop.fetchEdariWarehouseImportBatch({
+        afterSeq,
+        limit: 500,
+        warehouse
+      });
+      if (!batch?.ok) throw new Error(batch?.error || 'فشل جلب دفعة من مستودع الشورجة');
       if (batch.products?.length) {
         await api('/admin/products/bulk', {
           method: 'POST',
-          body: JSON.stringify({ items: batch.products })
+          body: JSON.stringify({ items: batch.products, fromEdari: true })
         });
+        for (const p of batch.products) {
+          if (p?.barcode) keepBarcodes.push(p.barcode);
+          if (p?.sku && p.sku !== p.barcode) keepBarcodes.push(p.sku);
+        }
       }
       imported += Number(batch.imported || 0);
       skipped += Number(batch.skipped || 0);
       afterSeq = Number(batch.lastSeq || afterSeq);
       hasMore = !!batch.hasMore;
-      const pct = total ? Math.min(100, Math.round((afterSeq / total) * 100)) : 0;
-      if (progressEls.length) {
-        const msg = `رفع المنتجات: ${imported.toLocaleString('ar-IQ')} · ${skipped} متخطى · ~${pct}%`;
-        progressEls.forEach((el) => { el.textContent = msg; });
+      const pct = total ? Math.min(100, Math.round((imported / total) * 100)) : 0;
+      setWarehouseImportProgress(
+        `${replace ? 'جلب' : 'تحديث'} مستودع الشورجة: ${imported.toLocaleString('ar-IQ')} · ${skipped} متخطى · ~${pct}%`
+      );
+    }
+
+    if (!replace) {
+      const missing = await api('/admin/products/deactivate-missing', {
+        method: 'POST',
+        body: JSON.stringify({ barcodes: keepBarcodes })
+      });
+      if (Number(missing.removed || 0) > 0) {
+        setWarehouseImportProgress(`تم إخفاء ${Number(missing.removed).toLocaleString('ar-IQ')} منتج لم يعد في المستودع`);
       }
     }
 
-    let publishMsg = '';
-    if (pushToBranches) {
-      const pub = await api('/admin/prices/publish', {
-        method: 'POST',
-        body: JSON.stringify({
-          all: true,
-          note: 'جلب منتجات من الإداري — بدون أسعار تلقائية'
-        })
-      });
-      publishMsg = ` · حزمة v${pub.version}`;
-    }
-
-    toast(`تم رفع ${imported.toLocaleString('ar-IQ')} منتج من الإداري${publishMsg}`);
+    toast(
+      replace
+        ? `تم جلب ${imported.toLocaleString('ar-IQ')} منتج من مستودع «${storeName}» — أضف الأسعار يدوياً`
+        : `تم تحديث ${imported.toLocaleString('ar-IQ')} منتج من مستودع «${storeName}» دون تغيير الأسعار`
+    );
     loadProducts();
     loadDashboard();
     if (!document.getElementById('viewPrices')?.classList.contains('hidden')) {
-      loadPriceBrowse();
+      loadPriceSheet();
     }
   } catch (err) {
-    toast(err.message || 'فشل رفع المنتجات');
+    toast(err.message || 'فشل جلب مستودع الشورجة');
   } finally {
     buttons.forEach((b) => { b.disabled = false; });
-    if (progressEls.length) progressEls.forEach((el) => el.classList.add('hidden'));
+    setWarehouseImportProgress('');
   }
 }
 
-document.querySelectorAll('[data-import-edari-all]').forEach((btn) => {
-  btn.addEventListener('click', importAllProductsFromEdari);
+document.querySelectorAll('[data-import-edari-warehouse]').forEach((btn) => {
+  btn.addEventListener('click', () => importWarehouseProductsFromEdari({ replace: true }));
+});
+document.querySelectorAll('[data-refresh-edari-warehouse]').forEach((btn) => {
+  btn.addEventListener('click', () => importWarehouseProductsFromEdari({ replace: false }));
 });
 document.getElementById('btnNewProduct')?.addEventListener('click', () => openProductModal());
 document.getElementById('btnProdCancel')?.addEventListener('click', () => {
@@ -1262,7 +1560,13 @@ document.getElementById('btnDeleteFromView')?.addEventListener('click', () => {
 document.getElementById('btnDeleteProduct')?.addEventListener('click', () => {
   if (editingProduct) deleteProduct(editingProduct);
 });
-document.getElementById('priceBrowseSearch')?.addEventListener('input', debounce(loadPriceBrowse, 250));
+document.getElementById('priceBrowseSearch')?.addEventListener('input', debounce(() => {
+  if (priceSheetDirty.size) {
+    toast('احفظ التعديلات قبل البحث');
+    return;
+  }
+  loadPriceSheet();
+}, 250));
 
 document.getElementById('csvImport')?.addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
@@ -1277,187 +1581,196 @@ document.getElementById('csvImport')?.addEventListener('change', async (e) => {
   e.target.value = '';
 });
 
-async function loadPrices() {
-  try {
-    const fx = await api('/admin/app-settings');
-    const fxInput = document.getElementById('usdToIqdInput');
-    if (fxInput && fx.settings && !fxInput.matches(':focus')) {
-      fxInput.value = fx.settings.usdToIqd || '';
-    }
-  } catch { /* ignore */ }
-  const data = await api('/admin/prices/packages');
-  document.getElementById('packagesList').innerHTML = (data.packages||[]).length
-    ? `<div class="packages-list">${(data.packages || []).map((p) => `
-        <div class="package-row">
-          <strong>v${p.version}</strong>
-          <span>${p.itemCount} منتج</span>
-          <span class="muted">${esc(p.createdAt || '')}</span>
-          <span class="muted">${esc(p.branchName || 'الإدارة')}</span>
-        </div>`).join('')}</div>`
-    : '<p class="empty-cell">لا توجد حزم أسعار بعد — ارفع منتجات للفروع من الأعلى</p>';
-  renderPriceSelection();
-  await loadPriceBrowse();
-  document.getElementById('priceBarcode')?.focus();
+function sheetMove(el, dRow, dCol) {
+  const cell = el.closest('td');
+  const row = el.closest('tr');
+  if (!cell || !row) return;
+  const cells = [...row.querySelectorAll('.sheet-cell')];
+  const col = cells.indexOf(el);
+  const rows = [...row.parentElement.querySelectorAll('tr[data-barcode]')];
+  const r = rows.indexOf(row);
+  const nextRow = rows[r + dRow];
+  if (dRow && nextRow) {
+    const nextCells = [...nextRow.querySelectorAll('.sheet-cell')];
+    const target = nextCells[col] || nextCells[0];
+    target?.focus();
+    if (target?.select) target.select();
+    return;
+  }
+  if (dCol) {
+    const target = cells[col + dCol];
+    target?.focus();
+    if (target?.select) target.select();
+  }
 }
 
-function renderPriceSelection() {
-  const items = [...priceSelection.values()];
-  const wrap = document.getElementById('priceSelectionWrap');
-  const hint = document.getElementById('priceSelectionHint');
-  const tbody = document.getElementById('priceSelectionBody');
+document.getElementById('priceSelectionBody')?.addEventListener('input', (e) => {
+  const field = e.target.dataset?.field;
+  const tr = e.target.closest('tr[data-barcode]');
+  if (!field || !tr || field === 'barcode') return;
+  let value = e.target.value;
+  if (field === 'price') value = e.target.value === '' ? 0 : Number(e.target.value);
+  markPriceSheetDirty(tr.dataset.barcode, field, value);
+});
+
+document.getElementById('priceSelectionBody')?.addEventListener('change', (e) => {
+  const tr = e.target.closest('tr[data-barcode]');
+  if (!tr) return;
+  if (e.target.classList.contains('sheet-select')) {
+    if (e.target.checked) priceSheetSelected.add(tr.dataset.barcode);
+    else priceSheetSelected.delete(tr.dataset.barcode);
+    const publishBtn = document.getElementById('btnPublishPrices');
+    if (publishBtn) publishBtn.disabled = !priceSheetSelected.size;
+    return;
+  }
+  const field = e.target.dataset?.field;
+  if (field === 'category' || field === 'priceCurrency') {
+    markPriceSheetDirty(tr.dataset.barcode, field, e.target.value);
+  }
+});
+
+document.getElementById('priceSelectionBody')?.addEventListener('keydown', (e) => {
+  const el = e.target;
+  if (!el.classList?.contains('sheet-cell')) return;
+  if (el.tagName === 'SELECT' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) return;
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    sheetMove(el, e.shiftKey ? -1 : 1, 0);
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    sheetMove(el, 1, 0);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    sheetMove(el, -1, 0);
+  } else if (e.key === 'Tab') {
+    /* native tab is fine */
+  }
+});
+
+document.getElementById('priceSheetSelectAll')?.addEventListener('change', (e) => {
+  const on = e.target.checked;
+  priceSheetSelected.clear();
+  if (on) priceSheetRows.forEach((p) => priceSheetSelected.add(p.barcode));
+  document.querySelectorAll('#priceSelectionBody .sheet-select').forEach((cb) => { cb.checked = on; });
   const publishBtn = document.getElementById('btnPublishPrices');
-  if (!tbody) return;
+  if (publishBtn) publishBtn.disabled = !priceSheetSelected.size;
+});
 
-  if (!items.length) {
-    wrap?.classList.add('hidden');
-    if (hint) {
-      hint.classList.remove('hidden');
-      hint.textContent = 'لم تُضف منتجات بعد';
-    }
-    if (publishBtn) publishBtn.disabled = true;
-    tbody.innerHTML = '';
-    return;
-  }
-
-  wrap?.classList.remove('hidden');
-  hint?.classList.add('hidden');
-  if (publishBtn) publishBtn.disabled = false;
-
-  tbody.innerHTML = items.map((p) => `
-    <tr>
-      <td dir="ltr">${esc(p.barcode)}</td>
-      <td>${esc(p.name)}</td>
-      <td dir="ltr">${fmt(p.costPrice || 0)}</td>
-      <td dir="ltr">${productPriceLabel(p)}</td>
-      <td>${p.priced ? currencyLabel(p.priceCurrency) : '—'}</td>
-      <td dir="ltr">${fmt(p.stockQty)}</td>
-      <td>
-        <button type="button" class="btn btn-ghost btn-sm btn-refresh-price-row" data-barcode="${esc(p.barcode)}" title="تحديث من الإدارة">↻</button>
-        <button type="button" class="btn btn-ghost btn-sm btn-remove-price" data-barcode="${esc(p.barcode)}">إزالة</button>
-      </td>
-    </tr>
-  `).join('');
-
-  tbody.querySelectorAll('.btn-refresh-price-row').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      try {
-        const product = await saveProductFromEdari(btn.dataset.barcode);
-        priceSelection.set(product.barcode, product);
-        renderPriceSelection();
-        renderPriceBrowse();
-        toast(`تم تحديث من الإداري: ${product.name}`);
-      } catch (err) {
-        toast(err.message || 'فشل التحديث');
-      }
-    });
+document.getElementById('priceSheetFilters')?.addEventListener('click', (e) => {
+  const chip = e.target.closest('[data-price-filter]');
+  if (!chip) return;
+  if (priceSheetDirty.size && !confirm('تصفية الجدول تُخفي تعديلات غير محفوظة. المتابعة؟')) return;
+  priceSheetFilter = chip.dataset.priceFilter || '';
+  document.querySelectorAll('#priceSheetFilters .filter-chip').forEach((c) => {
+    c.classList.toggle('active', c === chip);
   });
+  loadPriceSheet();
+});
 
-  tbody.querySelectorAll('.btn-remove-price').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      priceSelection.delete(btn.dataset.barcode);
-      renderPriceSelection();
-      renderPriceBrowse();
+document.getElementById('btnCreateCategory')?.addEventListener('click', () => {
+  const input = document.getElementById('newCategoryName');
+  const name = input?.value.trim();
+  if (!name) { toast('أدخل اسم القسم'); return; }
+  extraCategories.add(name);
+  input.value = '';
+  fillCategoryOptions();
+  renderPriceCategoryList();
+  const assign = document.getElementById('priceAssignCategory');
+  if (assign) assign.value = name;
+  toast(`تم إنشاء القسم «${name}» — حدد منتجات ثم اضغط تعيين القسم`);
+});
+
+document.getElementById('newCategoryName')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('btnCreateCategory')?.click();
+  }
+});
+
+document.getElementById('btnAssignCategory')?.addEventListener('click', async () => {
+  const category = document.getElementById('priceAssignCategory')?.value || '';
+  const barcodes = selectedSheetBarcodes();
+  if (!barcodes.length) { toast('حدد منتجاً واحداً أو أكثر من الجدول'); return; }
+  if (!category) { toast('اختر القسم أولاً'); return; }
+  try {
+    if (priceSheetDirty.size) await savePriceSheet();
+    const data = await api('/admin/products/assign-category', {
+      method: 'POST',
+      body: JSON.stringify({ barcodes, category })
     });
-  });
-}
-
-async function addPriceItem(forceRefresh = false) {
-  const input = document.getElementById('priceBarcode');
-  const code = input?.value.trim();
-  if (!code) { toast('أدخل الباركود'); return; }
-  if (!forceRefresh && priceSelection.has(code)) {
-    toast('المنتج مضاف مسبقاً — استخدم ↻ للتحديث');
-    input.value = '';
-    input.focus();
-    return;
-  }
-  try {
-    const product = await saveProductFromEdari(code);
-    const existed = priceSelection.has(product.barcode);
-    priceSelection.set(product.barcode, product);
-    renderPriceSelection();
-    renderPriceBrowse();
-    input.value = '';
-    input.focus();
-    toast(existed
-      ? `تم تحديث من الإداري: ${product.name}`
-      : `تمت الإضافة من الإداري: ${product.name} · سعر البيع ${productPriceLabel(product)}`);
+    extraCategories.add(category);
+    priceSheetSelected.clear();
+    toast(`تم تعيين ${data.count} منتج إلى «${category}»`);
+    await loadPriceSheet();
   } catch (err) {
-    toast(err.message || 'المادة غير موجودة في الإداري (Edari)');
+    toast(err.message || 'فشل تعيين القسم');
   }
-}
+});
 
-async function refreshPriceBarcodeFromAdmin() {
-  const input = document.getElementById('priceBarcode');
-  const code = input?.value.trim();
-  if (!code) {
-    toast('أدخل الباركود أولاً');
-    input?.focus();
-    return;
+document.getElementById('btnSavePriceSheet')?.addEventListener('click', () => savePriceSheet());
+
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    if (document.getElementById('viewPrices')?.classList.contains('hidden')) return;
+    e.preventDefault();
+    savePriceSheet();
   }
-  const btn = document.getElementById('btnRefreshPriceBarcode');
-  if (btn) btn.disabled = true;
-  try {
-    const product = await fetchProductFromEdari(code);
-    if (priceSelection.has(product.barcode)) {
-      priceSelection.set(product.barcode, product);
-      renderPriceSelection();
-      renderPriceBrowse();
-      toast(`تم تحديث التفاصيل: ${product.name}`);
-    } else {
-      fillProductPreviewFromBarcode(product);
-      toast(`جاهز للإضافة: ${product.name} · سعر البيع ${productPriceLabel(product)} · مخزون ${fmt(product.stockQty)}`);
-    }
-  } catch (err) {
-    toast(err.message || 'فشل جلب المنتج');
-  } finally {
-    if (btn) btn.disabled = false;
-    input?.focus();
-  }
-}
+});
 
-function fillProductPreviewFromBarcode(product) {
-  const hint = document.getElementById('priceSelectionHint');
-  if (!hint || priceSelection.size) return;
-  hint.classList.remove('hidden');
-  hint.innerHTML = `معاينة: <strong>${esc(product.name)}</strong> · سعر البيع <span dir="ltr">${productPriceLabel(product)}</span> · مخزون <span dir="ltr">${fmt(product.stockQty)}</span>`;
-}
+window.addEventListener('beforeunload', (e) => {
+  if (!priceSheetDirty.size) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
-document.getElementById('btnAddPriceItem')?.addEventListener('click', () => addPriceItem(false));
-document.getElementById('btnRefreshPriceBarcode')?.addEventListener('click', refreshPriceBarcodeFromAdmin);
+document.getElementById('btnAddPriceItem')?.addEventListener('click', () => addPriceItem());
 document.getElementById('priceBarcode')?.addEventListener('keydown', async (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
-    const code = e.target.value.trim();
-    if (priceSelection.has(code)) await refreshPriceBarcodeFromAdmin();
-    else await addPriceItem(false);
-  }
-});
-document.getElementById('btnClearPriceSelection')?.addEventListener('click', () => {
-  if (!priceSelection.size || confirm('تفريغ قائمة المنتجات المحددة؟')) {
-    priceSelection.clear();
-    renderPriceSelection();
-    renderPriceBrowse();
-    document.getElementById('publishResult').textContent = '';
+    await addPriceItem();
   }
 });
 
-document.getElementById('btnPublishPrices').addEventListener('click', async () => {
-  const barcodes = [...priceSelection.keys()];
-  if (!barcodes.length) { toast('أضف منتجاً واحداً على الأقل'); return; }
-  if (!confirm(`رفع ${barcodes.length} منتج للفروع؟`)) return;
+document.getElementById('btnPublishPrices')?.addEventListener('click', async () => {
+  const barcodes = selectedSheetBarcodes();
+  if (!barcodes.length) { toast('حدد منتجاً واحداً على الأقل'); return; }
+  if (priceSheetDirty.size) {
+    const ok = await savePriceSheet();
+    if (!ok) return;
+  }
+  if (!confirm(`رفع المنتجات المسعّرة فقط من المحدد إلى الفروع؟`)) return;
   try {
     const data = await api('/admin/prices/publish', {
       method: 'POST',
       body: JSON.stringify({ barcodes, note: `تحديث ${barcodes.length} منتج` })
     });
-    let msg = `تم — الإصدار v${data.version} · ${data.itemCount} منتج`;
+    let msg = `تم — الإصدار v${data.version} · ${data.itemCount} منتج مسعّر`;
     if (data.missing?.length) msg += ` · لم يُعثر على: ${data.missing.join(', ')}`;
+    if (data.skippedUnpriced?.length) msg += ` · تُرك بلا سعر: ${data.skippedUnpriced.length}`;
     document.getElementById('publishResult').textContent = msg;
     toast('تم رفع المنتجات المحددة');
-    priceSelection.clear();
-    renderPriceSelection();
-    renderPriceBrowse();
+    priceSheetSelected.clear();
+    loadPrices();
+    loadDashboard();
+  } catch (err) { toast(err.message); }
+});
+
+document.getElementById('btnPublishPriced')?.addEventListener('click', async () => {
+  if (priceSheetDirty.size) {
+    const ok = await savePriceSheet();
+    if (!ok) return;
+  }
+  if (!confirm('رفع كل المنتجات المسعّرة إلى نقاط البيع؟')) return;
+  try {
+    const priced = await fetchProductsList({ priced: 'priced', limit: 500000 });
+    const barcodes = (priced.products || []).map((p) => p.barcode);
+    if (!barcodes.length) { toast('لا توجد منتجات مسعّرة'); return; }
+    const data = await api('/admin/prices/publish', {
+      method: 'POST',
+      body: JSON.stringify({ barcodes, note: `رفع ${barcodes.length} منتج مسعّر` })
+    });
+    document.getElementById('publishResult').textContent = `تم — الإصدار v${data.version} · ${data.itemCount} منتج`;
+    toast('تم رفع المنتجات المسعّرة');
     loadPrices();
     loadDashboard();
   } catch (err) { toast(err.message); }

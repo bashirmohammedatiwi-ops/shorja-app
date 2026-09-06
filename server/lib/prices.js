@@ -1,5 +1,5 @@
 const db = require('../db');
-const { bulkUpsert, upsertProduct } = require('./products');
+const { bulkUpsert, upsertProduct, isManuallyPriced } = require('./products');
 
 function getLatestVersion(branchId = null) {
   const row = branchId
@@ -9,28 +9,31 @@ function getLatestVersion(branchId = null) {
 }
 
 function publishPricePackage({ items = [], branchId = null, note = '' } = {}) {
-  if (!items.length) throw new Error('لا توجد منتجات في الحزمة');
+  const pricedItems = (items || []).filter(isManuallyPriced);
+  if (!pricedItems.length) {
+    throw new Error('لا توجد منتجات مسعّرة يدوياً للرفع إلى نقطة البيع');
+  }
   const version = getLatestVersion(branchId) + 1;
   const tx = db.transaction(() => {
     const r = db.prepare(`
       INSERT INTO price_packages (version, branch_id, item_count, note) VALUES (?, ?, ?, ?)
       RETURNING id
-    `).get(version, branchId, items.length, note || '');
+    `).get(version, branchId, pricedItems.length, note || '');
     const packageId = r.id;
     const insert = db.prepare(`
       INSERT INTO price_package_items
         (package_id, barcode, name, unit, price, cost_price, stock_qty, category, has_offer, offer_name, original_price, price_currency, priced)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    for (const item of items) {
+    for (const item of pricedItems) {
       insert.run(
         packageId, item.barcode, item.name, item.unit || 'قطعة',
         item.price || 0, item.costPrice || 0, item.stockQty || 0,
         item.category || '', item.hasOffer ? 1 : 0,
         item.offerName || null, item.originalPrice || null,
-        item.priceCurrency || 'iqd', item.priced === false || item.priced === 0 ? 0 : (Number(item.price) > 0 ? 1 : 0)
+        item.priceCurrency || 'iqd', 1
       );
-      upsertProduct(item);
+      upsertProduct({ ...item, priced: true, price: Number(item.price) });
     }
     if (branchId) {
       db.prepare('UPDATE branches SET price_version = ? WHERE id = ?').run(version, branchId);
@@ -39,7 +42,7 @@ function publishPricePackage({ items = [], branchId = null, note = '' } = {}) {
     }
     db.prepare('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)')
       .run('last_price_version', String(version));
-    return { packageId, version, itemCount: items.length };
+    return { packageId, version, itemCount: pricedItems.length, skippedUnpriced: items.length - pricedItems.length };
   });
   return tx();
 }
@@ -103,7 +106,7 @@ function listPackages(limit = 20) {
 function applyPricePackage(branchId, version) {
   const pkg = getPricePackage(version, branchId);
   if (!pkg) throw new Error('حزمة الأسعار غير موجودة');
-  const items = pkg.items.map((i) => ({
+  const items = (pkg.items || []).filter(isManuallyPriced).map((i) => ({
     barcode: i.barcode,
     name: i.name,
     unit: i.unit,

@@ -1,7 +1,7 @@
 const db = require('../db');
 const { updateBalance, getAccount } = require('./accounts');
 const { adjustStock, getByBarcode } = require('./products');
-const { getBranchSettings } = require('./settings');
+const { getBranchSettings, isStockTracked } = require('./settings');
 const { getAppSettings } = require('./app-settings');
 const { normalizeCurrency, roundMoney, formatMoney } = require('./currency');
 const { queueInvoiceEdariSync, queuePaymentEdariSync } = require('./edari-sync');
@@ -227,8 +227,9 @@ async function createInvoice(data, user) {
   }
 
   const settings = getBranchSettings(branchId);
+  const trackStock = isStockTracked(settings);
 
-  if (kind === 'sale' || kind === 'issue') {
+  if (trackStock && (kind === 'sale' || kind === 'issue')) {
     const skipBranchStock = kind === 'sale' && prepMode === 'warehouse';
     if (!skipBranchStock) {
       for (const l of normalized) {
@@ -299,11 +300,11 @@ async function createInvoice(data, user) {
         invoiceId, l.productId || null, l.barcode || '', l.name,
         l.qty, l.unitPrice, l.lineDiscount, l.lineTotal, origPrice, edited, l.giftQty || 0
       );
-      if (l.barcode && (kind === 'sale' || kind === 'issue')) {
+      if (trackStock && l.barcode && (kind === 'sale' || kind === 'issue')) {
         if (!(kind === 'sale' && prepMode === 'warehouse')) {
           adjustStock(l.barcode, -(l.qty + (l.giftQty || 0)));
         }
-      } else if (l.barcode && kind === 'return') {
+      } else if (trackStock && l.barcode && kind === 'return') {
         adjustStock(l.barcode, l.qty + (l.giftQty || 0));
       }
     }

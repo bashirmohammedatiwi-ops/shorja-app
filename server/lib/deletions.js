@@ -3,6 +3,7 @@ const { loadInvoice } = require('./invoices');
 const { getAccount, updateBalance } = require('./accounts');
 const { adjustStock } = require('./products');
 const { bumpDataRevision } = require('./data-revision');
+const { getBranchSettings, isStockTracked } = require('./settings');
 
 function purgeEdariQueue(refType, refId) {
   db.prepare('DELETE FROM edari_sync_queue WHERE ref_type = ? AND ref_id = ?').run(refType, refId);
@@ -19,8 +20,9 @@ function collectInvoiceIds(id) {
 function revertInvoiceEffects(invoice) {
   const kind = invoice.kind || 'sale';
   const skipBranchStock = kind === 'sale' && invoice.prepMode === 'warehouse';
+  const trackStock = isStockTracked(getBranchSettings(invoice.branchId));
 
-  if (!skipBranchStock) {
+  if (trackStock && !skipBranchStock) {
     for (const l of invoice.lines || []) {
       if (!l.barcode) continue;
       const pieces = Number(l.qty || 0) + Number(l.giftQty || 0);

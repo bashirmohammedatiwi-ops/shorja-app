@@ -1,5 +1,5 @@
 const API = '/api';
-const APP_VERSION = '48';
+const APP_VERSION = '50';
 const STORAGE_KEY = 'shorja_branch';
 const CACHE_KEY = 'shorja_products_cache';
 const OUTBOX_KEY = 'shorja_outbox';
@@ -12,6 +12,7 @@ const STOCK_RECENT_KEY = 'shorja_stock_recent';
 const SETTINGS_KEY = 'shorja_branch_settings';
 
 const DEFAULT_SETTINGS = {
+  trackStock: false,
   lowStockThreshold: 5,
   blockZeroStock: false,
   blockOverStock: true,
@@ -131,7 +132,11 @@ function saveLocalSettings(settings) {
 }
 
 function getSettings() {
-  return state.settings || DEFAULT_SETTINGS;
+  return { ...DEFAULT_SETTINGS, ...(state.settings || {}) };
+}
+
+function isStockTracked() {
+  return getSettings().trackStock === true;
 }
 
 async function loadSettings() {
@@ -284,7 +289,10 @@ function cachedView(key, loader, ttl = VIEW_CACHE_MS) {
 }
 
 function loadCachedProducts() {
-  try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '{}').products || []; } catch { return []; }
+  try {
+    const products = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}').products || [];
+    return products.filter(isPricedProduct);
+  } catch { return []; }
 }
 
 function bustViewCache(...keys) {
@@ -560,7 +568,7 @@ function showLastScan(product, qty = 1) {
     <div class="scan-info">
       <strong>${esc(product.name)}</strong>
       <span class="scan-barcode" dir="ltr">${esc(product.barcode)}</span>
-      <span class="scan-meta">كمية ${qty}${product.stockQty != null ? ` · مخزون ${fmt(product.stockQty)}` : ''}</span>
+      <span class="scan-meta">كمية ${qty}${isStockTracked() && product.stockQty != null ? ` · مخزون ${fmt(product.stockQty)}` : ''}</span>
     </div>
     <span class="scan-price" dir="ltr">${fmtAmt(productUnitPrice(product))}</span>
     <button type="button" class="btn btn-sm btn-secondary" id="btnLastScanAgain" title="إضافة وحدة أخرى">+1</button>`;
@@ -836,6 +844,7 @@ document.getElementById('btnReprintLastHeader')?.addEventListener('click', () =>
 // ── Products (cache for barcode + search) ──
 function mergeProductIntoState(product) {
   if (!product?.barcode) return false;
+  if (!isPricedProduct(product)) return false;
   const idx = state.products.findIndex((p) => p.barcode === product.barcode);
   const isNew = idx < 0;
   if (idx >= 0) state.products[idx] = product;
@@ -862,7 +871,7 @@ async function fetchProductFromAdmin(code) {
 async function loadProducts() {
   try {
     const data = await api('/branch/products?limit=500');
-    state.products = data.products || [];
+    state.products = (data.products || []).filter(isPricedProduct);
     cacheProducts(state.products);
     invalidateProducts();
     updateCachedProductCount();
@@ -901,7 +910,7 @@ async function syncAllProductsFromAdmin() {
       if (!batch.length) break;
     }
 
-    state.products = [...merged.values()];
+    state.products = [...merged.values()].filter(isPricedProduct);
     cacheProducts(state.products);
     invalidateProducts();
     updateCachedProductCount();
@@ -1053,14 +1062,16 @@ function renderSearchDropdown(results) {
     return;
   }
   el.innerHTML = results.map((p, i) => {
-    const low = Number(p.stockQty) <= 0;
+    const stockNote = isStockTracked()
+      ? `<span class="${Number(p.stockQty) <= 0 ? 'out' : ''}">${Number(p.stockQty) <= 0 ? 'نفد' : `متوفر ${fmt(p.stockQty)}`}</span>`
+      : '';
     return `
     <button type="button" class="search-item${i === 0 ? ' active' : ''}" data-idx="${i}" data-barcode="${esc(p.barcode)}">
       <div class="search-item-name">${esc(p.name)}</div>
       <div class="search-item-meta">
         <span dir="ltr">${esc(p.barcode)}</span>
         <strong dir="ltr">${displayPosPrice(p)}</strong>
-        <span class="${low ? 'out' : ''}">${low ? 'نفد' : `متوفر ${fmt(p.stockQty)}`}</span>
+        ${stockNote}
       </div>
     </button>`;
   }).join('');
@@ -1115,7 +1126,7 @@ async function addToCart(barcode, qty = 1) {
     focusBarcode();
     return;
   }
-  if (Number(product.stockQty) <= 0) {
+  if (isStockTracked() && Number(product.stockQty) <= 0) {
     if (getSettings().blockZeroStock) {
       toast('المنتج غير متوفر في المخزون', 'err');
       focusBarcode();
@@ -1127,7 +1138,7 @@ async function addToCart(barcode, qty = 1) {
   const addQty = state.invoiceType === 'issue' ? Math.max(1, qty) : qty;
   const newQty = (existing?.qty || 0) + addQty;
   const totalPieces = newQty + (existing?.giftQty || 0);
-  if (product.stockQty > 0 && totalPieces > product.stockQty) {
+  if (isStockTracked() && product.stockQty > 0 && totalPieces > product.stockQty) {
     if (getSettings().blockOverStock) {
       toast(`المخزون المتاح ${product.stockQty} قطعة فقط`, 'warn');
       focusBarcode();
@@ -1229,7 +1240,7 @@ function setLineGiftQty(idx, val) {
   if (!line) return;
   let g = Math.max(0, Math.round(Number(val) || 0));
   const stock = Number(line.stockQty || 0);
-  if (stock > 0 && line.qty + g > stock) {
+  if (isStockTracked() && stock > 0 && line.qty + g > stock) {
     const overflow = line.qty + g - stock;
     if (line.qty >= overflow) {
       line.qty -= overflow;
@@ -1281,7 +1292,7 @@ function setLineQty(idx, val) {
   }
   if (state.invoiceType === 'issue') {
     q = Math.max(1, q);
-    if (line.stockQty > 0 && q > line.stockQty) {
+    if (isStockTracked() && line.stockQty > 0 && q > line.stockQty) {
       toast(`المخزون لا يكفي (${line.stockQty} قطعة)`, 'warn');
       q = line.stockQty;
     }
@@ -1295,7 +1306,7 @@ function setLineQty(idx, val) {
     updateCartMeta();
     return;
   }
-  if (line.stockQty > 0 && q + (line.giftQty || 0) > line.stockQty) {
+  if (isStockTracked() && line.stockQty > 0 && q + (line.giftQty || 0) > line.stockQty) {
     toast(`المخزون لا يكفي (${line.stockQty} قطعة)`, 'warn');
     q = Math.max(0, line.stockQty - (line.giftQty || 0));
   }
@@ -1332,7 +1343,7 @@ function bindCartTableEvents() {
       if (action === 'inc') {
         if (state.invoiceType === 'return') {
           if (line.qty >= (line.maxQty ?? 0)) return;
-        } else if (line.stockQty > 0 && line.qty + 1 + (line.giftQty || 0) > line.stockQty) {
+        } else if (isStockTracked() && line.stockQty > 0 && line.qty + 1 + (line.giftQty || 0) > line.stockQty) {
           toast('المخزون لا يكفي', 'warn');
           return;
         }
@@ -2686,11 +2697,20 @@ document.getElementById('btnPrintReport')?.addEventListener('click', () => {
   w.print();
 });
 
+function syncStockSettingsUi() {
+  const on = !!document.getElementById('setTrackStock')?.checked;
+  const wrap = document.getElementById('stockGuardFields');
+  if (wrap) wrap.classList.toggle('hidden', !on);
+}
+
 function loadSettingsView() {
   const s = getSettings();
+  const trackEl = document.getElementById('setTrackStock');
+  if (trackEl) trackEl.checked = s.trackStock === true;
   document.getElementById('setLowStock').value = s.lowStockThreshold ?? 5;
   document.getElementById('setBlockZero').checked = !!s.blockZeroStock;
   document.getElementById('setBlockOver').checked = s.blockOverStock !== false;
+  syncStockSettingsUi();
   document.getElementById('setAllowPrice').checked = s.allowPriceEdit !== false;
   document.getElementById('setScanSound') && (document.getElementById('setScanSound').checked = s.scanSound !== false);
   document.getElementById('setThermal').checked = !!s.thermalPrint;
@@ -2720,8 +2740,11 @@ function renderOutboxList() {
     : '<p class="hint">لا توجد فواتير معلّقة للرفع</p>';
 }
 
+document.getElementById('setTrackStock')?.addEventListener('change', syncStockSettingsUi);
+
 document.getElementById('btnSaveSettings')?.addEventListener('click', async () => {
   const patch = {
+    trackStock: !!document.getElementById('setTrackStock')?.checked,
     lowStockThreshold: Number(document.getElementById('setLowStock').value || 5),
     blockZeroStock: document.getElementById('setBlockZero').checked,
     blockOverStock: document.getElementById('setBlockOver').checked,

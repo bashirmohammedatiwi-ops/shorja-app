@@ -28,11 +28,21 @@ function loadImportLib() {
   const {
     countEdariMaterials,
     listEdariMaterials,
+    countEdariWarehouseMaterials,
+    listEdariWarehouseMaterials,
+    resolveShorjaWarehouse,
     mapEdariToShorjaProduct,
     resetOdbcBridgeCache
   } = require(lookupPath);
   resetOdbcBridgeCache?.();
-  return { countEdariMaterials, listEdariMaterials, mapEdariToShorjaProduct };
+  return {
+    countEdariMaterials,
+    listEdariMaterials,
+    countEdariWarehouseMaterials,
+    listEdariWarehouseMaterials,
+    resolveShorjaWarehouse,
+    mapEdariToShorjaProduct
+  };
 }
 
 async function getEdariProductImportStatus() {
@@ -68,7 +78,60 @@ async function fetchEdariProductImportBatch({ afterSeq = 0, limit = 500 } = {}) 
   };
 }
 
+async function getEdariWarehouseImportStatus() {
+  const { resolveShorjaWarehouse, countEdariWarehouseMaterials } = loadImportLib();
+  const warehouse = await resolveShorjaWarehouse();
+  const totalInEdari = await countEdariWarehouseMaterials(warehouse);
+  return {
+    ok: true,
+    warehouse: {
+      name: warehouse.name,
+      source: warehouse.source,
+      seq: warehouse.store?.seq || warehouse.folder?.seq || 0,
+      store: warehouse.store || null,
+      folder: warehouse.folder || null
+    },
+    totalInEdari,
+    priceMode: 'manual'
+  };
+}
+
+async function fetchEdariWarehouseImportBatch({ afterSeq = 0, limit = 500, warehouse = null } = {}) {
+  const { listEdariWarehouseMaterials, mapEdariToShorjaProduct, resolveShorjaWarehouse } = loadImportLib();
+  const resolved = warehouse || await resolveShorjaWarehouse();
+  const { rows, lastSeq, hasMore, warehouse: used } = await listEdariWarehouseMaterials({
+    afterSeq,
+    limit,
+    warehouse: resolved
+  });
+  const products = [];
+  let skipped = 0;
+
+  for (const row of rows) {
+    const product = mapEdariToShorjaProduct(row);
+    if (!product?.barcode || !product?.name) {
+      skipped += 1;
+      continue;
+    }
+    products.push(product);
+  }
+
+  return {
+    ok: true,
+    products,
+    imported: products.length,
+    skipped,
+    afterSeq: Number(afterSeq) || 0,
+    lastSeq,
+    hasMore,
+    batchSize: rows.length,
+    warehouse: used
+  };
+}
+
 module.exports = {
   getEdariProductImportStatus,
-  fetchEdariProductImportBatch
+  fetchEdariProductImportBatch,
+  getEdariWarehouseImportStatus,
+  fetchEdariWarehouseImportBatch
 };

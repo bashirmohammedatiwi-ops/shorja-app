@@ -31,7 +31,7 @@ router.get('/products', (req, res) => {
     category,
     limit,
     offset,
-    pricedOnly: !syncAll,
+    pricedOnly: true,
     stockFilter: ['all', 'in', 'low', 'out'].includes(stockFilter) ? stockFilter : 'all',
     lowThreshold,
     sort
@@ -46,6 +46,9 @@ router.get('/products', (req, res) => {
 router.get('/products/barcode/:code', (req, res) => {
   const product = getByBarcode(req.params.code);
   if (!product) return res.status(404).json({ ok: false, error: 'المنتج غير موجود' });
+  if (!product.priced || !(Number(product.price) > 0)) {
+    return res.status(404).json({ ok: false, error: 'لم يُحدَّد سعر هذا المنتج في لوحة التحكم' });
+  }
   res.json({ ok: true, product });
 });
 
