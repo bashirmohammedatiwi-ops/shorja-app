@@ -44,25 +44,86 @@ function roundAmount(n, currency = 'iqd') {
   return roundMoney(n, currency);
 }
 
-function formatEdariTimestamp(dateStr) {
-  const iso = edariDateToIso(dateStr);
-  return `TIMESTAMP '${iso} 12:00:00'`;
+function todayIsoIraq() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Baghdad' });
 }
 
 function edariDateToIso(raw) {
   const s = String(raw || '').trim();
-  const m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (m) {
-    const [, d, mo, y] = m;
+  const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (dmy) {
+    const [, d, mo, y] = dmy;
     return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
-  return new Date().toISOString().slice(0, 10);
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  return todayIsoIraq();
 }
 
 function formatEdariDateOnly(dateStr) {
   const iso = edariDateToIso(dateStr);
-  const [y, mo, d] = iso.split('-');
-  return `'${d}/${mo}/${y}'`;
+  // Midnight, not 12:00:00 — noon appears as a wrong clock time in كشف الحساب.
+  return `TIMESTAMP '${iso} 00:00:00'`;
+}
+
+/** Native Edari bills use a calendar date with no clock time. TIMESTAMP 12:00:00 breaks كشف الحساب. */
+function formatEdariTimestamp(dateStr) {
+  return formatEdariDateOnly(dateStr);
+}
+
+function dateHasClockTime(raw) {
+  return /\d{1,2}\/\d{1,2}\/\d{4}\s+\d/.test(String(raw || ''))
+    || /\d{4}-\d{2}-\d{2}[ T]\d/.test(String(raw || ''));
+}
+
+const PAY_METHOD_CREDIT = 0;
+const PAY_METHOD_CASH = 1;
+
+function salePayMode(payload) {
+  if (payload?.kind === 'return') {
+    return (payload.accountId || payload.edariSeq) ? 'credit' : 'cash';
+  }
+  const method = String(payload?.paymentMethod || '').toLowerCase();
+  if (method === 'partial') return 'partial';
+  if (method === 'credit') return 'credit';
+  if (method === 'cash') return 'cash';
+  if (payload?.accountId || payload?.edariSeq) return 'credit';
+  return 'cash';
+}
+
+function headerNetPayable(total, discount) {
+  return Math.max(0, roundAmount(total) - Math.max(0, roundAmount(discount)));
+}
+
+function invoicePayFields(payload, amounts) {
+  const mode = salePayMode(payload);
+  const net = Math.max(0, roundAmount(amounts.netTotal));
+  const paid = Math.max(0, roundAmount(amounts.paid));
+  if (mode === 'cash') {
+    return {
+      mode,
+      payMethod: PAY_METHOD_CASH,
+      payment: net,
+      cashJournal: net,
+      cashRec: CASH_ACCOUNT_SEQ
+    };
+  }
+  if (mode === 'partial') {
+    return {
+      mode,
+      payMethod: PAY_METHOD_CREDIT,
+      payment: paid,
+      cashJournal: paid,
+      cashRec: paid > 0 ? CASH_ACCOUNT_SEQ : 0
+    };
+  }
+  return {
+    mode,
+    payMethod: PAY_METHOD_CREDIT,
+    payment: 0,
+    cashJournal: 0,
+    cashRec: 0
+  };
 }
 
 async function nextJournalBondNum() {
@@ -189,7 +250,7 @@ async function billNeedsDisplayRepair(billSeq, invoiceBook) {
     const extra = Number(header.ExtraInt1 ?? header.extraint1 ?? -1);
     const dateStr = String(header.Date ?? header.date ?? '');
     if (extra !== INVOICE_PERSON) return true;
-    if (/\d{1,2}\/\d{1,2}\/\d{4}\s+\d/.test(dateStr)) return true;
+    if (dateHasClockTime(dateStr)) return true;
   }
   const lineDate = await runQuery(
     `SELECT TOP 1 Seq FROM file14n WHERE BillSeq = ${Number(billSeq)}
@@ -208,22 +269,71 @@ async function repairBillDisplayFields(billSeq, invoiceBook) {
   const header = rowObjects(await runQuery(
     `SELECT "Date" FROM File15n WHERE Seq = ${Number(billSeq)}`
   ))[0];
-  const dateStr = edariDateToIso(header?.Date ?? header?.date);
+  const dateLit = formatEdariDateOnly(header?.Date ?? header?.date);
   const upd15 = await runExecute(
     `UPDATE File15n SET Book = ${Number(invoiceBook)}, PrGrp = ${PRICE_GROUP},
       BillDayKind = 1, UnPosted = False, DTaxRecNo = ${TAX_REC_NO},
       ExtraInt1 = ${INVOICE_PERSON}, ExtraInt2 = 0, NoteClosed = False,
-      "Date" = ${formatEdariTimestamp(dateStr)}
+      "Date" = ${dateLit}
      WHERE Seq = ${Number(billSeq)}`
   );
   if (!upd15.ok) throw new Error(upd15.error || `فشل إصلاح رأس الفاتورة ${billSeq}`);
-  const dateLit = formatEdariTimestamp(dateStr);
   const upd14 = await runExecute(
     `UPDATE file14n SET Book = ${Number(invoiceBook)}, person = ${INVOICE_PERSON},
-      Equa = 1, Mst = 1, Curr = 0, MatName = '', "Sum" = 0, "Date" = ${dateLit}
+      "Date" = ${dateLit}
      WHERE BillSeq = ${Number(billSeq)}`
   );
   if (!upd14.ok) throw new Error(upd14.error || `فشل إصلاح أسطر الفاتورة ${billSeq}`);
+  const upd12 = await runExecute(
+    `UPDATE File12n SET "Date" = ${dateLit} WHERE BillSeq = ${Number(billSeq)}`
+  );
+  if (!upd12.ok) throw new Error(upd12.error || `فشل إصلاح تاريخ قيود الفاتورة ${billSeq}`);
+}
+
+function isCashPaymentJournal(row) {
+  const exp = String(row.Exp1 ?? row.exp1 ?? '');
+  return exp.includes('دفعة نقدية');
+}
+
+async function repairBillPayMode(billSeq, payload) {
+  const header = rowObjects(await runQuery(
+    `SELECT Total, Payment, DisCnt, PayMethod, DCash FROM File15n WHERE Seq = ${Number(billSeq)}`
+  ))[0];
+  if (!header) return { ok: false, error: 'الفاتورة غير موجودة' };
+  const net = headerNetPayable(header.Total, header.DisCnt);
+  const fields = invoicePayFields(payload, {
+    netTotal: net,
+    paid: Number(header.Payment || 0)
+  });
+  if (fields.mode === 'cash') {
+    fields.payment = net;
+    fields.cashJournal = net;
+  }
+  const upd = await runExecute(
+    `UPDATE File15n SET PayMethod = ${fields.payMethod}, Payment = ${fields.payment}, DCash = ${fields.cashRec}
+     WHERE Seq = ${Number(billSeq)}`
+  );
+  if (!upd.ok) return { ok: false, error: upd.error || 'فشل تحديث نوع الدفع في الإداري' };
+
+  if (fields.mode === 'credit' || fields.cashJournal <= 0) {
+    return { ok: true, payMethod: fields.payMethod, payment: fields.payment };
+  }
+
+  const jr = await runQuery(
+    `SELECT Seq, Acc, Am, Dept, Exp1 FROM File12n WHERE BillSeq = ${Number(billSeq)} ORDER BY Seq`
+  );
+  if (!jr.ok) return { ok: false, error: jr.error || 'فشل قراءة قيود الفاتورة' };
+  const cashRows = rowObjects(jr).filter(isCashPaymentJournal);
+  for (const row of cashRows) {
+    const am = roundAmount(row.Am ?? row.am);
+    if (am === fields.cashJournal) continue;
+    const seq = Number(row.Seq ?? row.seq);
+    const fix = await runExecute(
+      `UPDATE File12n SET Am = ${fields.cashJournal} WHERE Seq = ${seq}`
+    );
+    if (!fix.ok) return { ok: false, error: fix.error || `فشل تحديث قيد ${seq}` };
+  }
+  return { ok: true, payMethod: fields.payMethod, payment: fields.payment, cashJournals: cashRows.length };
 }
 async function findShorjaBillState(payload) {
   const invoiceNo = String(payload.invoiceNo || '').trim();
@@ -371,7 +481,7 @@ async function insertJournalEntry({
   const exp1Safe = clampEdariField(exp1, EDARI_EXP1_MAX);
   const book = linkedToBill ? Number(billBook || INVOICE_BOOK || 0) : 0;
   const sql = `INSERT INTO File12n (Num, Acc, "Date", Am, Dept, Exp1, Exp2, BillNum, BillSeq, BillKind, BillBook, Remarks, ForBill, Ref, Two)
-    VALUES (${Number(bondNum)}, ${Number(acc)}, ${formatEdariTimestamp(dateStr)}, ${roundAmount(amount)}, ${isDebit ? 'True' : 'False'},
+    VALUES (${Number(bondNum)}, ${Number(acc)}, ${formatEdariDateOnly(dateStr)}, ${roundAmount(amount)}, ${isDebit ? 'True' : 'False'},
       ${edariSqlLiteral(exp1Safe)}, '', ${Number(billNum || 0)}, ${Number(billSeq || 0)}, ${Number(billKind || 0)}, ${book},
       '', ${forBill}, ${edariSqlLiteral(ref)}, ${Number(oppositeAcc || 0)})`;
   return runExecute(sql);
@@ -489,6 +599,17 @@ async function createEdariInvoice(payload) {
 
   const existing = await findExistingShorjaBill(payload);
   if (existing) {
+    try {
+      const invoiceBook = resolveInvoiceBook(payload);
+      const billSeq = Number(existing.edariBillSeq);
+      if (await billNeedsDisplayRepair(billSeq, invoiceBook)) {
+        await repairBillDisplayFields(billSeq, invoiceBook);
+      }
+      await repairBillPayMode(billSeq, payload);
+      await finalizeInvoiceWrites();
+    } catch {
+      /* leave the already-posted bill if repair cannot run */
+    }
     return { ok: true, ...existing, deduped: true };
   }
 
@@ -525,6 +646,10 @@ async function createEdariInvoice(payload) {
       await repairBillDisplayFields(billSeq, invoiceBook);
       repaired = true;
     }
+    const payFix = await repairBillPayMode(billSeq, payload);
+    if (payFix?.ok && (Number(payFix.payMethod) === PAY_METHOD_CASH || payFix.cashJournals)) {
+      repaired = true;
+    }
     if (repaired) {
       await finalizeInvoiceWrites();
       return {
@@ -538,8 +663,9 @@ async function createEdariInvoice(payload) {
     return { ok: true, ...priorState, deduped: true };
   }
 
-  const dateStr = payload.invoiceDate || new Date().toISOString().slice(0, 10);
-  const { discount, grossTotal, paid } = invoiceAmounts(payload);
+  const dateStr = payload.invoiceDate || todayIsoIraq();
+  const { discount, grossTotal, paid, netTotal } = invoiceAmounts(payload);
+  const payFields = invoicePayFields(payload, { netTotal, paid });
   const currCode = edariCurrCode(payload.currency);
   const currency = normalizeCurrency(payload.currency);
   const lines = (payload.lines || []).filter((l) => Number(l.qty) > 0 || Number(l.giftQty) > 0);
@@ -550,7 +676,7 @@ async function createEdariInvoice(payload) {
   const remarksRaw = [SHORJA_REMARKS, payload.branchName, payload.invoiceNo, payload.notes].filter(Boolean).join(' · ');
   const remarks = remarksRaw.length > 50 ? remarksRaw.slice(0, 47) + '...' : remarksRaw;
   const kindRecNo = kind === 'return' ? RETURNS_ACCOUNT_SEQ : SALES_ACCOUNT_SEQ;
-  const cashRec = paid > 0 ? CASH_ACCOUNT_SEQ : 0;
+  const cashRec = payFields.cashRec;
 
   let billNum;
   let billSeq;
@@ -562,12 +688,12 @@ async function createEdariInvoice(payload) {
     billSeq = Number(priorState.edariBillSeq);
     bondNum = priorState.bondNum || await nextJournalBondNum();
     const headerUpd = await runExecute(
-      `UPDATE File15n SET Kind = ${edariKind}, "Date" = ${formatEdariTimestamp(dateStr)},
-        Total = ${grossTotal}, Payment = ${paid}, DisCnt = ${discount}, "count" = ${lineCount},
+      `UPDATE File15n SET Kind = ${edariKind}, "Date" = ${formatEdariDateOnly(dateStr)},
+        Total = ${grossTotal}, Payment = ${payFields.payment}, DisCnt = ${discount}, "count" = ${lineCount},
         Two = ${customerSeq}, remarks = ${edariSqlLiteral(remarks)}, DayBillN = ${bondNum},
         DKindRecNo = ${kindRecNo}, DCash = ${cashRec}, DDiscntR = ${DISCOUNT_ACCOUNT_SEQ},
         Three = 0, PrGrp = ${PRICE_GROUP}, BillDayKind = 1, Book = ${invoiceBook},
-        Equa = 1, curr = ${currCode}, DPurcash = 0, PayMethod = 0, NoteKind = 0, DExpR = 0,
+        Equa = 1, curr = ${currCode}, DPurcash = 0, PayMethod = ${payFields.payMethod}, NoteKind = 0, DExpR = 0,
         DTaxRecNo = ${TAX_REC_NO}, ExtraInt1 = ${INVOICE_PERSON}, ExtraInt2 = 0,
         PackList = 0, NoteClosed = False, UnPosted = False
        WHERE Seq = ${billSeq}`
@@ -580,10 +706,10 @@ async function createEdariInvoice(payload) {
     const headerSql = `INSERT INTO File15n (Num, Kind, "Date", Total, Payment, DisCnt, "count", Two, remarks,
         DayBillN, DKindRecNo, DCash, DDiscntR, Three, PrGrp, BillDayKind, Book, Equa, curr, DPurcash,
         PayMethod, NoteKind, DExpR, DTaxRecNo, ExtraInt1, ExtraInt2, PackList, NoteClosed, UnPosted)
-      VALUES (${billNum}, ${edariKind}, ${formatEdariTimestamp(dateStr)},
-        ${grossTotal}, ${paid}, ${discount}, ${lineCount}, ${customerSeq}, ${edariSqlLiteral(remarks)},
+      VALUES (${billNum}, ${edariKind}, ${formatEdariDateOnly(dateStr)},
+        ${grossTotal}, ${payFields.payment}, ${discount}, ${lineCount}, ${customerSeq}, ${edariSqlLiteral(remarks)},
         ${bondNum}, ${kindRecNo}, ${cashRec}, ${DISCOUNT_ACCOUNT_SEQ}, 0, ${PRICE_GROUP}, 1, ${invoiceBook}, 1, ${currCode}, 0,
-        0, 0, 0, ${TAX_REC_NO}, ${INVOICE_PERSON}, 0, 0, False, False)`;
+        ${payFields.payMethod}, 0, 0, ${TAX_REC_NO}, ${INVOICE_PERSON}, 0, 0, False, False)`;
     const headerIns = await runExecute(headerSql);
     if (!headerIns.ok) return { ok: false, error: headerIns.error || 'فشل إنشاء رأس الفاتورة في إداري' };
     const bill = await readBillByNum(billNum, edariKind, invoiceBook);
@@ -602,7 +728,7 @@ async function createEdariInvoice(payload) {
     const lineSql = `INSERT INTO file14n (BillSeq, BillNo, Mat, MatName, Quant, Price, OBonus, Kind, MatRem, Two, Equa, Frst, Mst, person, Book, Curr, "Date", "Sum")
       VALUES (${billSeq}, ${billNum}, ${Number(mat.seq || 0)}, '',
         ${qty}, ${price}, ${giftQty}, ${edariKind}, '', ${customerSeq},
-        1, ${kindRecNo}, 1, ${INVOICE_PERSON}, ${invoiceBook}, ${currCode}, ${formatEdariTimestamp(dateStr)}, 0)`;
+        1, ${kindRecNo}, 1, ${INVOICE_PERSON}, ${invoiceBook}, ${currCode}, ${formatEdariDateOnly(dateStr)}, 0)`;
     const lineIns = await runExecute(lineSql);
     if (!lineIns.ok) return { ok: false, error: lineIns.error || `فشل سطر الفاتورة: ${line.name}` };
 
@@ -660,12 +786,12 @@ async function createEdariInvoice(payload) {
         if (!d.ok) return { ok: false, error: d.error || 'فشل قيد الحسم في إداري' };
       }
 
-      if (paid > 0) {
+      if (payFields.cashJournal > 0) {
         const expPay = `دفعة نقدية للفاتورة ${billNum}`;
         const p = await postJournalPair({
           debitAcc: CASH_ACCOUNT_SEQ,
           creditAcc: customerSeq,
-          amount: paid,
+          amount: payFields.cashJournal,
           dateStr,
           exp1: expPay,
           billNum: 0,
@@ -729,7 +855,7 @@ async function createEdariPayment(payload) {
   const amount = roundAmount(payload.amount, currency);
   if (amount <= 0) return { ok: false, error: 'مبلغ التسديد غير صالح' };
 
-  const dateStr = payload.paymentDate || new Date().toISOString().slice(0, 10);
+  const dateStr = payload.paymentDate || todayIsoIraq();
   let exp1 = `تسديد${payload.paymentNo ? ` ${payload.paymentNo}` : ''}${payload.notes ? ` — ${payload.notes}` : ''}`;
   exp1 = clampEdariField(exp1, EDARI_EXP1_MAX);
 
@@ -763,6 +889,7 @@ module.exports = {
   billHasGlobalNumCollision,
   billNeedsRenumber,
   repairBillDisplayFields,
+  repairBillPayMode,
   resolveCustomerSeq,
   resolveWalkInCustomerSeq,
   resolveInvoiceBook,
