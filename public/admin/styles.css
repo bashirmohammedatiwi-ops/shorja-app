@@ -1052,7 +1052,7 @@ tr:hover td { background: #f8fafc; }
   gap: 16px;
   margin: 16px 20px 8px;
   align-items: stretch;
-  min-height: 520px;
+  min-height: calc(100vh - 280px);
 }
 
 .price-cat-panel {
@@ -1151,33 +1151,86 @@ tr:hover td { background: #f8fafc; }
   font-weight: 800;
   color: #b45309;
 }
-.sheet-wrap {
-  max-height: 62vh;
+.sheet-wrap,
+.excel-wrap {
+  flex: 1;
+  min-height: 420px;
+  max-height: calc(100vh - 340px);
   overflow: auto;
   box-shadow: none;
+  border: 1px solid #a9d08e;
+  border-radius: 0 0 8px 8px;
+  background: #fff;
 }
-.sheet-table {
+.sheet-table,
+.excel-table {
   font-size: 0.84rem;
   border-collapse: separate;
   border-spacing: 0;
+  width: 100%;
+  table-layout: fixed;
 }
 .sheet-table th,
-.sheet-table td {
+.sheet-table td,
+.excel-table th,
+.excel-table td {
   padding: 0;
-  border-bottom: 1px solid #e2e8f0;
-  border-left: 1px solid #eef2f7;
+  border-bottom: 1px solid #d0d7de;
+  border-left: 1px solid #d0d7de;
   vertical-align: middle;
 }
-.sheet-table th {
+.excel-table th {
   padding: 8px 10px;
-  background: #f1f5f9;
+  background: #217346;
+  color: #fff;
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   white-space: nowrap;
+  font-weight: 700;
+  text-align: center;
+  box-shadow: 0 1px 0 #185c37;
+}
+.excel-table .sheet-rownum {
+  width: 44px;
+  text-align: center;
+  background: #e7e6e6;
+  color: #595959;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+}
+.excel-table thead .sheet-rownum {
+  background: #185c37;
+  color: #fff;
+  z-index: 4;
+}
+.excel-table td.sheet-rownum {
+  padding: 6px 4px;
+  user-select: none;
 }
 .sheet-table .sheet-check { width: 36px; text-align: center; }
-.sheet-table td.sheet-check { text-align: center; padding: 4px; }
+.sheet-table td.sheet-check { text-align: center; padding: 4px; background: #f8faf8; }
+.excel-table .sheet-price-col,
+.excel-table td.sheet-price { width: 148px; }
+.excel-table td.sheet-currency,
+.excel-table th:nth-child(7) { width: 96px; }
+.excel-table th:nth-child(3) { width: 132px; }
+.excel-table th:nth-child(5) { width: 140px; }
+.excel-table th:nth-child(8) { width: 88px; }
+.excel-table td.sheet-text {
+  padding: 6px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: cell;
+}
+.excel-table td.sheet-name {
+  white-space: nowrap;
+  font-weight: 600;
+}
 .sheet-table .sheet-cell {
   width: 100%;
   border: 0;
@@ -1185,15 +1238,34 @@ tr:hover td { background: #f8fafc; }
   font: inherit;
   padding: 7px 10px;
   min-height: 36px;
+  border-radius: 0;
 }
-.sheet-table .sheet-cell:focus {
-  outline: 2px solid var(--primary);
+.excel-table .sheet-price .sheet-cell {
+  font-size: 1rem;
+  font-weight: 800;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.sheet-table .sheet-cell:focus,
+.excel-table .sheet-nav:focus {
+  outline: 2px solid #217346;
   outline-offset: -2px;
   background: #fff;
+  box-shadow: inset 0 0 0 1px #217346;
+  z-index: 2;
+  position: relative;
 }
-.sheet-table tr.dirty td { background: #fffbeb; }
-.sheet-table tr.unpriced td { background: #f8fafc; }
-.sheet-table tr.sheet-focus td { background: #eef2ff; }
+.sheet-table tr.dirty td { background: #fff3cd; }
+.sheet-table tr.unpriced td { background: #fafafa; }
+.sheet-table tr.sheet-focus td { background: #e2efda; }
+.sheet-table tr.sheet-focus td.sheet-rownum { background: #c6e0b4; color: #1e4d2b; }
+.sheet-table tr:hover:not(.sheet-focus):not(.dirty) td { background: #f3f9f1; }
+.sheet-table tr.dirty:hover:not(.sheet-focus) td { background: #ffe69c; }
+.excel-table .sheet-nav.sheet-nav-active {
+  outline: 2px solid #217346;
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 1px #217346;
+}
 .sheet-table .sheet-status {
   padding: 0 10px;
   font-size: 0.75rem;
@@ -1204,10 +1276,54 @@ tr:hover td { background: #f8fafc; }
 .sheet-table .sheet-status.miss { color: #b45309; }
 .sheet-meta { margin: 0; font-size: 0.8rem; color: var(--muted); }
 
+.excel-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid #a9d08e;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: #e2efda;
+  overflow: hidden;
+  min-height: 36px;
+}
+.excel-ref {
+  min-width: 92px;
+  padding: 8px 12px;
+  font-weight: 800;
+  font-size: 0.82rem;
+  background: #217346;
+  color: #fff;
+  text-align: center;
+  white-space: nowrap;
+}
+.excel-fx {
+  padding: 8px 10px;
+  font-weight: 800;
+  font-style: italic;
+  color: #217346;
+  background: #fff;
+  border-inline-start: 1px solid #a9d08e;
+  border-inline-end: 1px solid #a9d08e;
+}
+.excel-fx-input {
+  flex: 1;
+  border: 0;
+  background: #fff;
+  font: inherit;
+  padding: 8px 12px;
+  min-width: 0;
+}
+.excel-fx-input:focus {
+  outline: none;
+  background: #fff;
+}
+
 @media (max-width: 1100px) {
   .price-workspace { grid-template-columns: 1fr; min-height: 0; }
   .price-cat-list { flex-direction: row; flex-wrap: wrap; max-height: 160px; }
   .price-cat-item { width: auto; }
+  .excel-wrap { max-height: 60vh; min-height: 280px; }
 }
 
 @media (max-width: 768px) {

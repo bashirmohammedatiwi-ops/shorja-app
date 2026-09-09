@@ -142,9 +142,24 @@ function wipeCatalogProducts() {
   return before;
 }
 
+function findCatalogProductRow(barcode, sku) {
+  const code = String(barcode || '').trim();
+  const skuCode = String(sku || '').trim();
+  if (!code) return null;
+  const byBarcode = db.prepare('SELECT * FROM products WHERE barcode = ?').get(code);
+  if (byBarcode) return byBarcode;
+  if (skuCode && skuCode !== code) {
+    const bySkuBarcode = db.prepare('SELECT * FROM products WHERE barcode = ?').get(skuCode);
+    if (bySkuBarcode) return bySkuBarcode;
+    const bySku = db.prepare('SELECT * FROM products WHERE sku = ?').get(skuCode);
+    if (bySku) return bySku;
+  }
+  return db.prepare('SELECT * FROM products WHERE sku = ?').get(code) || null;
+}
+
 function deactivateProductsNotInBarcodes(barcodes = []) {
   const codes = [...new Set((barcodes || []).map((b) => String(b || '').trim()).filter(Boolean))];
-  if (!codes.length) return wipeCatalogProducts();
+  if (!codes.length) return 0;
 
   const tx = db.transaction(() => {
     db.prepare(`CREATE TEMP TABLE IF NOT EXISTS _keep_barcodes (barcode TEXT PRIMARY KEY)`).run();
@@ -202,23 +217,23 @@ function upsertProduct(data) {
 function upsertCatalogProduct(data) {
   const barcode = String(data.barcode || '').trim();
   if (!barcode) throw new Error('الباركود مطلوب');
-  const existing = db.prepare('SELECT * FROM products WHERE barcode = ?').get(barcode);
+  const existing = findCatalogProductRow(barcode, data.sku);
   if (existing) {
     db.prepare(`
       UPDATE products SET
         name = ?, sku = ?, unit = ?, stock_qty = ?,
         category = COALESCE(NULLIF(?, ''), category),
         is_active = 1, updated_at = datetime('now')
-      WHERE barcode = ?
+      WHERE id = ?
     `).run(
       data.name || existing.name,
       data.sku || existing.sku || '',
       data.unit || existing.unit || 'قطعة',
       data.stockQty != null ? Number(data.stockQty) : existing.stock_qty,
       data.category || '',
-      barcode
+      existing.id
     );
-    return getByBarcode(barcode);
+    return getProduct(existing.id);
   }
   const r = db.prepare(`
     INSERT INTO products (barcode, sku, name, unit, price, price_currency, priced, cost_price, stock_qty, category)

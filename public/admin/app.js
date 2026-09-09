@@ -18,6 +18,8 @@ let priceSheetSelected = new Set();
 let priceSheetFilter = '';
 let extraCategories = new Set();
 let viewingProduct = null;
+let priceSheetSaving = false;
+let lastSheetNavEl = null;
 
 const CATEGORY_ICONS = {
   'عناية': '✨',
@@ -34,7 +36,7 @@ const PAGE_TITLES = {
   warehousePrep: ['تجهيز الشورجة', 'فواتير فروع الشورجة الجاهزة للترحيل بعد التجهيز'],
   delegates: ['المندوبين', 'طلبات المندوبين الجاهزة للترحيل — منفصلة عن الشورجة'],
   products: ['المنتجات', 'استعراض وإدارة مخزون المنتجات'],
-  prices: ['أسعار المواد', 'جدول أسعار مثل إكسل مع أقسام للمنتجات'],
+  prices: ['أسعار المواد', 'جدول تسعير سريع داخل التطبيق — اكتب السعر ثم Enter'],
   accounts: ['حسابات العملاء', 'الديون وحدود الائتمان'],
   payments: ['التسديدات', 'تسجيل دفعات العملاء'],
   journal: ['سجل القيود', 'الحركات والتسويات اليدوية'],
@@ -143,147 +145,6 @@ function fmtDebtSplit(stats) {
 function productPriceLabel(p) {
   if (!p?.priced || !(Number(p.price) > 0)) return 'بدون سعر';
   return fmtPrice(p.price, p.priceCurrency);
-}
-
-function xmlEsc(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function buildPriceExcelXml(products) {
-  const rows = products.map((p) => {
-    const priced = p.priced && Number(p.price) > 0;
-    return [
-      p.barcode || '',
-      p.name || '',
-      p.unit || 'قطعة',
-      Number(p.stockQty || 0),
-      p.category || '',
-      (p.priceCurrency || 'iqd') === 'usd' ? 'دولار' : 'دينار',
-      priced ? Number(p.price) : ''
-    ];
-  });
-  const header = ['باركود', 'الاسم', 'الوحدة', 'المخزون', 'القسم', 'العملة', 'السعر'];
-  const cell = (v) => `<Cell><Data ss:Type="${typeof v === 'number' ? 'Number' : 'String'}">${xmlEsc(v)}</Data></Cell>`;
-  const rowXml = (arr) => `<Row>${arr.map(cell).join('')}</Row>`;
-  return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-<Worksheet ss:Name="التسعير">
-<Table>
-${rowXml(header)}
-${rows.map(rowXml).join('\n')}
-</Table>
-</Worksheet>
-</Workbook>`;
-}
-
-function downloadBlob(filename, content, mime) {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-async function downloadPriceExcel() {
-  const data = await fetchProductsList({ q: '', limit: 500000 });
-  const products = data.products || [];
-  if (!products.length) {
-    toast('لا توجد منتجات للتنزيل — اجلب المستودع أولاً');
-    return;
-  }
-  const xml = buildPriceExcelXml(products);
-  downloadBlob(`تسعير-الشورجة-${Date.now()}.xls`, xml, 'application/vnd.ms-excel');
-  toast(`تم تنزيل ${products.length} منتج — عبّئ عمود السعر والعملة ثم ارفع الملف`);
-}
-
-function parsePriceExcelText(text) {
-  const raw = String(text || '').replace(/^\uFEFF/, '');
-  if (raw.includes('<Workbook') || raw.includes('<Worksheet')) {
-    const doc = new DOMParser().parseFromString(raw, 'text/xml');
-    const rows = [...doc.getElementsByTagName('Row')];
-    if (rows.length < 2) return [];
-    const header = [...(rows[0].getElementsByTagName('Data'))].map((c) => (c.textContent || '').trim());
-    const idx = (names) => header.findIndex((h) => names.some((n) => h.includes(n)));
-    const barcodeI = idx(['باركود', 'barcode']);
-    const priceI = idx(['السعر', 'price']);
-    const currencyI = idx(['العملة', 'currency']);
-    const items = [];
-    for (const row of rows.slice(1)) {
-      const cells = [...row.getElementsByTagName('Data')].map((c) => (c.textContent || '').trim());
-      const barcode = cells[barcodeI] || '';
-      if (!barcode) continue;
-      const curRaw = (cells[currencyI] || '').toLowerCase();
-      items.push({
-        barcode,
-        price: Number(cells[priceI] || 0) || 0,
-        priceCurrency: /usd|دولار|dollar|\$/.test(curRaw) ? 'usd' : 'iqd'
-      });
-    }
-    return items;
-  }
-  const lines = raw.split(/\r?\n/).filter((l) => l.trim());
-  if (!lines.length) return [];
-  const split = (line) => {
-    const out = [];
-    let cur = '';
-    let q = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') q = !q;
-      else if ((ch === ',' || ch === ';' || ch === '\t') && !q) {
-        out.push(cur.trim());
-        cur = '';
-      } else cur += ch;
-    }
-    out.push(cur.trim());
-    return out;
-  };
-  const header = split(lines[0]);
-  const hasHeader = header.some((h) => /باركود|barcode|السعر|العملة/i.test(h));
-  const idx = (names) => header.findIndex((h) => names.some((n) => String(h).toLowerCase().includes(n)));
-  const barcodeI = hasHeader ? idx(['باركود', 'barcode']) : 0;
-  const priceI = hasHeader ? idx(['السعر', 'price']) : 6;
-  const currencyI = hasHeader ? idx(['العملة', 'currency']) : 5;
-  const start = hasHeader ? 1 : 0;
-  const items = [];
-  for (const line of lines.slice(start)) {
-    const cells = split(line);
-    const barcode = String(cells[barcodeI] || '').trim();
-    if (!barcode) continue;
-    const curRaw = String(cells[currencyI] || '').toLowerCase();
-    items.push({
-      barcode,
-      price: Number(cells[priceI] || 0) || 0,
-      priceCurrency: /usd|دولار|dollar|\$/.test(curRaw) ? 'usd' : 'iqd'
-    });
-  }
-  return items;
-}
-
-async function importPriceExcelFile(file) {
-  if (!file) return;
-  const text = await file.text();
-  const items = parsePriceExcelText(text).filter((row) => row.barcode);
-  if (!items.length) {
-    toast('الملف لا يحتوي باركودات. احفظه من إكسل كـ CSV أو استخدم ملف التنزيل نفسه');
-    return;
-  }
-  const data = await api('/admin/products/import-prices', {
-    method: 'POST',
-    body: JSON.stringify({ items })
-  });
-  toast(`تم تحديث أسعار ${data.count} منتج`);
-  loadProducts();
-  loadPriceSheet();
-  loadDashboard();
 }
 
 function branchOnline(lastSeen) {
@@ -1129,7 +990,7 @@ async function loadPriceSheet() {
     q,
     category: priceBrowseActiveCategory,
     priced: priceSheetFilter,
-    limit: 2000
+    limit: 10000
   });
   priceSheetRows = data.products || [];
   await loadCategoryCatalog();
@@ -1194,9 +1055,9 @@ function renderPriceSheet() {
   if (!tbody) return;
   const rows = priceSheetRows.map(mergedSheetProduct);
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty-cell">لا توجد منتجات مطابقة — غيّر القسم أو البحث</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-cell">لا توجد منتجات مطابقة — غيّر القسم أو البحث</td></tr>';
   } else {
-    tbody.innerHTML = rows.map((p) => {
+    tbody.innerHTML = rows.map((p, i) => {
       const dirty = priceSheetDirty.has(p.barcode);
       const checked = priceSheetSelected.has(p.barcode);
       const cats = [
@@ -1206,26 +1067,25 @@ function renderPriceSheet() {
       const uniqueCats = [...new Set(cats)].sort((a, b) => a.localeCompare(b, 'ar'));
       const catOpts = `<option value="">بدون قسم</option>`
         + uniqueCats.map((n) => `<option value="${esc(n)}"${p.category === n ? ' selected' : ''}>${esc(n)}</option>`).join('');
-      return `<tr class="${dirty ? 'dirty' : ''}${p.priced ? '' : ' unpriced'}" data-barcode="${esc(p.barcode)}">
-        <td class="sheet-check"><input type="checkbox" class="sheet-select" ${checked ? 'checked' : ''}></td>
-        <td><input class="sheet-cell" data-field="barcode" value="${esc(p.barcode)}" dir="ltr" readonly></td>
-        <td><input class="sheet-cell" data-field="name" value="${esc(p.name)}"></td>
-        <td><select class="sheet-cell" data-field="category">${catOpts}</select></td>
-        <td><input class="sheet-cell" data-field="price" type="number" min="0" step="any" dir="ltr" value="${p.priced || dirty ? p.price || '' : ''}" placeholder="—"></td>
-        <td>
-          <select class="sheet-cell" data-field="priceCurrency">
+      return `<tr class="${dirty ? 'dirty' : ''}${p.priced ? '' : ' unpriced'}" data-barcode="${esc(p.barcode)}" data-row="${i + 1}">
+        <td class="sheet-rownum">${i + 1}</td>
+        <td class="sheet-check"><input type="checkbox" class="sheet-select" tabindex="-1" ${checked ? 'checked' : ''}></td>
+        <td class="sheet-text" dir="ltr">${esc(p.barcode)}</td>
+        <td class="sheet-text sheet-name">${esc(p.name)}</td>
+        <td><select class="sheet-cell" data-field="category" tabindex="-1">${catOpts}</select></td>
+        <td class="sheet-price"><input class="sheet-cell sheet-nav" data-field="price" type="number" min="0" step="any" inputmode="decimal" dir="ltr" value="${p.priced || dirty ? p.price || '' : ''}" placeholder=""></td>
+        <td class="sheet-currency"><select class="sheet-cell sheet-nav" data-field="priceCurrency">
             <option value="iqd"${p.priceCurrency === 'usd' ? '' : ' selected'}>دينار</option>
             <option value="usd"${p.priceCurrency === 'usd' ? ' selected' : ''}>دولار</option>
-          </select>
-        </td>
+          </select></td>
         <td><span class="sheet-status ${p.priced ? 'ok' : 'miss'}">${p.priced ? 'مسعّر' : 'بدون سعر'}</span></td>
       </tr>`;
     }).join('');
   }
-  if (hint) hint.classList.toggle('hidden', rows.length > 0);
+  if (hint) hint.classList.toggle('hidden', false);
   if (meta) {
     const priced = rows.filter((p) => p.priced).length;
-    meta.textContent = `معروض ${rows.length} منتج · مسعّر ${priced} · بدون سعر ${rows.length - priced}`;
+    meta.textContent = `${rows.length} صف · مسعّر ${priced} · بدون سعر ${rows.length - priced} · Enter للصف التالي · Ctrl+S حفظ`;
   }
   if (publishBtn) publishBtn.disabled = !priceSheetSelected.size;
   updatePriceSheetDirtyUi();
@@ -1233,6 +1093,60 @@ function renderPriceSheet() {
   if (selectAll) {
     selectAll.checked = rows.length > 0 && rows.every((p) => priceSheetSelected.has(p.barcode));
   }
+}
+
+function syncSheetFormulaBar(el) {
+  const ref = document.getElementById('sheetCellRef');
+  const fx = document.getElementById('sheetFormulaInput');
+  const tr = el?.closest?.('tr[data-barcode]');
+  if (!ref || !fx) return;
+  if (!tr || !el?.dataset?.field) {
+    ref.textContent = '—';
+    if (document.activeElement !== fx) fx.value = '';
+    return;
+  }
+  const row = tr.dataset.row || '';
+  const col = el.dataset.field === 'price' ? 'السعر' : el.dataset.field === 'priceCurrency' ? 'العملة' : el.dataset.field;
+  ref.textContent = `${col} ${row}`;
+  if (document.activeElement !== fx) fx.value = el.value || '';
+}
+
+function fillPriceDown() {
+  const body = document.getElementById('priceSelectionBody');
+  const active = (lastSheetNavEl?.isConnected && lastSheetNavEl) || document.activeElement;
+  const tr = active?.closest?.('tr[data-barcode]') || body?.querySelector('tr.sheet-focus');
+  if (!tr) {
+    toast('قف على خلية السعر أولاً ثم اضغط تعبئة للأسفل');
+    return;
+  }
+  const priceEl = tr.querySelector('[data-field="price"]');
+  const curEl = tr.querySelector('[data-field="priceCurrency"]');
+  const price = priceEl?.value ?? '';
+  const currency = curEl?.value || 'iqd';
+  const rows = [...body.querySelectorAll('tr[data-barcode]')];
+  const start = rows.indexOf(tr);
+  const targets = priceSheetSelected.size > 1
+    ? rows.filter((r) => priceSheetSelected.has(r.dataset.barcode) && r !== tr)
+    : rows.slice(start + 1);
+  if (!targets.length) {
+    toast('لا توجد صفوف تحت هذا الصف');
+    return;
+  }
+  let n = 0;
+  for (const row of targets) {
+    const pInput = row.querySelector('[data-field="price"]');
+    const cInput = row.querySelector('[data-field="priceCurrency"]');
+    if (pInput) {
+      pInput.value = price;
+      markPriceSheetDirty(row.dataset.barcode, 'price', price === '' ? 0 : Number(price));
+    }
+    if (cInput) {
+      cInput.value = currency;
+      markPriceSheetDirty(row.dataset.barcode, 'priceCurrency', currency);
+    }
+    n += 1;
+  }
+  toast(`تم نسخ السعر والعملة إلى ${n} صف`);
 }
 
 function updatePriceSheetDirtyUi() {
@@ -1505,7 +1419,7 @@ function setWarehouseImportProgress(text) {
   });
 }
 
-async function importWarehouseProductsFromEdari({ replace = false } = {}) {
+async function importWarehouseProductsFromEdari() {
   const buttons = warehouseImportButtons();
   if ([...buttons].some((b) => b.disabled)) return;
 
@@ -1516,17 +1430,12 @@ async function importWarehouseProductsFromEdari({ replace = false } = {}) {
   }
 
   let total = 0;
-  let local = 0;
   let warehouse = null;
   let storeName = 'محل الشورجه';
   try {
-    const [st, dash] = await Promise.all([
-      window.edariDesktop.getEdariWarehouseImportStatus(),
-      api('/admin/dashboard').catch(() => ({ products: { total: 0 } }))
-    ]);
+    const st = await window.edariDesktop.getEdariWarehouseImportStatus();
     if (!st?.ok) throw new Error(st?.error || 'تعذر الاتصال بـ Edari');
     total = Number(st.totalInEdari || 0);
-    local = Number(dash.products?.total || 0);
     warehouse = st.warehouse || null;
     storeName = warehouse?.name || storeName;
   } catch (err) {
@@ -1539,39 +1448,25 @@ async function importWarehouseProductsFromEdari({ replace = false } = {}) {
     return;
   }
 
-  const confirmed = replace
-    ? confirm(
-      `جلب ${total.toLocaleString('ar-IQ')} منتج من مستودع «${storeName}»؟\n\n` +
-      `• سيُحذف كل المنتجات الحالية في لوحة التحكم (${local.toLocaleString('ar-IQ')})\n` +
-      '• يُجلب الاسم والباركود والمخزون فقط — بدون إعداد أو أسعار\n' +
-      '• سعر البيع تضيفه يدوياً هنا بعد الجلب\n' +
-      '• المنتجات بلا سعر لا تظهر في نقطة البيع\n\n' +
-      'اضغط OK للمتابعة.'
-    )
-    : confirm(
-      `تحديث ${total.toLocaleString('ar-IQ')} منتج من مستودع «${storeName}»؟\n\n` +
-      '• يُحدَّث الاسم والباركود والمخزون فقط\n' +
-      '• الأسعار اليدوية الحالية تبقى كما هي\n' +
-      '• المنتجات التي لم تعد في المستودع تُحذف من اللوحة\n' +
-      '• لا يُرفع شيء إلى نقطة البيع تلقائياً\n\n' +
-      'اضغط OK للمتابعة.'
-    );
+  const confirmed = confirm(
+    `جلب ${total.toLocaleString('ar-IQ')} منتج من مستودع «${storeName}»؟\n\n` +
+    '• تُضاف المواد الجديدة فقط\n' +
+    '• يُحدَّث الاسم والباركود والمخزون للمواد الموجودة\n' +
+    '• الأسعار التي أدخلتها تبقى كما هي — لا تُحذف\n' +
+    '• لا يُحذف أي منتج من اللوحة\n\n' +
+    'اضغط OK للمتابعة.'
+  );
   if (!confirmed) return;
 
   buttons.forEach((b) => { b.disabled = true; });
-  setWarehouseImportProgress(replace ? 'جاري حذف المنتجات القديمة...' : 'جاري التحديث من المستودع...');
+  setWarehouseImportProgress('جاري الجلب من المستودع دون حذف الأسعار...');
 
   let afterSeq = 0;
   let imported = 0;
   let skipped = 0;
   let hasMore = true;
-  const keepBarcodes = [];
 
   try {
-    if (replace) {
-      await api('/admin/products/wipe-catalog', { method: 'POST', body: JSON.stringify({}) });
-    }
-
     while (hasMore) {
       const batch = await window.edariDesktop.fetchEdariWarehouseImportBatch({
         afterSeq,
@@ -1584,10 +1479,6 @@ async function importWarehouseProductsFromEdari({ replace = false } = {}) {
           method: 'POST',
           body: JSON.stringify({ items: batch.products, fromEdari: true })
         });
-        for (const p of batch.products) {
-          if (p?.barcode) keepBarcodes.push(p.barcode);
-          if (p?.sku && p.sku !== p.barcode) keepBarcodes.push(p.sku);
-        }
       }
       imported += Number(batch.imported || 0);
       skipped += Number(batch.skipped || 0);
@@ -1595,25 +1486,11 @@ async function importWarehouseProductsFromEdari({ replace = false } = {}) {
       hasMore = !!batch.hasMore;
       const pct = total ? Math.min(100, Math.round((imported / total) * 100)) : 0;
       setWarehouseImportProgress(
-        `${replace ? 'جلب' : 'تحديث'} مستودع الشورجة: ${imported.toLocaleString('ar-IQ')} · ${skipped} متخطى · ~${pct}%`
+        `جلب مستودع الشورجة: ${imported.toLocaleString('ar-IQ')} · ${skipped} متخطى · ~${pct}%`
       );
     }
 
-    if (!replace) {
-      const missing = await api('/admin/products/deactivate-missing', {
-        method: 'POST',
-        body: JSON.stringify({ barcodes: keepBarcodes })
-      });
-      if (Number(missing.removed || 0) > 0) {
-        setWarehouseImportProgress(`تم إخفاء ${Number(missing.removed).toLocaleString('ar-IQ')} منتج لم يعد في المستودع`);
-      }
-    }
-
-    toast(
-      replace
-        ? `تم جلب ${imported.toLocaleString('ar-IQ')} منتج من مستودع «${storeName}» — أضف الأسعار يدوياً`
-        : `تم تحديث ${imported.toLocaleString('ar-IQ')} منتج من مستودع «${storeName}» دون تغيير الأسعار`
-    );
+    toast(`تم جلب ${imported.toLocaleString('ar-IQ')} منتج من مستودع «${storeName}» — الأسعار الحالية محفوظة`);
     loadProducts();
     loadDashboard();
     if (!document.getElementById('viewPrices')?.classList.contains('hidden')) {
@@ -1628,10 +1505,10 @@ async function importWarehouseProductsFromEdari({ replace = false } = {}) {
 }
 
 document.querySelectorAll('[data-import-edari-warehouse]').forEach((btn) => {
-  btn.addEventListener('click', () => importWarehouseProductsFromEdari({ replace: true }));
+  btn.addEventListener('click', () => importWarehouseProductsFromEdari());
 });
 document.querySelectorAll('[data-refresh-edari-warehouse]').forEach((btn) => {
-  btn.addEventListener('click', () => importWarehouseProductsFromEdari({ replace: false }));
+  btn.addEventListener('click', () => importWarehouseProductsFromEdari());
 });
 document.getElementById('btnNewProduct')?.addEventListener('click', () => openProductModal());
 document.getElementById('btnProdCancel')?.addEventListener('click', () => {
@@ -1684,22 +1561,12 @@ document.getElementById('prodViewToggle')?.addEventListener('click', (e) => {
 });
 document.getElementById('prodSort')?.addEventListener('change', () => loadProducts());
 document.getElementById('btnExportProducts')?.addEventListener('click', () => {
-  downloadPriceExcel().catch((err) => toast(err.message || 'فشل تنزيل الإكسل'));
-});
-document.getElementById('btnExportPriceExcel')?.addEventListener('click', () => {
-  downloadPriceExcel().catch((err) => toast(err.message || 'فشل تنزيل الإكسل'));
-});
-document.getElementById('priceExcelImport')?.addEventListener('change', async (e) => {
-  try {
-    await importPriceExcelFile(e.target.files?.[0]);
-  } catch (err) { toast(err.message); }
-  e.target.value = '';
-});
-document.getElementById('priceExcelImportPrices')?.addEventListener('change', async (e) => {
-  try {
-    await importPriceExcelFile(e.target.files?.[0]);
-  } catch (err) { toast(err.message); }
-  e.target.value = '';
+  const table = document.getElementById('productsDataTable');
+  if (!table || !window.exportTableCsv) {
+    toast('افتح عرض الجدول أولاً ثم صدّر');
+    return;
+  }
+  window.exportTableCsv(table, `products-${Date.now()}.csv`);
 });
 document.getElementById('btnEditFromView')?.addEventListener('click', () => {
   document.getElementById('productViewModal').close();
@@ -1732,28 +1599,64 @@ document.getElementById('csvImport')?.addEventListener('change', async (e) => {
   e.target.value = '';
 });
 
+function sheetNavCells(row) {
+  return [...(row?.querySelectorAll('.sheet-nav') || [])];
+}
+
+function focusSheetNav(el) {
+  if (!el) return;
+  el.focus();
+  if (el.select) el.select();
+}
+
 function sheetMove(el, dRow, dCol) {
-  const cell = el.closest('td');
   const row = el.closest('tr');
-  if (!cell || !row) return;
-  const cells = [...row.querySelectorAll('.sheet-cell')];
-  const col = cells.indexOf(el);
+  if (!row) return;
+  const cells = sheetNavCells(row);
+  const col = Math.max(0, cells.indexOf(el));
   const rows = [...row.parentElement.querySelectorAll('tr[data-barcode]')];
   const r = rows.indexOf(row);
-  const nextRow = rows[r + dRow];
-  if (dRow && nextRow) {
-    const nextCells = [...nextRow.querySelectorAll('.sheet-cell')];
-    const target = nextCells[col] || nextCells[0];
-    target?.focus();
-    if (target?.select) target.select();
+  if (dRow) {
+    const nextRow = rows[r + dRow];
+    if (!nextRow) return;
+    const nextCells = sheetNavCells(nextRow);
+    focusSheetNav(nextCells[col] || nextCells[0]);
     return;
   }
   if (dCol) {
     const target = cells[col + dCol];
-    target?.focus();
-    if (target?.select) target.select();
+    if (target) {
+      focusSheetNav(target);
+      return;
+    }
+    const wrapRow = rows[r + (dCol > 0 ? 1 : -1)];
+    if (!wrapRow) return;
+    const wrapCells = sheetNavCells(wrapRow);
+    focusSheetNav(dCol > 0 ? wrapCells[0] : wrapCells[wrapCells.length - 1]);
   }
 }
+
+function sheetTab(el, shift) {
+  sheetMove(el, 0, shift ? -1 : 1);
+}
+
+document.getElementById('priceSelectionBody')?.addEventListener('focusin', (e) => {
+  const tr = e.target.closest('tr[data-barcode]');
+  document.querySelectorAll('#priceSelectionBody tr').forEach((r) => r.classList.remove('sheet-focus'));
+  tr?.classList.add('sheet-focus');
+  if (e.target.classList.contains('sheet-nav')) {
+    document.querySelectorAll('.sheet-nav-active').forEach((el) => el.classList.remove('sheet-nav-active'));
+    lastSheetNavEl = e.target;
+    syncSheetFormulaBar(e.target);
+  }
+});
+
+document.getElementById('priceSelectionBody')?.addEventListener('click', (e) => {
+  const tr = e.target.closest('tr[data-barcode]');
+  if (!tr) return;
+  if (e.target.closest('input, select, button')) return;
+  focusSheetNav(tr.querySelector('[data-field="price"]'));
+});
 
 document.getElementById('priceSelectionBody')?.addEventListener('input', (e) => {
   const field = e.target.dataset?.field;
@@ -1762,6 +1665,7 @@ document.getElementById('priceSelectionBody')?.addEventListener('input', (e) => 
   let value = e.target.value;
   if (field === 'price') value = e.target.value === '' ? 0 : Number(e.target.value);
   markPriceSheetDirty(tr.dataset.barcode, field, value);
+  if (e.target.classList.contains('sheet-nav')) syncSheetFormulaBar(e.target);
 });
 
 document.getElementById('priceSelectionBody')?.addEventListener('change', (e) => {
@@ -1782,8 +1686,8 @@ document.getElementById('priceSelectionBody')?.addEventListener('change', (e) =>
 
 document.getElementById('priceSelectionBody')?.addEventListener('keydown', (e) => {
   const el = e.target;
-  if (!el.classList?.contains('sheet-cell')) return;
-  if (el.tagName === 'SELECT' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) return;
+  if (!el.classList?.contains('sheet-nav')) return;
+  if (el.tagName === 'SELECT' && (e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.altKey) return;
   if (e.key === 'Enter') {
     e.preventDefault();
     sheetMove(el, e.shiftKey ? -1 : 1, 0);
@@ -1794,7 +1698,8 @@ document.getElementById('priceSelectionBody')?.addEventListener('keydown', (e) =
     e.preventDefault();
     sheetMove(el, -1, 0);
   } else if (e.key === 'Tab') {
-    /* native tab is fine */
+    e.preventDefault();
+    sheetTab(el, e.shiftKey);
   }
 });
 
@@ -1859,12 +1764,57 @@ document.getElementById('btnAssignCategory')?.addEventListener('click', async ()
 });
 
 document.getElementById('btnSavePriceSheet')?.addEventListener('click', () => savePriceSheet());
+document.getElementById('btnFillPriceDown')?.addEventListener('click', () => fillPriceDown());
+
+document.getElementById('sheetFormulaInput')?.addEventListener('focus', () => {
+  document.querySelectorAll('.sheet-nav-active').forEach((el) => el.classList.remove('sheet-nav-active'));
+  lastSheetNavEl?.classList.add('sheet-nav-active');
+  if (lastSheetNavEl) syncSheetFormulaBar(lastSheetNavEl);
+});
+
+document.getElementById('sheetFormulaInput')?.addEventListener('blur', () => {
+  document.querySelectorAll('.sheet-nav-active').forEach((el) => el.classList.remove('sheet-nav-active'));
+});
+
+document.getElementById('sheetFormulaInput')?.addEventListener('input', () => {
+  const el = lastSheetNavEl;
+  if (!el?.isConnected) return;
+  const fx = document.getElementById('sheetFormulaInput');
+  const field = el.dataset.field;
+  const raw = fx?.value ?? '';
+  if (field === 'price') {
+    el.value = raw;
+    const tr = el.closest('tr[data-barcode]');
+    if (tr) markPriceSheetDirty(tr.dataset.barcode, 'price', raw === '' ? 0 : Number(raw));
+  } else if (field === 'priceCurrency') {
+    const next = /usd|دولار|dollar|\$/i.test(raw) ? 'usd' : 'iqd';
+    el.value = next;
+    const tr = el.closest('tr[data-barcode]');
+    if (tr) markPriceSheetDirty(tr.dataset.barcode, 'priceCurrency', next);
+  }
+});
+
+document.getElementById('sheetFormulaInput')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (lastSheetNavEl?.isConnected) sheetMove(lastSheetNavEl, e.shiftKey ? -1 : 1, 0);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    lastSheetNavEl?.focus();
+  }
+});
 
 document.addEventListener('keydown', (e) => {
+  if (document.getElementById('viewPrices')?.classList.contains('hidden')) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-    if (document.getElementById('viewPrices')?.classList.contains('hidden')) return;
     e.preventDefault();
     savePriceSheet();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+    if (!e.target?.closest?.('#priceSheetTable, #excelFormulaBar')) return;
+    e.preventDefault();
+    fillPriceDown();
   }
 });
 

@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=11">
-  <link rel="stylesheet" href="premium.css?v=12">
+  <link rel="stylesheet" href="styles.css?v=13">
+  <link rel="stylesheet" href="premium.css?v=13">
   <link rel="stylesheet" href="official.css?v=4">
 </head>
 <body>
@@ -123,8 +123,8 @@
           <button type="button" class="quick-action warehouse" data-goto="warehousePrep">🏪 تجهيز الشورجة</button>
           <button type="button" class="quick-action" data-goto="edariSync">🔄 مزامنة الإداري</button>
           <button type="button" class="quick-action" data-goto="prices">💰 رفع الأسعار</button>
-          <button type="button" class="quick-action primary" data-import-edari-warehouse">📦 جلب من مستودع الشورجة</button>
-          <button type="button" class="quick-action" data-refresh-edari-warehouse>↻ تحديث من المستودع</button>
+          <button type="button" class="quick-action primary" data-import-edari-warehouse title="جلب المواد الجديدة وتحديث المخزون دون حذف الأسعار">📦 جلب من مستودع الشورجة</button>
+          <button type="button" class="quick-action" data-refresh-edari-warehouse title="تحديث الاسم والمخزون دون تغيير الأسعار">↻ تحديث من المستودع</button>
           <button type="button" class="quick-action" data-goto="accounts">👥 حسابات الشورجة</button>
         </div>
         <div class="quick-actions del-only hidden" id="quickActionsDelegate">
@@ -401,12 +401,9 @@
                 <option value="stock">ترتيب: المخزون</option>
                 <option value="price">ترتيب: السعر</option>
               </select>
-              <button type="button" class="btn btn-secondary" id="btnExportProducts">تنزيل إكسل للتسعير</button>
-              <label class="file-btn btn btn-secondary" title="ارفع ملف الإكسل بعد تعبئة السعر والعملة">رفع أسعار Excel
-                <input type="file" id="priceExcelImport" accept=".csv,.txt,.xls,.xml" hidden>
-              </label>
+              <button type="button" class="btn btn-secondary" id="btnExportProducts">تصدير CSV</button>
               <button type="button" class="btn btn-primary" id="btnNewProduct">+ منتج جديد</button>
-              <button type="button" class="btn btn-primary" data-import-edari-warehouse title="جلب مواد مستودع محل الشورجه وحذف المنتجات القديمة">📦 جلب من مستودع الشورجة</button>
+              <button type="button" class="btn btn-primary" data-import-edari-warehouse title="جلب المواد الجديدة وتحديث المخزون — الأسعار الحالية لا تُحذف">📦 جلب من مستودع الشورجة</button>
               <button type="button" class="btn btn-secondary" data-refresh-edari-warehouse title="تحديث الاسم والباركود والمخزون فقط دون تغيير الأسعار">↻ تحديث من المستودع</button>
               <label class="file-btn btn btn-secondary">استيراد CSV
                 <input type="file" id="csvImport" accept=".csv,.txt" hidden>
@@ -438,8 +435,8 @@
           <div class="action-card import-edari-hero">
             <div>
               <h2>أسعار المواد</h2>
-              <p class="hint">عدّل الأسعار في جدول يشبه إكسل، وصنّف المنتجات في أقسام ليسهل الرجوع إليها لاحقاً. المنتجات بلا سعر لا تظهر في نقطة البيع.</p>
-              <p class="hint subtle">يُجلب الاسم والباركود والمخزون من مستودع محل الشورجه (المخزن 4) — سعر البيع والعملة يُدخلان هنا أو عبر ملف إكسل، ولا يظهر المنتج في نقطة البيع إلا بعد التسعير. عملة الفاتورة تتبع عملة الحساب، والترحيل إلى المستودع الجديد.</p>
+              <p class="hint">سعّر مباشرة في الجدول أدناه كما في إكسل: اكتب السعر ثم Enter للصف التالي. المنتجات بلا سعر لا تظهر في نقطة البيع.</p>
+              <p class="hint subtle">الجلب من المستودع يضيف المواد الجديدة ويحدّث المخزون فقط — الأسعار التي أدخلتها لا تُحذف.</p>
             </div>
             <div class="toolbar-actions">
               <button type="button" class="btn btn-primary btn-lg" data-import-edari-warehouse>📦 جلب من مستودع الشورجة</button>
@@ -494,26 +491,29 @@
                   <select id="priceAssignCategory" class="field"></select>
                 </label>
                 <button type="button" class="btn btn-secondary" id="btnAssignCategory">تعيين القسم</button>
-                <button type="button" class="btn btn-secondary" id="btnExportPriceExcel">تنزيل إكسل للتسعير</button>
-                <label class="file-btn btn btn-secondary">رفع أسعار Excel
-                  <input type="file" id="priceExcelImportPrices" accept=".csv,.txt,.xls,.xml" hidden>
-                </label>
+                <button type="button" class="btn btn-secondary" id="btnFillPriceDown" title="Ctrl+D">تعبئة للأسفل</button>
                 <span class="sheet-spacer"></span>
                 <span class="sheet-dirty hidden" id="priceSheetDirty">0 تعديلات غير محفوظة</span>
                 <button type="button" class="btn btn-primary" id="btnSavePriceSheet" disabled>حفظ التعديلات</button>
                 <button type="button" class="btn btn-secondary" id="btnPublishPrices" disabled>رفع المحدد للفروع</button>
                 <button type="button" class="btn btn-ghost" id="btnPublishPriced">رفع المسعّر</button>
               </div>
-              <p class="hint" id="priceSelectionHint">اختر قسماً أو ابحث، ثم عدّل السعر مباشرة في الجدول. Enter ينتقل للصف التالي.</p>
-              <div class="table-wrap sheet-wrap" id="priceSelectionWrap">
-                <table class="sheet-table" id="priceSheetTable">
+              <p class="hint" id="priceSelectionHint">امسح الباركود أو ابحث، ثم اكتب السعر. Enter = الصف التالي · Tab = العملة · Ctrl+D = تعبئة للأسفل · Ctrl+S = حفظ</p>
+              <div class="excel-bar" id="excelFormulaBar">
+                <span class="excel-ref" id="sheetCellRef">—</span>
+                <span class="excel-fx">fx</span>
+                <input id="sheetFormulaInput" class="excel-fx-input" placeholder="السعر أو العملة للخلية المحددة" dir="ltr" autocomplete="off">
+              </div>
+              <div class="table-wrap sheet-wrap excel-wrap" id="priceSelectionWrap">
+                <table class="sheet-table excel-table" id="priceSheetTable">
                   <thead>
                     <tr>
+                      <th class="sheet-rownum">#</th>
                       <th class="sheet-check"><input type="checkbox" id="priceSheetSelectAll" title="تحديد الكل"></th>
                       <th>الباركود</th>
                       <th>الاسم</th>
                       <th>القسم</th>
-                      <th>سعر البيع</th>
+                      <th class="sheet-price-col">السعر</th>
                       <th>العملة</th>
                       <th>الحالة</th>
                     </tr>
@@ -792,7 +792,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=37"></script>
+  <script src="app.js?v=40"></script>
   <script src="premium.js?v=17"></script>
 </body>
 </html>

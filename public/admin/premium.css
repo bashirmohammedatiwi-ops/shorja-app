@@ -415,6 +415,20 @@ body.premium-ready { background: #e8edf4; }
   background: #f1f5f9;
   z-index: 1;
 }
+.excel-wrap.table-wrap {
+  border-color: #a9d08e;
+  box-shadow: none;
+  border-radius: 0 0 8px 8px;
+}
+.excel-wrap th,
+.excel-table th {
+  background: #217346 !important;
+  color: #fff;
+  z-index: 3;
+}
+.excel-table thead .sheet-rownum {
+  background: #185c37 !important;
+}
 
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
