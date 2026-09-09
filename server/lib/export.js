@@ -938,25 +938,80 @@ function invoicePrintHtml(invoice, branchName = '', opts = {}) {
   return buildA4InvoiceHtml(invoice, branchName, { footer, debtInfo });
 }
 
+function parseCsvLine(line) {
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if ((ch === ',' || ch === ';' || ch === '\t') && !inQuotes) {
+      out.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+function normalizePriceCurrencyCell(value) {
+  const s = String(value || '').trim().toLowerCase();
+  if (s === 'usd' || s === '$' || s.includes('دولار') || s.includes('dollar')) return 'usd';
+  return 'iqd';
+}
+
 function parseProductsCsv(text) {
-  const lines = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return [];
+  const header = parseCsvLine(lines[0]).map((h) => h.replace(/^"|"$/g, ''));
+  const hasHeader = header.some((h) => /barcode|باركود|الاسم|name|السعر|price|العملة/i.test(h));
+  const idx = (names) => header.findIndex((h) => names.some((n) => String(h).toLowerCase().includes(n)));
+  const col = {
+    barcode: hasHeader ? idx(['باركود', 'barcode']) : 0,
+    name: hasHeader ? idx(['الاسم', 'name']) : 1,
+    price: hasHeader ? idx(['السعر', 'price']) : 2,
+    currency: hasHeader ? idx(['العملة', 'currency']) : -1,
+    stock: hasHeader ? idx(['المخزون', 'stock']) : 3,
+    category: hasHeader ? idx(['القسم', 'category']) : 4,
+    unit: hasHeader ? idx(['الوحدة', 'unit']) : -1
+  };
   const items = [];
-  const start = lines[0].includes('barcode') || lines[0].includes('باركود') ? 1 : 0;
+  const start = hasHeader ? 1 : 0;
   for (let i = start; i < lines.length; i++) {
-    const parts = lines[i].split(/[,;\t]/).map((p) => p.trim().replace(/^"|"$/g, ''));
-    if (parts.length < 3) continue;
-    const [barcode, name, price, stock, category] = parts;
-    if (!barcode || !name) continue;
-    items.push({
+    const parts = parseCsvLine(lines[i]).map((p) => p.replace(/^"|"$/g, ''));
+    const barcode = String(parts[col.barcode] || '').trim();
+    const name = String(parts[col.name] || '').trim();
+    if (!barcode) continue;
+    const item = {
       barcode,
       name,
-      price: Number(price) || 0,
-      stockQty: Number(stock) || 0,
-      category: category || ''
-    });
+      price: Number(parts[col.price] || 0) || 0,
+      stockQty: col.stock >= 0 ? Number(parts[col.stock] || 0) || 0 : 0,
+      category: col.category >= 0 ? (parts[col.category] || '') : '',
+      unit: col.unit >= 0 ? (parts[col.unit] || 'قطعة') : 'قطعة'
+    };
+    if (col.currency >= 0) item.priceCurrency = normalizePriceCurrencyCell(parts[col.currency]);
+    if (!item.name && !hasHeader) continue;
+    items.push(item);
   }
   return items;
 }
 
-module.exports = { invoicePrintHtml, parseProductsCsv };
+function parsePriceSheetCsv(text) {
+  return parseProductsCsv(text).map((item) => ({
+    barcode: item.barcode,
+    name: item.name,
+    price: item.price,
+    priceCurrency: item.priceCurrency || 'iqd'
+  })).filter((item) => item.barcode);
+}
+
+module.exports = { invoicePrintHtml, parseProductsCsv, parsePriceSheetCsv };

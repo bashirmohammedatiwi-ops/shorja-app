@@ -13,7 +13,7 @@ const { isManualSyncOnlyMode } = require('../lib/edari-safety');
 const { canWriteEdari } = require('../lib/edari-bridge');
 const { resetBusinessData, snapshotCounts } = require('../lib/reset-business-data');
 const { publishPricePackage, listPackages, getLatestVersion } = require('../lib/prices');
-const { parseProductsCsv, invoicePrintHtml } = require('../lib/export');
+const { parseProductsCsv, parsePriceSheetCsv, invoicePrintHtml } = require('../lib/export');
 const { deleteInvoiceById, deletePaymentById, deleteAccountById, deleteJournalEntryById } = require('../lib/deletions');
 const { getDataRevision } = require('../lib/data-revision');
 const { getPosMonitor } = require('../lib/pos-monitor');
@@ -308,6 +308,26 @@ router.post('/products/import', (req, res) => {
     if (!items.length) return res.status(400).json({ ok: false, error: 'لا توجد منتجات للاستيراد' });
     const count = bulkUpsert(items);
     res.json({ ok: true, count });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.post('/products/import-prices', (req, res) => {
+  try {
+    let items = [];
+    if (Array.isArray(req.body?.items)) items = req.body.items;
+    else if (req.body?.csv) items = parsePriceSheetCsv(req.body.csv);
+    const patches = items
+      .map((row) => ({
+        barcode: String(row.barcode || '').trim(),
+        price: row.price,
+        priceCurrency: row.priceCurrency
+      }))
+      .filter((row) => row.barcode && row.price != null && row.price !== '');
+    if (!patches.length) return res.status(400).json({ ok: false, error: 'لا توجد أسعار في الملف' });
+    const products = bulkPatchProducts(patches);
+    res.json({ ok: true, count: products.length, products });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }

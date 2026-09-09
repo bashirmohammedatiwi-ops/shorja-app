@@ -100,7 +100,7 @@ async function repairBill(header) {
 
   const person = Number(process.env.EDARI_INVOICE_PERSON || 255);
   const upd14 = await runExecute(
-    `UPDATE file14n SET Two = ${customerSeq}, Equa = 1, Frst = ${kindRecNo}, Mst = 1,
+    `UPDATE file14n SET Two = ${customerSeq}, Equa = 1, Frst = ${kindRecNo}, Mst = ${Number(process.env.EDARI_SHORJA_STORE_INDEX || 4)},
       person = ${person}, Book = ${book}, Curr = 0, MatName = '', "Sum" = 0, "Date" = ${dateTs}
      WHERE BillSeq = ${billSeq}`
   );

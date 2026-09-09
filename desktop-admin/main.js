@@ -48,6 +48,7 @@ function applyEdariEnv() {
     EDARI_SHORJA_CHILD_SUFFIX_FLOOR: process.env.EDARI_SHORJA_CHILD_SUFFIX_FLOOR || '9001',
     EDARI_SHORJA_BILL_NUM_START: process.env.EDARI_SHORJA_BILL_NUM_START || '9000000',
     EDARI_SHORJA_STORE_NAME: process.env.EDARI_SHORJA_STORE_NAME || 'محل الشورجه',
+    EDARI_SHORJA_STORE_INDEX: process.env.EDARI_SHORJA_STORE_INDEX || '4',
     ...connectionToEnv()
   });
 }

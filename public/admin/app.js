@@ -145,6 +145,147 @@ function productPriceLabel(p) {
   return fmtPrice(p.price, p.priceCurrency);
 }
 
+function xmlEsc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function buildPriceExcelXml(products) {
+  const rows = products.map((p) => {
+    const priced = p.priced && Number(p.price) > 0;
+    return [
+      p.barcode || '',
+      p.name || '',
+      p.unit || 'قطعة',
+      Number(p.stockQty || 0),
+      p.category || '',
+      (p.priceCurrency || 'iqd') === 'usd' ? 'دولار' : 'دينار',
+      priced ? Number(p.price) : ''
+    ];
+  });
+  const header = ['باركود', 'الاسم', 'الوحدة', 'المخزون', 'القسم', 'العملة', 'السعر'];
+  const cell = (v) => `<Cell><Data ss:Type="${typeof v === 'number' ? 'Number' : 'String'}">${xmlEsc(v)}</Data></Cell>`;
+  const rowXml = (arr) => `<Row>${arr.map(cell).join('')}</Row>`;
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Worksheet ss:Name="التسعير">
+<Table>
+${rowXml(header)}
+${rows.map(rowXml).join('\n')}
+</Table>
+</Worksheet>
+</Workbook>`;
+}
+
+function downloadBlob(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function downloadPriceExcel() {
+  const data = await fetchProductsList({ q: '', limit: 500000 });
+  const products = data.products || [];
+  if (!products.length) {
+    toast('لا توجد منتجات للتنزيل — اجلب المستودع أولاً');
+    return;
+  }
+  const xml = buildPriceExcelXml(products);
+  downloadBlob(`تسعير-الشورجة-${Date.now()}.xls`, xml, 'application/vnd.ms-excel');
+  toast(`تم تنزيل ${products.length} منتج — عبّئ عمود السعر والعملة ثم ارفع الملف`);
+}
+
+function parsePriceExcelText(text) {
+  const raw = String(text || '').replace(/^\uFEFF/, '');
+  if (raw.includes('<Workbook') || raw.includes('<Worksheet')) {
+    const doc = new DOMParser().parseFromString(raw, 'text/xml');
+    const rows = [...doc.getElementsByTagName('Row')];
+    if (rows.length < 2) return [];
+    const header = [...(rows[0].getElementsByTagName('Data'))].map((c) => (c.textContent || '').trim());
+    const idx = (names) => header.findIndex((h) => names.some((n) => h.includes(n)));
+    const barcodeI = idx(['باركود', 'barcode']);
+    const priceI = idx(['السعر', 'price']);
+    const currencyI = idx(['العملة', 'currency']);
+    const items = [];
+    for (const row of rows.slice(1)) {
+      const cells = [...row.getElementsByTagName('Data')].map((c) => (c.textContent || '').trim());
+      const barcode = cells[barcodeI] || '';
+      if (!barcode) continue;
+      const curRaw = (cells[currencyI] || '').toLowerCase();
+      items.push({
+        barcode,
+        price: Number(cells[priceI] || 0) || 0,
+        priceCurrency: /usd|دولار|dollar|\$/.test(curRaw) ? 'usd' : 'iqd'
+      });
+    }
+    return items;
+  }
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim());
+  if (!lines.length) return [];
+  const split = (line) => {
+    const out = [];
+    let cur = '';
+    let q = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') q = !q;
+      else if ((ch === ',' || ch === ';' || ch === '\t') && !q) {
+        out.push(cur.trim());
+        cur = '';
+      } else cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
+  };
+  const header = split(lines[0]);
+  const hasHeader = header.some((h) => /باركود|barcode|السعر|العملة/i.test(h));
+  const idx = (names) => header.findIndex((h) => names.some((n) => String(h).toLowerCase().includes(n)));
+  const barcodeI = hasHeader ? idx(['باركود', 'barcode']) : 0;
+  const priceI = hasHeader ? idx(['السعر', 'price']) : 6;
+  const currencyI = hasHeader ? idx(['العملة', 'currency']) : 5;
+  const start = hasHeader ? 1 : 0;
+  const items = [];
+  for (const line of lines.slice(start)) {
+    const cells = split(line);
+    const barcode = String(cells[barcodeI] || '').trim();
+    if (!barcode) continue;
+    const curRaw = String(cells[currencyI] || '').toLowerCase();
+    items.push({
+      barcode,
+      price: Number(cells[priceI] || 0) || 0,
+      priceCurrency: /usd|دولار|dollar|\$/.test(curRaw) ? 'usd' : 'iqd'
+    });
+  }
+  return items;
+}
+
+async function importPriceExcelFile(file) {
+  if (!file) return;
+  const text = await file.text();
+  const items = parsePriceExcelText(text).filter((row) => row.barcode);
+  if (!items.length) {
+    toast('الملف لا يحتوي باركودات. احفظه من إكسل كـ CSV أو استخدم ملف التنزيل نفسه');
+    return;
+  }
+  const data = await api('/admin/products/import-prices', {
+    method: 'POST',
+    body: JSON.stringify({ items })
+  });
+  toast(`تم تحديث أسعار ${data.count} منتج`);
+  loadProducts();
+  loadPriceSheet();
+  loadDashboard();
+}
+
 function branchOnline(lastSeen) {
   if (!lastSeen) return false;
   const t = new Date(lastSeen.replace(' ', 'T')).getTime();
@@ -720,6 +861,7 @@ function productCardHtml(p, opts = {}) {
     <article class="prod-card${selected ? ' selected' : ''}" data-barcode="${esc(p.barcode)}">
       ${p.hasOffer ? `<span class="prod-offer">${esc(p.offerName || 'عرض')}</span>` : ''}
       ${p.category ? `<span class="prod-category">${esc(p.category)}</span>` : ''}
+      <span class="prod-currency-pill">${p.priced ? currencyLabel(p.priceCurrency) : 'بدون سعر'}</span>
       <div class="prod-name">${esc(p.name)}</div>
       <div class="prod-barcode">${esc(p.barcode)}</div>
       <div class="prod-meta">
@@ -1542,13 +1684,22 @@ document.getElementById('prodViewToggle')?.addEventListener('click', (e) => {
 });
 document.getElementById('prodSort')?.addEventListener('change', () => loadProducts());
 document.getElementById('btnExportProducts')?.addEventListener('click', () => {
-  const table = document.getElementById('productsDataTable');
-  if (table && window.exportTableCsv) {
-    window.exportTableCsv(table, `products-${Date.now()}.csv`);
-    toast('تم تصدير المنتجات');
-    return;
-  }
-  toast('لا توجد بيانات للتصدير');
+  downloadPriceExcel().catch((err) => toast(err.message || 'فشل تنزيل الإكسل'));
+});
+document.getElementById('btnExportPriceExcel')?.addEventListener('click', () => {
+  downloadPriceExcel().catch((err) => toast(err.message || 'فشل تنزيل الإكسل'));
+});
+document.getElementById('priceExcelImport')?.addEventListener('change', async (e) => {
+  try {
+    await importPriceExcelFile(e.target.files?.[0]);
+  } catch (err) { toast(err.message); }
+  e.target.value = '';
+});
+document.getElementById('priceExcelImportPrices')?.addEventListener('change', async (e) => {
+  try {
+    await importPriceExcelFile(e.target.files?.[0]);
+  } catch (err) { toast(err.message); }
+  e.target.value = '';
 });
 document.getElementById('btnEditFromView')?.addEventListener('click', () => {
   document.getElementById('productViewModal').close();

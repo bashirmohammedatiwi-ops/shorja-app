@@ -2,7 +2,7 @@ const { runQuery, runExecute, rowObjects, canWriteEdari } = require('./edari-bri
 const {
   edariSqlLiteral, sqlEscAscii, loadParentAccount, lookupAccountSeqByNum, clampEdariField
 } = require('./edari-accounts');
-const { lookupEdariMaterial } = require('./edari-lookup');
+const { lookupEdariMaterial, shorjaStoreIndex } = require('./edari-lookup');
 const {
   canWriteEdariInvoices,
   canWriteEdariPayments,
@@ -728,7 +728,7 @@ async function createEdariInvoice(payload) {
     const lineSql = `INSERT INTO file14n (BillSeq, BillNo, Mat, MatName, Quant, Price, OBonus, Kind, MatRem, Two, Equa, Frst, Mst, person, Book, Curr, "Date", "Sum")
       VALUES (${billSeq}, ${billNum}, ${Number(mat.seq || 0)}, '',
         ${qty}, ${price}, ${giftQty}, ${edariKind}, '', ${customerSeq},
-        1, ${kindRecNo}, 1, ${INVOICE_PERSON}, ${invoiceBook}, ${currCode}, ${formatEdariDateOnly(dateStr)}, 0)`;
+        1, ${kindRecNo}, ${shorjaStoreIndex()}, ${INVOICE_PERSON}, ${invoiceBook}, ${currCode}, ${formatEdariDateOnly(dateStr)}, 0)`;
     const lineIns = await runExecute(lineSql);
     if (!lineIns.ok) return { ok: false, error: lineIns.error || `فشل سطر الفاتورة: ${line.name}` };
 

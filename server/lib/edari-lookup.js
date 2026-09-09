@@ -205,6 +205,11 @@ function shorjaStoreName() {
   return String(process.env.EDARI_SHORJA_STORE_NAME || 'محل الشورجه').trim();
 }
 
+function shorjaStoreIndex() {
+  const n = Number(process.env.EDARI_SHORJA_STORE_INDEX || 4);
+  return Number.isFinite(n) && n > 0 ? n : 4;
+}
+
 function normalizeArName(s) {
   return String(s || '')
     .replace(/[أإآ]/g, 'ا')
@@ -223,6 +228,7 @@ function scoreWarehouseName(name, target) {
   if (t && n.includes(t)) return 90;
   if (n.includes('محلالشورجه') || n.includes('مستودعالشورجه') || n.includes('مخزنالشورجه')) return 80;
   if (n.includes('الشورجه') && (n.includes('محل') || n.includes('مستودع') || n.includes('مخزن'))) return 70;
+  if (n.includes('المستودعرئيسي') || n.includes('المستودعالرئيسي')) return 60;
   return 0;
 }
 
@@ -417,7 +423,42 @@ async function detectStoreAccess(store) {
       }
     }
   }
-  return null;
+  return { mode: 'file14', storeIndex: Number(store.seq) || shorjaStoreIndex() };
+}
+
+async function listTransferBillSeqs() {
+  const rows = await tryEdariSql('SELECT Seq FROM File15n WHERE Kind = 7');
+  return (rows || []).map((r) => Number(r.Seq ?? r.seq ?? 0)).filter((n) => n > 0);
+}
+
+async function listStoreMaterialSeqs(storeIndex) {
+  const bills = await listTransferBillSeqs();
+  if (!bills.length) return [];
+  const rows = await tryEdariSql(
+    `SELECT DISTINCT Mat FROM file14n WHERE Kind = 7 AND Mst = ${Number(storeIndex)} AND BillSeq IN (${bills.join(',')})`
+  );
+  return [...new Set((rows || []).map((r) => Number(r.Mat ?? r.mat ?? 0)).filter((n) => n > 0))];
+}
+
+async function storeQtyByMaterial(storeIndex) {
+  const bills = await listTransferBillSeqs();
+  const qty = new Map();
+  if (!bills.length) return qty;
+  const inList = bills.join(',');
+  const inbound = await tryEdariSql(
+    `SELECT Mat, SUM(Quant) AS q FROM file14n WHERE Kind = 7 AND Mst = ${Number(storeIndex)} AND BillSeq IN (${inList}) GROUP BY Mat`
+  );
+  for (const row of inbound || []) {
+    qty.set(Number(row.Mat ?? row.mat), Number(row.q ?? row.Q ?? 0));
+  }
+  const outbound = await tryEdariSql(
+    `SELECT Mat, SUM(Quant) AS q FROM file14n WHERE Kind = 8 AND Mst = ${Number(storeIndex)} AND BillSeq IN (${inList}) GROUP BY Mat`
+  );
+  for (const row of outbound || []) {
+    const mat = Number(row.Mat ?? row.mat);
+    qty.set(mat, Number(qty.get(mat) || 0) - Number(row.q ?? row.Q ?? 0));
+  }
+  return qty;
 }
 
 function serializeWarehouse(warehouse) {
@@ -433,10 +474,20 @@ function serializeWarehouse(warehouse) {
 
 async function resolveShorjaWarehouse() {
   const target = shorjaStoreName();
+  const index = shorjaStoreIndex();
   const namedStores = await listEdariNamedStores();
-  const store = await findStoreRecord(target);
+  const byIndex = namedStores.find((s) => Number(s.seq) === index) || {
+    seq: index,
+    num: String(index),
+    name: target,
+    table: 'File16n.SDefs'
+  };
+  const store = byIndex;
   const folder = await findMaterialFolder(target);
-  if (!store && !folder) {
+  const storeAccess = store ? await detectStoreAccess(store) : null;
+  const folderSeqs = folder ? await collectDescendantFolderSeqs(folder.seq) : null;
+  const source = storeAccess ? 'store' : (folder ? 'folder' : 'store');
+  if (source === 'folder' && !folder && !storeAccess) {
     const listed = namedStores.map((s) => s.name).filter(Boolean);
     const extra = listed.length ? ` المخازن الحالية في الإداري: ${listed.join('، ')}.` : '';
     throw new Error(
@@ -444,21 +495,11 @@ async function resolveShorjaWarehouse() {
     );
   }
 
-  const storeAccess = store ? await detectStoreAccess(store) : null;
-  const folderSeqs = folder ? await collectDescendantFolderSeqs(folder.seq) : null;
-  const source = storeAccess ? 'store' : 'folder';
-  if (source === 'folder' && !folder) {
-    throw new Error(
-      `وُجد المخزن «${store.name}» لكن لا توجد مواد مرتبطة به في حركة المخازن. انقل المواد إلى هذا المستودع أو ضعها في مجموعة مواد بنفس الاسم.`
-    );
-  }
-
-  const chosen = source === 'store' ? store : folder;
   return {
-    name: chosen.name || target,
+    name: target,
     target,
     source,
-    store: store ? { ...store, access: storeAccess } : null,
+    store: store ? { ...store, name: target, access: storeAccess } : null,
     folder: folder ? { ...folder, folderSeqs } : null
   };
 }
@@ -485,6 +526,40 @@ function warehouseWhereSql(warehouse, afterSeq = 0) {
 async function listEdariWarehouseMaterials({ afterSeq = 0, limit = 500, warehouse = null } = {}) {
   const wh = warehouse || await resolveShorjaWarehouse();
   const batch = Math.min(Math.max(Number(limit) || 500, 1), 2000);
+  const storeIndex = Number(wh?.store?.seq || shorjaStoreIndex());
+  if (wh?.store?.access?.mode === 'file14' || (wh?.store && !wh.folder)) {
+    const mats = await listStoreMaterialSeqs(storeIndex);
+    if (!mats.length) {
+      return { rows: [], lastSeq: Math.max(Number(afterSeq) || 0, 0), hasMore: false, warehouse: serializeWarehouse(wh) };
+    }
+    const qtyMap = await storeQtyByMaterial(storeIndex);
+    const wanted = mats
+      .filter((seq) => seq > Math.max(Number(afterSeq) || 0, 0))
+      .sort((a, b) => a - b)
+      .slice(0, batch);
+    if (!wanted.length) {
+      return { rows: [], lastSeq: Math.max(Number(afterSeq) || 0, 0), hasMore: false, warehouse: serializeWarehouse(wh) };
+    }
+    const sql = `
+      SELECT ${MATERIAL_SELECT}
+      FROM File13n
+      WHERE SubCount = 0 AND Seq IN (${wanted.join(',')})
+    `;
+    const rows = (await runEdariSql(sql)).map(mapMaterialRow).filter(Boolean)
+      .sort((a, b) => Number(a.seq) - Number(b.seq))
+      .map((row) => {
+        const storeQty = qtyMap.get(Number(row.seq));
+        if (storeQty == null) return row;
+        return { ...row, stockQty: storeQty, qty: storeQty };
+      });
+    const lastSeq = rows.length ? Number(rows[rows.length - 1].seq || 0) : Math.max(Number(afterSeq) || 0, 0);
+    return {
+      rows,
+      lastSeq,
+      hasMore: mats.some((seq) => seq > lastSeq),
+      warehouse: serializeWarehouse(wh)
+    };
+  }
   const sql = `
     SELECT TOP ${batch} ${MATERIAL_SELECT}
     FROM File13n
@@ -503,6 +578,10 @@ async function listEdariWarehouseMaterials({ afterSeq = 0, limit = 500, warehous
 
 async function countEdariWarehouseMaterials(warehouse = null) {
   const wh = warehouse || await resolveShorjaWarehouse();
+  if (wh?.source === 'store' && (wh.store?.access?.mode === 'file14' || !wh.folder)) {
+    const mats = await listStoreMaterialSeqs(Number(wh?.store?.seq || shorjaStoreIndex()));
+    return mats.length;
+  }
   const rows = await runEdariSql(
     `SELECT COUNT(*) AS c FROM File13n WHERE ${warehouseWhereSql(wh, 0)}`
   );
@@ -519,6 +598,7 @@ module.exports = {
   listEdariNamedStores,
   serializeWarehouse,
   shorjaStoreName,
+  shorjaStoreIndex,
   mapMaterialRow,
   normalizeWholesalePrice,
   wholesalePrice,

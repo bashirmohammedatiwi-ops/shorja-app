@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=10">
+  <link rel="stylesheet" href="styles.css?v=11">
   <link rel="stylesheet" href="premium.css?v=12">
   <link rel="stylesheet" href="official.css?v=4">
 </head>
@@ -401,7 +401,10 @@
                 <option value="stock">ترتيب: المخزون</option>
                 <option value="price">ترتيب: السعر</option>
               </select>
-              <button type="button" class="btn btn-secondary" id="btnExportProducts">تصدير CSV</button>
+              <button type="button" class="btn btn-secondary" id="btnExportProducts">تنزيل إكسل للتسعير</button>
+              <label class="file-btn btn btn-secondary" title="ارفع ملف الإكسل بعد تعبئة السعر والعملة">رفع أسعار Excel
+                <input type="file" id="priceExcelImport" accept=".csv,.txt,.xls,.xml" hidden>
+              </label>
               <button type="button" class="btn btn-primary" id="btnNewProduct">+ منتج جديد</button>
               <button type="button" class="btn btn-primary" data-import-edari-warehouse title="جلب مواد مستودع محل الشورجه وحذف المنتجات القديمة">📦 جلب من مستودع الشورجة</button>
               <button type="button" class="btn btn-secondary" data-refresh-edari-warehouse title="تحديث الاسم والباركود والمخزون فقط دون تغيير الأسعار">↻ تحديث من المستودع</button>
@@ -436,7 +439,7 @@
             <div>
               <h2>أسعار المواد</h2>
               <p class="hint">عدّل الأسعار في جدول يشبه إكسل، وصنّف المنتجات في أقسام ليسهل الرجوع إليها لاحقاً. المنتجات بلا سعر لا تظهر في نقطة البيع.</p>
-              <p class="hint subtle">يُجلب الاسم والباركود والمخزون من مستودع «محل الشورجه» فقط — سعر البيع يُدخل هنا يدوياً ولا يُرسل لنقطة البيع إلا بعد التسعير.</p>
+              <p class="hint subtle">يُجلب الاسم والباركود والمخزون من مستودع محل الشورجه (المخزن 4) — سعر البيع والعملة يُدخلان هنا أو عبر ملف إكسل، ولا يظهر المنتج في نقطة البيع إلا بعد التسعير. عملة الفاتورة تتبع عملة الحساب، والترحيل إلى المستودع الجديد.</p>
             </div>
             <div class="toolbar-actions">
               <button type="button" class="btn btn-primary btn-lg" data-import-edari-warehouse>📦 جلب من مستودع الشورجة</button>
@@ -491,6 +494,10 @@
                   <select id="priceAssignCategory" class="field"></select>
                 </label>
                 <button type="button" class="btn btn-secondary" id="btnAssignCategory">تعيين القسم</button>
+                <button type="button" class="btn btn-secondary" id="btnExportPriceExcel">تنزيل إكسل للتسعير</button>
+                <label class="file-btn btn btn-secondary">رفع أسعار Excel
+                  <input type="file" id="priceExcelImportPrices" accept=".csv,.txt,.xls,.xml" hidden>
+                </label>
                 <span class="sheet-spacer"></span>
                 <span class="sheet-dirty hidden" id="priceSheetDirty">0 تعديلات غير محفوظة</span>
                 <button type="button" class="btn btn-primary" id="btnSavePriceSheet" disabled>حفظ التعديلات</button>
@@ -785,7 +792,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=36"></script>
+  <script src="app.js?v=37"></script>
   <script src="premium.js?v=17"></script>
 </body>
 </html>

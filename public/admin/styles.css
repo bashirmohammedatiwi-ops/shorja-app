@@ -905,6 +905,16 @@ tr:hover td { background: #f8fafc; }
 
 .prod-card .prod-category { display: none; }
 
+.prod-currency-pill {
+  align-self: flex-start;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
 .view-toggle {
   display: inline-flex;
   border: 1.5px solid var(--border);
