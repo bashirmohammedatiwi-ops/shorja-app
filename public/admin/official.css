@@ -63,7 +63,7 @@
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
 }
 .section-panel-toolbar {
   padding: 10px 12px !important;

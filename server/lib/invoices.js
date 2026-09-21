@@ -437,7 +437,19 @@ async function createReturn(parentId, data, user) {
   }, user);
 }
 
-function listInvoices({ branchId, dateFrom, dateTo, q, kind, paymentMethod, edariStatus, limit = 50, offset = 0, excludePrepModes = [] } = {}) {
+function listInvoices({
+  branchId,
+  dateFrom,
+  dateTo,
+  q,
+  kind,
+  paymentMethod,
+  edariStatus,
+  limit = 50,
+  offset = 0,
+  excludePrepModes = [],
+  sort = 'created_desc'
+} = {}) {
   const where = ['1=1'];
   const params = [];
   if (branchId) { where.push('i.branch_id = ?'); params.push(branchId); }
@@ -451,6 +463,8 @@ function listInvoices({ branchId, dateFrom, dateTo, q, kind, paymentMethod, edar
     where.push("i.edari_sync_status = 'synced'");
   } else if (edariStatus === 'error') {
     where.push("i.edari_sync_status = 'error'");
+  } else if (edariStatus === 'archived') {
+    where.push("i.edari_sync_status = 'archived'");
   }
   if (Array.isArray(excludePrepModes) && excludePrepModes.length) {
     const modes = excludePrepModes.map((m) => String(m).trim()).filter(Boolean);
@@ -464,12 +478,20 @@ function listInvoices({ branchId, dateFrom, dateTo, q, kind, paymentMethod, edar
     const like = `%${q}%`;
     params.push(like, like, like, like);
   }
+  const orderSql = {
+    created_desc: 'i.created_at DESC, i.id DESC',
+    date_desc: 'i.invoice_date DESC, i.id DESC',
+    date_asc: 'i.invoice_date ASC, i.id ASC',
+    total_desc: 'i.total DESC, i.id DESC',
+    total_asc: 'i.total ASC, i.id ASC',
+    no_desc: 'i.invoice_no DESC'
+  }[String(sort || '')] || 'i.created_at DESC, i.id DESC';
   const sql = `
     SELECT i.*, a.name AS account_name, br.name AS branch_name FROM invoices i
     LEFT JOIN accounts a ON a.id = i.account_id
     LEFT JOIN branches br ON br.id = i.branch_id
     WHERE ${where.join(' AND ')}
-    ORDER BY i.created_at DESC LIMIT ? OFFSET ?
+    ORDER BY ${orderSql} LIMIT ? OFFSET ?
   `;
   params.push(limit, offset);
   const rows = db.prepare(sql).all(...params);
@@ -479,6 +501,37 @@ function listInvoices({ branchId, dateFrom, dateTo, q, kind, paymentMethod, edar
   return {
     invoices: rows.map((r) => mapInvoice(r)),
     total
+  };
+}
+
+function invoiceListStats({ excludePrepModes = [] } = {}) {
+  const where = ['1=1'];
+  const params = [];
+  if (Array.isArray(excludePrepModes) && excludePrepModes.length) {
+    const modes = excludePrepModes.map((m) => String(m).trim()).filter(Boolean);
+    if (modes.length) {
+      where.push(`COALESCE(prep_mode, 'branch') NOT IN (${modes.map(() => '?').join(', ')})`);
+      params.push(...modes);
+    }
+  }
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN invoice_date = date('now', 'localtime') THEN 1 ELSE 0 END) AS today,
+      SUM(CASE WHEN COALESCE(edari_sync_status, '') NOT IN ('synced', 'archived') THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN edari_sync_status = 'synced' THEN 1 ELSE 0 END) AS synced,
+      SUM(CASE WHEN edari_sync_status = 'archived' THEN 1 ELSE 0 END) AS archived,
+      SUM(CASE WHEN edari_sync_status = 'error' THEN 1 ELSE 0 END) AS error
+    FROM invoices
+    WHERE ${where.join(' AND ')}
+  `).get(...params);
+  return {
+    total: Number(row?.total || 0),
+    today: Number(row?.today || 0),
+    pending: Number(row?.pending || 0),
+    synced: Number(row?.synced || 0),
+    archived: Number(row?.archived || 0),
+    error: Number(row?.error || 0)
   };
 }
 
@@ -821,10 +874,12 @@ function salesReport({ branchId, dateFrom, dateTo, excludePrepModes = ['delegate
 }
 
 module.exports = {
+  mapInvoice,
   loadInvoice,
   createInvoice,
   createReturn,
   listInvoices,
+  invoiceListStats,
   dailySummary,
   createPayment,
   listPayments,

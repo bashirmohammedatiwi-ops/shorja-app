@@ -5,8 +5,36 @@ const { canWriteEdari } = require('./edari-bridge');
 
 const DELEGATE_BRANCH_CODE = 'DELEGATE';
 
+function invoiceLooksDelegate(inv = {}) {
+  const no = String(inv.invoice_no || inv.invoiceNo || '').toUpperCase();
+  const notes = String(inv.notes || '');
+  const branchCode = String(inv.branch_code || inv.branchCode || '');
+  const branchName = String(inv.branch_name || inv.branchName || '');
+  const accountScope = String(inv.account_scope || inv.accountScope || '');
+  return inv.prep_mode === 'delegate'
+    || inv.prepMode === 'delegate'
+    || no.startsWith('MND')
+    || branchCode === DELEGATE_BRANCH_CODE
+    || accountScope === 'delegate'
+    || notes.includes('مندوب')
+    || branchName.includes('مندوب');
+}
+
 function resolveQueueScope({ kind, refType, refId, queueScope = '' } = {}) {
-  if (queueScope === 'warehouse' || queueScope === 'delegate') return queueScope;
+  if (queueScope === 'warehouse' || queueScope === 'delegate') {
+    if (kind === 'invoice' && refType === 'invoice') {
+      const inv = db.prepare(`
+        SELECT i.prep_mode, i.invoice_no, i.notes, b.code AS branch_code, b.name AS branch_name,
+               a.account_scope
+        FROM invoices i
+        LEFT JOIN branches b ON b.id = i.branch_id
+        LEFT JOIN accounts a ON a.id = i.account_id
+        WHERE i.id = ?
+      `).get(refId);
+      if (inv && invoiceLooksDelegate(inv)) return 'delegate';
+    }
+    if (queueScope === 'warehouse' || queueScope === 'delegate') return queueScope;
+  }
 
   if (kind === 'account' && refType === 'account') {
     const acc = db.prepare('SELECT account_scope FROM accounts WHERE id = ?').get(refId);
@@ -15,18 +43,15 @@ function resolveQueueScope({ kind, refType, refId, queueScope = '' } = {}) {
 
   if (kind === 'invoice' && refType === 'invoice') {
     const inv = db.prepare(`
-      SELECT i.prep_mode, i.invoice_no, b.code AS branch_code
+      SELECT i.prep_mode, i.invoice_no, i.notes, b.code AS branch_code, b.name AS branch_name,
+             a.account_scope
       FROM invoices i
       LEFT JOIN branches b ON b.id = i.branch_id
+      LEFT JOIN accounts a ON a.id = i.account_id
       WHERE i.id = ?
     `).get(refId);
     if (!inv) return 'warehouse';
-    if (inv.prep_mode === 'delegate'
-      || String(inv.invoice_no || '').toUpperCase().startsWith('MND-')
-      || inv.branch_code === DELEGATE_BRANCH_CODE) {
-      return 'delegate';
-    }
-    return 'warehouse';
+    return invoiceLooksDelegate(inv) ? 'delegate' : 'warehouse';
   }
 
   if (kind === 'payment' && refType === 'payment') {
@@ -41,15 +66,17 @@ function resolveQueueScope({ kind, refType, refId, queueScope = '' } = {}) {
   return 'warehouse';
 }
 
-function enqueueEdariSync({ kind, refType, refId, payload, queueScope = '' }) {
+function enqueueEdariSync({ kind, refType, refId, payload, queueScope = '', reviveArchived = false } = {}) {
   const scope = resolveQueueScope({ kind, refType, refId, queueScope });
   const existing = db.prepare(`
-    SELECT id FROM edari_sync_queue
-    WHERE kind = ? AND ref_type = ? AND ref_id = ? AND status IN ('pending', 'error')
-    ORDER BY id DESC LIMIT 1
+    SELECT id, status FROM edari_sync_queue
+    WHERE kind = ? AND ref_type = ? AND ref_id = ? AND status IN ('pending', 'error', 'archived')
+    ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'error' THEN 1 ELSE 2 END, id DESC
+    LIMIT 1
   `).get(kind, refType || null, refId || null);
 
   if (existing) {
+    if (existing.status === 'archived' && !reviveArchived) return existing.id;
     db.prepare(`
       UPDATE edari_sync_queue
       SET payload = ?, queue_scope = ?, status = 'pending', error = NULL, updated_at = datetime('now')
@@ -122,6 +149,7 @@ function syncQueueStats({ scope = '' } = {}) {
   const baseWhere = scopeFilter || 'WHERE 1=1';
   const pending = db.prepare(`SELECT COUNT(*) AS c FROM edari_sync_queue q ${baseWhere} AND q.status = 'pending'`).get().c;
   const error = db.prepare(`SELECT COUNT(*) AS c FROM edari_sync_queue q ${baseWhere} AND q.status = 'error'`).get().c;
+  const archived = db.prepare(`SELECT COUNT(*) AS c FROM edari_sync_queue q ${baseWhere} AND q.status = 'archived'`).get().c;
   const { accountsPending, invoicesPending, paymentsPending } = scopedEntityPendingCounts(scope);
   const byKind = db.prepare(`
     SELECT q.kind, COUNT(*) AS c FROM edari_sync_queue q
@@ -136,8 +164,26 @@ function syncQueueStats({ scope = '' } = {}) {
     invoicesPending: Number(invoicesPending),
     paymentsPending: Number(paymentsPending),
     queueByKind,
+    archived: Number(archived),
     total: Number(pending) + Number(error)
   };
+}
+
+function delegateInvoiceExistsSql() {
+  return `EXISTS (
+    SELECT 1 FROM invoices i
+    LEFT JOIN branches b ON b.id = i.branch_id
+    LEFT JOIN accounts a ON a.id = i.account_id
+    WHERE i.id = q.ref_id
+      AND (
+        i.prep_mode = 'delegate'
+        OR UPPER(COALESCE(i.invoice_no, '')) LIKE 'MND%'
+        OR COALESCE(b.code, '') = '${DELEGATE_BRANCH_CODE}'
+        OR COALESCE(a.account_scope, '') = 'delegate'
+        OR COALESCE(i.notes, '') LIKE '%مندوب%'
+        OR COALESCE(b.name, '') LIKE '%مندوب%'
+      )
+  )`;
 }
 
 function legacyScopeCondition(scope) {
@@ -146,14 +192,7 @@ function legacyScopeCondition(scope) {
       (q.kind = 'account' AND q.ref_type = 'account' AND EXISTS (
         SELECT 1 FROM accounts a WHERE a.id = q.ref_id AND COALESCE(a.account_scope, 'warehouse') = 'warehouse'
       ))
-      OR (q.kind = 'invoice' AND q.ref_type = 'invoice' AND EXISTS (
-        SELECT 1 FROM invoices i
-        LEFT JOIN branches b ON b.id = i.branch_id
-        WHERE i.id = q.ref_id
-          AND COALESCE(i.prep_mode, 'branch') != 'delegate'
-          AND COALESCE(b.code, '') != '${DELEGATE_BRANCH_CODE}'
-          AND COALESCE(i.invoice_no, '') NOT LIKE 'MND-%'
-      ))
+      OR (q.kind = 'invoice' AND q.ref_type = 'invoice' AND NOT (${delegateInvoiceExistsSql()}))
       OR (q.kind = 'payment' AND q.ref_type = 'payment' AND EXISTS (
         SELECT 1 FROM payments p JOIN accounts a ON a.id = p.account_id
         WHERE p.id = q.ref_id AND COALESCE(a.account_scope, 'warehouse') = 'warehouse'
@@ -164,14 +203,7 @@ function legacyScopeCondition(scope) {
       (q.kind = 'account' AND q.ref_type = 'account' AND EXISTS (
         SELECT 1 FROM accounts a WHERE a.id = q.ref_id AND a.account_scope = 'delegate'
       ))
-      OR (q.kind = 'invoice' AND q.ref_type = 'invoice' AND EXISTS (
-        SELECT 1 FROM invoices i
-        LEFT JOIN branches b ON b.id = i.branch_id
-        WHERE i.id = q.ref_id
-          AND (i.prep_mode = 'delegate'
-            OR COALESCE(b.code, '') = '${DELEGATE_BRANCH_CODE}'
-            OR COALESCE(i.invoice_no, '') LIKE 'MND-%')
-      ))
+      OR (q.kind = 'invoice' AND q.ref_type = 'invoice' AND ${delegateInvoiceExistsSql()})
       OR (q.kind = 'payment' AND q.ref_type = 'payment' AND EXISTS (
         SELECT 1 FROM payments p JOIN accounts a ON a.id = p.account_id
         WHERE p.id = q.ref_id AND a.account_scope = 'delegate'
@@ -181,22 +213,30 @@ function legacyScopeCondition(scope) {
 }
 
 function scopeQueueSql(scope) {
-  if (scope !== 'warehouse' && scope !== 'delegate') return '';
-  const legacy = legacyScopeCondition(scope);
-  return `AND (q.queue_scope = '${scope}' OR (q.queue_scope IS NULL AND (${legacy})))`;
+  if (scope === 'delegate') {
+    const legacy = legacyScopeCondition('delegate');
+    return `AND (q.queue_scope = 'delegate' OR (${legacy}))`;
+  }
+  if (scope === 'warehouse') {
+    const del = legacyScopeCondition('delegate');
+    return `AND NOT (q.queue_scope = 'delegate' OR (${del}))`;
+  }
+  return '';
 }
 
-function listPendingSync(limit = 50, { kinds = null, scope = '' } = {}) {
+function listPendingSync(limit = 50, { kinds = null, scope = '', statuses = null } = {}) {
   const kindList = Array.isArray(kinds) && kinds.length
     ? kinds.map((k) => `'${String(k).replace(/'/g, "''")}'`).join(', ')
     : null;
   const kindFilter = kindList ? `AND q.kind IN (${kindList})` : '';
   const scopeFilter = scopeQueueSql(scope);
-  return db.prepare(`
-    SELECT q.* FROM edari_sync_queue q
-    LEFT JOIN invoices i ON q.kind = 'invoice' AND q.ref_type = 'invoice' AND i.id = q.ref_id
-    LEFT JOIN payments p ON q.kind = 'payment' AND q.ref_type = 'payment' AND p.id = q.ref_id
-    WHERE q.status IN ('pending', 'error')
+  const statusList = (Array.isArray(statuses) && statuses.length
+    ? statuses
+    : ['pending', 'error']
+  ).map((s) => `'${String(s).replace(/'/g, "''")}'`).join(', ');
+  const skipSynced = statusList.includes('archived')
+    ? ''
+    : `
       AND NOT (
         q.kind = 'invoice'
         AND COALESCE(i.edari_sync_status, '') = 'synced'
@@ -206,10 +246,16 @@ function listPendingSync(limit = 50, { kinds = null, scope = '' } = {}) {
         q.kind = 'payment'
         AND COALESCE(p.edari_sync_status, '') = 'synced'
         AND COALESCE(p.edari_journal_seq, '') != ''
-      )
+      )`;
+  return db.prepare(`
+    SELECT q.* FROM edari_sync_queue q
+    LEFT JOIN invoices i ON q.kind = 'invoice' AND q.ref_type = 'invoice' AND i.id = q.ref_id
+    LEFT JOIN payments p ON q.kind = 'payment' AND q.ref_type = 'payment' AND p.id = q.ref_id
+    WHERE q.status IN (${statusList})
+      ${skipSynced}
       ${kindFilter}
       ${scopeFilter}
-    ORDER BY q.id ASC LIMIT ?
+    ORDER BY q.id DESC LIMIT ?
   `).all(limit);
 }
 
@@ -293,6 +339,8 @@ function enrichQueueItem(item) {
   let subtitle = '';
   let amount = null;
   let refLabel = '';
+  let currency = payload.currency || 'iqd';
+  let invoiceDate = payload.invoiceDate || '';
 
   if (item.kind === 'account' && item.ref_type === 'account') {
     const acc = db.prepare('SELECT name, phone, edari_num FROM accounts WHERE id = ?').get(item.ref_id);
@@ -300,11 +348,14 @@ function enrichQueueItem(item) {
     subtitle = acc?.phone || payload.phone || '';
     refLabel = acc?.edari_num ? `إداري: ${acc.edari_num}` : 'غير مربوط';
   } else if (item.kind === 'invoice' && item.ref_type === 'invoice') {
-    const inv = db.prepare('SELECT invoice_no, customer_name, total, kind FROM invoices WHERE id = ?').get(item.ref_id);
+    const inv = db.prepare('SELECT invoice_no, customer_name, total, kind, invoice_date, currency FROM invoices WHERE id = ?').get(item.ref_id);
     title = inv?.invoice_no || payload.invoiceNo || `فاتورة #${item.ref_id}`;
     subtitle = inv?.customer_name || payload.customerName || '';
     amount = inv?.total ?? payload.total;
+    currency = inv?.currency || payload.currency || 'iqd';
+    invoiceDate = inv?.invoice_date || payload.invoiceDate || '';
     refLabel = inv?.kind === 'return' ? 'مرتجع' : (inv?.kind === 'issue' ? 'إخراج مخزون' : 'بيع');
+    if (invoiceDate) refLabel += ` · ${invoiceDate}`;
     if (payload.accountId && !payload.edariSeq) {
       refLabel = 'يحتاج ترحيل حساب العميل أولاً';
     } else if (payload.edariSeq) {
@@ -346,9 +397,85 @@ function enrichQueueItem(item) {
     title,
     subtitle,
     amount,
+    currency,
+    invoiceDate,
     refLabel,
     payload
   };
+}
+
+function invoiceToSyncView(inv, queued) {
+  const isDelegate = invoiceLooksDelegate({
+    prepMode: inv.prepMode,
+    invoiceNo: inv.invoiceNo,
+    notes: inv.notes,
+    branchName: inv.branchName,
+    accountScope: inv.accountScope
+  });
+  if (queued) {
+    return {
+      ...queued,
+      invoiceDate: inv.invoiceDate || queued.invoiceDate || '',
+      createdAt: inv.createdAt || queued.updatedAt || '',
+      title: inv.invoiceNo || queued.title,
+      subtitle: inv.customerName || queued.subtitle || '',
+      amount: inv.total ?? queued.amount,
+      currency: inv.currency || queued.currency || 'iqd',
+      queueScope: queued.queueScope || (isDelegate ? 'delegate' : 'warehouse')
+    };
+  }
+  const status = inv.edariSyncStatus === 'synced' ? 'done'
+    : (inv.edariSyncStatus === 'archived' ? 'archived'
+      : (inv.edariSyncStatus === 'error' ? 'error' : 'pending'));
+  const date = inv.invoiceDate || '';
+  return {
+    id: -Number(inv.id),
+    synthetic: true,
+    kind: 'invoice',
+    refType: 'invoice',
+    refId: inv.id,
+    queueScope: isDelegate ? 'delegate' : 'warehouse',
+    status,
+    error: inv.edariSyncError || '',
+    attempts: 0,
+    title: inv.invoiceNo,
+    subtitle: inv.customerName || 'نقدي',
+    amount: inv.total,
+    currency: inv.currency || 'iqd',
+    invoiceDate: date,
+    createdAt: inv.createdAt || '',
+    refLabel: `${inv.kind === 'return' ? 'مرتجع' : 'بيع'}${date ? ` · ${date}` : ''}`,
+    payload: { invoiceNo: inv.invoiceNo, invoiceDate: date, customerName: inv.customerName }
+  };
+}
+
+function mergeScopeInvoices(queueItems, invoices, statuses) {
+  const wanted = new Set(statuses && statuses.length ? statuses : ['pending', 'error']);
+  const allowAll = wanted.has('done');
+  const byRef = new Map();
+  for (const item of queueItems || []) {
+    if (item.kind === 'invoice' && item.refId) byRef.set(Number(item.refId), item);
+  }
+  const seen = new Set();
+  const invoiceItems = [];
+  for (const inv of invoices || []) {
+    const row = invoiceToSyncView(inv, byRef.get(Number(inv.id)));
+    seen.add(Number(inv.id));
+    if (allowAll || wanted.has(row.status)) invoiceItems.push(row);
+  }
+  const orphans = (queueItems || []).filter((i) => i.kind === 'invoice' && !seen.has(Number(i.refId)));
+  const others = (queueItems || []).filter((i) => i.kind !== 'invoice');
+  const mergedInvoices = [
+    ...invoiceItems,
+    ...orphans.filter((i) => allowAll || wanted.has(i.status))
+  ];
+  mergedInvoices.sort((a, b) => {
+    const da = String(b.invoiceDate || '');
+    const db = String(a.invoiceDate || '');
+    if (da !== db) return da.localeCompare(db);
+    return Number(b.refId || 0) - Number(a.refId || 0);
+  });
+  return [...others, ...mergedInvoices];
 }
 
 function listPendingSyncEnriched(limit = 100, options = {}) {
@@ -392,6 +519,111 @@ function resetSyncItemsForRetry({ itemIds = null, kinds = null } = {}) {
     `).run();
   }
   return changed;
+}
+
+function applyArchiveStatusToRef(item, archived, note) {
+  const reason = archived ? (note || 'مؤرشف — إدخال يدوي') : 'بانتظار الإداري';
+  const status = archived ? 'archived' : 'pending';
+  if (item.kind === 'invoice' && item.ref_type === 'invoice') {
+    db.prepare(`UPDATE invoices SET edari_sync_status = ?, edari_sync_error = ? WHERE id = ?`)
+      .run(status, archived ? reason : 'بانتظار الإداري', item.ref_id);
+  } else if (item.kind === 'payment' && item.ref_type === 'payment') {
+    db.prepare(`UPDATE payments SET edari_sync_status = ?, edari_sync_error = ? WHERE id = ?`)
+      .run(status, archived ? reason : 'بانتظار الإداري', item.ref_id);
+  } else if (item.kind === 'account' && item.ref_type === 'account') {
+    db.prepare(`UPDATE accounts SET edari_sync_status = ?, edari_sync_error = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(status, archived ? reason : 'بانتظار جهاز الإدارة', item.ref_id);
+  }
+}
+
+function archiveInvoiceEdari(invoiceId, note = '') {
+  const id = Number(invoiceId);
+  if (!id) throw new Error('الفاتورة غير موجودة');
+  const inv = db.prepare('SELECT id, edari_sync_status, edari_bill_seq FROM invoices WHERE id = ?').get(id);
+  if (!inv) throw new Error('الفاتورة غير موجودة');
+  if (inv.edari_sync_status === 'synced' && inv.edari_bill_seq) {
+    throw new Error('الفاتورة مرحّلة بالفعل ولا تُؤرشف من هنا');
+  }
+  const items = db.prepare(`
+    SELECT id, status FROM edari_sync_queue
+    WHERE kind = 'invoice' AND ref_type = 'invoice' AND ref_id = ?
+      AND status IN ('pending', 'error', 'archived')
+    ORDER BY id DESC
+  `).all(id);
+  const live = items.filter((i) => i.status === 'pending' || i.status === 'error');
+  if (live.length) return archiveSyncItems(live.map((i) => i.id), note);
+  const reason = String(note || 'إدخال يدوي في الإداري — لن يُرحَّل').trim();
+  db.prepare(`
+    UPDATE invoices SET edari_sync_status = 'archived', edari_sync_error = ? WHERE id = ?
+  `).run(reason, id);
+  if (items.some((i) => i.status === 'archived')) return Math.max(items.length, 1);
+  const scope = resolveQueueScope({ kind: 'invoice', refType: 'invoice', refId: id });
+  db.prepare(`
+    INSERT INTO edari_sync_queue (kind, ref_type, ref_id, payload, queue_scope, status, error)
+    VALUES ('invoice', 'invoice', ?, '{}', ?, 'archived', ?)
+  `).run(id, scope, reason);
+  return 1;
+}
+
+function unarchiveInvoiceEdari(invoiceId) {
+  const id = Number(invoiceId);
+  if (!id) throw new Error('الفاتورة غير موجودة');
+  const items = db.prepare(`
+    SELECT id FROM edari_sync_queue
+    WHERE kind = 'invoice' AND ref_type = 'invoice' AND ref_id = ? AND status = 'archived'
+  `).all(id);
+  if (items.length) return unarchiveSyncItems(items.map((i) => i.id));
+  db.prepare(`
+    UPDATE invoices SET edari_sync_status = 'pending', edari_sync_error = 'بانتظار الإداري'
+    WHERE id = ? AND edari_sync_status = 'archived'
+  `).run(id);
+  return 1;
+}
+
+function archiveSyncItems(itemIds = [], note = '') {
+  const ids = [...new Set((itemIds || []).map(Number).filter(Boolean))];
+  if (!ids.length) throw new Error('حدد عناصر للأرشفة');
+  const reason = String(note || 'إدخال يدوي في الإداري — لن يُرحَّل').trim();
+  const placeholders = ids.map(() => '?').join(',');
+  const tx = db.transaction(() => {
+    const items = db.prepare(`
+      SELECT * FROM edari_sync_queue
+      WHERE id IN (${placeholders}) AND status IN ('pending', 'error')
+    `).all(...ids);
+    if (!items.length) return 0;
+    const found = items.map((i) => i.id);
+    const ph = found.map(() => '?').join(',');
+    db.prepare(`
+      UPDATE edari_sync_queue
+      SET status = 'archived', error = ?, updated_at = datetime('now')
+      WHERE id IN (${ph})
+    `).run(reason, ...found);
+    for (const item of items) applyArchiveStatusToRef(item, true, reason);
+    return items.length;
+  });
+  return tx();
+}
+
+function unarchiveSyncItems(itemIds = []) {
+  const ids = [...new Set((itemIds || []).map(Number).filter(Boolean))];
+  if (!ids.length) throw new Error('حدد عناصر لاستعادتها');
+  const placeholders = ids.map(() => '?').join(',');
+  const tx = db.transaction(() => {
+    const items = db.prepare(`
+      SELECT * FROM edari_sync_queue WHERE id IN (${placeholders}) AND status = 'archived'
+    `).all(...ids);
+    if (!items.length) return 0;
+    const found = items.map((i) => i.id);
+    const ph = found.map(() => '?').join(',');
+    db.prepare(`
+      UPDATE edari_sync_queue
+      SET status = 'pending', error = NULL, updated_at = datetime('now')
+      WHERE id IN (${ph})
+    `).run(...found);
+    for (const item of items) applyArchiveStatusToRef(item, false, '');
+    return items.length;
+  });
+  return tx();
 }
 
 function getSyncItem(id) {
@@ -630,12 +862,15 @@ async function syncAccountToEdari(account, data = {}) {
 
 function queueInvoiceEdariSync(invoice) {
   if (invoice.kind === 'issue') return null;
+  if (invoice.edariSyncStatus === 'archived') return null;
   if (invoice.edariSyncStatus === 'synced' && invoice.edariBillSeq) return null;
-  const queueScope = invoice.prepMode === 'delegate'
-    || String(invoice.invoiceNo || '').toUpperCase().startsWith('MND-')
-    ? 'delegate'
-    : 'warehouse';
-  enqueueEdariSync({
+  const queueScope = invoiceLooksDelegate({
+    prepMode: invoice.prepMode,
+    invoiceNo: invoice.invoiceNo,
+    notes: invoice.notes,
+    branchName: invoice.branchName
+  }) ? 'delegate' : 'warehouse';
+  const queueId = enqueueEdariSync({
     kind: 'invoice',
     refType: 'invoice',
     refId: invoice.id,
@@ -672,9 +907,11 @@ function queueInvoiceEdariSync(invoice) {
     UPDATE invoices SET edari_sync_status = 'pending', edari_sync_error = 'بانتظار الإداري'
     WHERE id = ?
   `).run(invoice.id);
+  return queueId;
 }
 
 function queuePaymentEdariSync(payment, account) {
+  if (payment.edariSyncStatus === 'archived') return null;
   if (payment.edariSyncStatus === 'synced' && payment.edariJournalSeq) return null;
   const queueScope = account?.accountScope === 'delegate' ? 'delegate' : 'warehouse';
   enqueueEdariSync({
@@ -706,12 +943,17 @@ module.exports = {
   hydrateQueuePayload,
   listPendingSyncEnriched,
   enrichQueueItem,
+  mergeScopeInvoices,
   getSyncItem,
   syncQueueStats,
   processEdariQueue,
   syncAccountToEdari,
   queueInvoiceEdariSync,
   resetSyncItemsForRetry,
+  archiveSyncItems,
+  archiveInvoiceEdari,
+  unarchiveInvoiceEdari,
+  unarchiveSyncItems,
   queuePaymentEdariSync,
   completeEdariSyncFromRemote,
   completeAccountSyncFromRemote

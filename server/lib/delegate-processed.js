@@ -3,7 +3,7 @@
  */
 const db = require('../db');
 const { getAccount, updateBalance } = require('./accounts');
-const { loadInvoice, addJournalEntry } = require('./invoices');
+const { loadInvoice, addJournalEntry, mapInvoice } = require('./invoices');
 const { queueInvoiceEdariSync } = require('./edari-sync');
 const { localStamp } = require('./datetime');
 
@@ -80,15 +80,16 @@ function normalizeLines(lines = []) {
 
 function queueInvoiceForEdari(invoiceId) {
   const invoice = loadInvoice(invoiceId);
-  if (!invoice) return null;
+  if (!invoice) return { invoice: null, queueId: null };
+  if (invoice.edariSyncStatus === 'archived') return { invoice, queueId: null };
   const acc = invoice.accountId ? getAccount(invoice.accountId) : null;
   const branch = db.prepare('SELECT name FROM branches WHERE id = ?').get(invoice.branchId);
-  queueInvoiceEdariSync({
+  const queueId = queueInvoiceEdariSync({
     ...invoice,
     edariSeq: acc?.edariSeq || '',
     branchName: branch?.name || ''
   });
-  return loadInvoice(invoiceId);
+  return { invoice: loadInvoice(invoiceId), queueId };
 }
 
 function markWarehouseInvoiceProcessed(data) {
@@ -104,11 +105,11 @@ function markWarehouseInvoiceProcessed(data) {
         prep_order_id = COALESCE(prep_order_id, ?),
         prep_order_no = COALESCE(NULLIF(prep_order_no, ''), ?),
         edari_sync_status = CASE
-          WHEN COALESCE(edari_sync_status, '') IN ('synced') THEN edari_sync_status
+          WHEN COALESCE(edari_sync_status, '') IN ('synced', 'archived') THEN edari_sync_status
           ELSE 'pending'
         END,
         edari_sync_error = CASE
-          WHEN COALESCE(edari_sync_status, '') IN ('synced') THEN edari_sync_error
+          WHEN COALESCE(edari_sync_status, '') IN ('synced', 'archived') THEN edari_sync_error
           ELSE 'جاهز للترحيل بعد التجهيز'
         END,
         updated_at = datetime('now')
@@ -120,7 +121,7 @@ function markWarehouseInvoiceProcessed(data) {
   );
 
   const invoice = loadInvoice(invoiceId);
-  if (invoice.edariSyncStatus !== 'synced') {
+  if (invoice.edariSyncStatus !== 'synced' && invoice.edariSyncStatus !== 'archived') {
     queueInvoiceForEdari(invoiceId);
   }
   return invoice;
@@ -138,7 +139,9 @@ function createDelegateInvoiceFromOrder(data) {
       UPDATE invoices SET prep_status = 'processing', updated_at = datetime('now') WHERE id = ?
     `).run(existing.id);
     const invoice = loadInvoice(existing.id);
-    if (invoice.edariSyncStatus !== 'synced') queueInvoiceForEdari(existing.id);
+    if (invoice.edariSyncStatus !== 'synced' && invoice.edariSyncStatus !== 'archived') {
+      queueInvoiceForEdari(existing.id);
+    }
     return invoice;
   }
 
@@ -236,49 +239,108 @@ function getDelegateBranchId() {
   return row ? Number(row.id) : null;
 }
 
-function listPrepInvoices({ prepMode, q, dateFrom, dateTo, limit = 100, offset = 0 } = {}) {
+function delegateInvoiceMatchSql() {
+  return `(
+    i.prep_mode = 'delegate'
+    OR UPPER(COALESCE(i.invoice_no, '')) LIKE 'MND%'
+    OR COALESCE(b.code, '') = '${DELEGATE_BRANCH_CODE}'
+    OR COALESCE(a.account_scope, '') = 'delegate'
+    OR COALESCE(i.notes, '') LIKE '%مندوب%'
+    OR COALESCE(b.name, '') LIKE '%مندوب%'
+  )`;
+}
+
+function delegateInvoiceMatchPlainSql() {
+  return `(
+    prep_mode = 'delegate'
+    OR UPPER(COALESCE(invoice_no, '')) LIKE 'MND%'
+    OR COALESCE(notes, '') LIKE '%مندوب%'
+    OR account_id IN (SELECT id FROM accounts WHERE account_scope = 'delegate')
+    OR branch_id IN (
+      SELECT id FROM branches
+      WHERE code = '${DELEGATE_BRANCH_CODE}' OR name LIKE '%مندوب%'
+    )
+  )`;
+}
+
+function delegateSourceLabel(row) {
+  const notes = String(row.notes || '');
+  const agent = notes.match(/المندوب:\s*([^\n]+)/);
+  if (agent && agent[1].trim()) return agent[1].trim();
+  if (row.prep_order_no) return String(row.prep_order_no);
+  return row.branch_name || row.customer_name || 'مندوب';
+}
+
+function listPrepInvoices({
+  prepMode,
+  q,
+  dateFrom,
+  dateTo,
+  limit = 2000,
+  offset = 0,
+  edariStatus = '',
+  prepState = ''
+} = {}) {
   const mode = String(prepMode || '').trim();
   if (mode !== 'warehouse' && mode !== 'delegate') {
     throw new Error('prepMode مطلوب: warehouse أو delegate');
   }
-  const where = [
-    "i.prep_status = 'processing'",
-    'i.prep_mode = ?'
-  ];
-  const params = [mode];
-  if (dateFrom) { where.push('i.invoice_date >= ?'); params.push(dateFrom); }
-  if (dateTo) { where.push('i.invoice_date <= ?'); params.push(dateTo); }
+  const where = [];
+  const params = [];
+  if (mode === 'delegate') {
+    where.push(delegateInvoiceMatchSql());
+  } else {
+    where.push("i.prep_mode = 'warehouse'");
+  }
+  where.push("COALESCE(i.kind, 'sale') IN ('sale', 'return')");
+  if (prepState === 'processing') {
+    where.push("i.prep_status = 'processing'");
+  } else if (prepState === 'submitted') {
+    where.push("COALESCE(i.prep_status, '') IN ('submitted', 'hold', 'error', 'skipped')");
+  }
+  if (dateFrom) { where.push("substr(COALESCE(i.invoice_date, i.created_at, ''), 1, 10) >= ?"); params.push(dateFrom); }
+  if (dateTo) { where.push("substr(COALESCE(i.invoice_date, i.created_at, ''), 1, 10) <= ?"); params.push(dateTo); }
+  if (edariStatus === 'pending') {
+    where.push("COALESCE(i.edari_sync_status, '') NOT IN ('synced', 'archived')");
+  } else if (edariStatus === 'synced') {
+    where.push("i.edari_sync_status = 'synced'");
+  } else if (edariStatus === 'archived') {
+    where.push("i.edari_sync_status = 'archived'");
+  }
   if (q) {
     where.push(`(
       i.invoice_no LIKE ? OR i.customer_name LIKE ? OR i.prep_order_no LIKE ? OR i.notes LIKE ?
+      OR COALESCE(a.name, '') LIKE ?
       OR EXISTS (SELECT 1 FROM invoice_lines l WHERE l.invoice_id = i.id AND (l.barcode LIKE ? OR l.name LIKE ?))
     )`);
     const like = `%${q}%`;
-    params.push(like, like, like, like, like, like);
+    params.push(like, like, like, like, like, like, like);
   }
-  const sql = `
-    SELECT i.*, a.name AS account_name, b.name AS branch_name
+  const fromSql = `
     FROM invoices i
     LEFT JOIN accounts a ON a.id = i.account_id
     LEFT JOIN branches b ON b.id = i.branch_id
     WHERE ${where.join(' AND ')}
-    ORDER BY i.updated_at DESC, i.id DESC
+  `;
+  const sql = `
+    SELECT i.*, a.name AS account_name, a.account_scope AS account_scope,
+           b.name AS branch_name, b.code AS branch_code
+    ${fromSql}
+    ORDER BY COALESCE(i.invoice_date, i.created_at, '') DESC, i.id DESC
     LIMIT ? OFFSET ?
   `;
-  params.push(limit, offset);
-  const rows = db.prepare(sql).all(...params);
-  const total = db.prepare(`
-    SELECT COUNT(*) AS c FROM invoices i WHERE ${where.join(' AND ')}
-  `).get(...params.slice(0, -2)).c;
+  const rows = db.prepare(sql).all(...params, limit, offset);
+  const total = db.prepare(`SELECT COUNT(*) AS c ${fromSql}`).get(...params).c;
 
   const invoices = rows.map((row) => {
-    const inv = loadInvoice(row.id);
+    const inv = mapInvoice(row);
     return {
       ...inv,
-      branchName: row.branch_name || '',
+      accountScope: row.account_scope || '',
+      branchName: row.branch_name || inv.branchName || '',
       sourceLabel: mode === 'warehouse'
         ? (row.branch_name || 'فرع الشورجة')
-        : `مندوب · ${row.prep_order_no || inv.prepOrderNo || '—'}`
+        : delegateSourceLabel(row)
     };
   });
 
@@ -298,18 +360,27 @@ function prepInvoiceStats(prepMode) {
   if (mode !== 'warehouse' && mode !== 'delegate') {
     throw new Error('prepMode مطلوب: warehouse أو delegate');
   }
+  const scopeSql = mode === 'delegate'
+    ? delegateInvoiceMatchPlainSql()
+    : "prep_mode = 'warehouse'";
   const row = db.prepare(`
     SELECT
       COUNT(*) AS total,
+      SUM(CASE WHEN prep_status = 'processing' THEN 1 ELSE 0 END) AS ready,
+      SUM(CASE WHEN COALESCE(prep_status, '') IN ('submitted', 'hold', 'error', 'skipped') THEN 1 ELSE 0 END) AS waiting,
       SUM(CASE WHEN edari_sync_status = 'synced' THEN 1 ELSE 0 END) AS synced,
-      SUM(CASE WHEN edari_sync_status IN ('pending', 'error', 'hold') OR edari_sync_status IS NULL THEN 1 ELSE 0 END) AS pending
+      SUM(CASE WHEN edari_sync_status = 'archived' THEN 1 ELSE 0 END) AS archived,
+      SUM(CASE WHEN COALESCE(edari_sync_status, '') NOT IN ('synced', 'archived') THEN 1 ELSE 0 END) AS pending
     FROM invoices
-    WHERE prep_status = 'processing'
-      AND prep_mode = ?
-  `).get(mode);
+    WHERE ${scopeSql}
+      AND COALESCE(kind, 'sale') IN ('sale', 'return')
+  `).get();
   return {
     total: Number(row?.total || 0),
+    ready: Number(row?.ready || 0),
+    waiting: Number(row?.waiting || 0),
     synced: Number(row?.synced || 0),
+    archived: Number(row?.archived || 0),
     pending: Number(row?.pending || 0)
   };
 }
@@ -333,5 +404,6 @@ module.exports = {
   prepInvoiceStats,
   delegateInvoiceStats,
   warehousePrepStats,
-  queueInvoiceForEdari
+  queueInvoiceForEdari,
+  delegateInvoiceMatchSql
 };

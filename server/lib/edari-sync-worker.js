@@ -142,7 +142,7 @@ async function runEdariSyncWorker({
     ? new Set(itemIds.map(Number))
     : null;
   const workItems = items.filter((i) => {
-    if (i.status === 'done') return false;
+    if (i.status === 'done' || i.status === 'archived') return false;
     if (idSet && !idSet.has(Number(i.id))) return false;
     return true;
   }).sort((a, b) => {

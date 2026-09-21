@@ -435,11 +435,15 @@ function migrateEdariSync() {
     'ALTER TABLE invoices ADD COLUMN prep_order_id INTEGER',
     'ALTER TABLE invoices ADD COLUMN prep_order_no TEXT',
     'ALTER TABLE invoices ADD COLUMN prep_status TEXT',
-    'ALTER TABLE invoices ADD COLUMN prep_error TEXT'
+    'ALTER TABLE invoices ADD COLUMN prep_error TEXT',
+    'ALTER TABLE invoices ADD COLUMN updated_at TEXT'
   ];
   for (const sql of prepCols) {
     try { db.exec(sql); } catch { /* exists */ }
   }
+  try {
+    db.exec(`UPDATE invoices SET updated_at = COALESCE(updated_at, created_at, invoice_date) WHERE updated_at IS NULL`);
+  } catch { /* ignore */ }
 }
 
 function migrateInvoicesKind() {

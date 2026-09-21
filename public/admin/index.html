@@ -7,9 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=13">
-  <link rel="stylesheet" href="premium.css?v=13">
-  <link rel="stylesheet" href="official.css?v=4">
+  <link rel="stylesheet" href="styles.css?v=17">
+  <link rel="stylesheet" href="premium.css?v=14">
+  <link rel="stylesheet" href="official.css?v=5">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -283,8 +283,17 @@
       </section>
 
       <section id="viewInvoices" class="view hidden" data-app-scope="warehouse">
-        <div class="section-panel">
+        <div class="invoice-hero" id="invoiceStats"></div>
+        <div class="section-panel invoices-workspace">
+          <div class="workspace-head">
+            <div>
+              <h2>سجل فواتير الشورجة</h2>
+              <p class="hint">كل فواتير الفروع ونقاط البيع — بلا حد يومي. فواتير المندوبين في تطبيق المندوبين.</p>
+            </div>
+            <span class="inv-result-count" id="invResultCount"></span>
+          </div>
           <div class="filter-chips-row" id="invPresetChips">
+            <button type="button" class="filter-chip active" data-inv-preset="all">كل الفواتير</button>
             <button type="button" class="filter-chip" data-inv-preset="today">اليوم</button>
             <button type="button" class="filter-chip" data-inv-preset="yesterday">أمس</button>
             <button type="button" class="filter-chip" data-inv-preset="week">آخر 7 أيام</button>
@@ -292,15 +301,20 @@
             <button type="button" class="filter-chip" data-inv-preset="today-credit">آجل اليوم</button>
             <button type="button" class="filter-chip" data-inv-preset="returns">مرتجعات</button>
             <button type="button" class="filter-chip" data-inv-preset="edari-pending">بانتظار الإداري</button>
+            <button type="button" class="filter-chip" data-inv-preset="edari-archived">مؤرشفة</button>
             <button type="button" class="filter-chip" data-inv-preset="edari-error">أخطاء الإداري</button>
           </div>
-          <div class="section-panel-toolbar">
+          <div class="section-panel-toolbar invoices-toolbar">
             <div class="search-box">
               <span class="search-ico" aria-hidden="true">⌕</span>
-              <input type="search" id="invSearch" placeholder="بحث برقم الفاتورة أو العميل...">
+              <input type="search" id="invSearch" placeholder="بحث برقم الفاتورة أو العميل أو المنتج...">
             </div>
-            <input type="date" id="invFrom" class="field-date" title="من تاريخ">
-            <input type="date" id="invTo" class="field-date" title="إلى تاريخ">
+            <label class="field-pair">من
+              <input type="date" id="invFrom" class="field-date" title="من تاريخ">
+            </label>
+            <label class="field-pair">إلى
+              <input type="date" id="invTo" class="field-date" title="إلى تاريخ">
+            </label>
             <select id="invBranch" class="field"><option value="">كل الفروع</option></select>
             <select id="invKind" class="field">
               <option value="">كل الأنواع</option>
@@ -318,14 +332,22 @@
               <option value="">حالة الإداري — الكل</option>
               <option value="pending">بانتظار الترحيل</option>
               <option value="synced">مرحّل</option>
+              <option value="archived">مؤرشف</option>
               <option value="error">خطأ</option>
             </select>
-            <span class="inv-result-count" id="invResultCount"></span>
-            <button type="button" class="btn btn-ghost btn-sm" id="btnResetInvFilters">مسح الفلاتر</button>
+            <select id="invSort" class="field">
+              <option value="created_desc">الأحدث أولاً</option>
+              <option value="date_desc">التاريخ تنازلي</option>
+              <option value="date_asc">التاريخ تصاعدي</option>
+              <option value="total_desc">الأعلى مبلغاً</option>
+              <option value="total_asc">الأقل مبلغاً</option>
+              <option value="no_desc">رقم الفاتورة</option>
+            </select>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnResetInvFilters">عرض الكل</button>
             <button type="button" class="btn btn-secondary btn-sm" id="btnExportInvoices">تصدير CSV</button>
           </div>
           <div class="section-panel-body no-pad">
-            <div class="table-wrap" id="invoiceTable"></div>
+            <div class="table-wrap ledger-table-wrap" id="invoiceTable"></div>
           </div>
         </div>
       </section>
@@ -343,11 +365,12 @@
               <button type="button" class="filter-chip active" data-warehouse-filter="">الكل</button>
               <button type="button" class="filter-chip" data-warehouse-filter="pending">بانتظار الإداري</button>
               <button type="button" class="filter-chip" data-warehouse-filter="synced">مرحّلة</button>
+              <button type="button" class="filter-chip" data-warehouse-filter="archived">مؤرشفة</button>
               <button type="button" class="btn btn-primary btn-sm" id="btnQueueAllWarehouse">ترحيل الكل للإداري</button>
               <button type="button" class="btn btn-secondary btn-sm" id="btnExportWarehouse">تصدير CSV</button>
             </div>
           </div>
-          <p class="hint warehouse-hint">فواتير فروع الشورجة بعد «تم التجهيز» من المستودع — منفصلة عن طلبات المندوبين.</p>
+          <p class="hint warehouse-hint">كل فواتير فروع الشورجة المرتبطة بالتجهيز — ليست مقتصرة على آخر 100. الفواتير المدخلة يدوياً في الإداري تُؤرشف من «مزامنة الإداري» حتى لا تُرحَّل.</p>
           <div class="section-panel-body no-pad">
             <div class="table-wrap" id="warehouseTable"></div>
           </div>
@@ -362,16 +385,19 @@
               <span class="search-ico" aria-hidden="true">⌕</span>
               <input type="search" id="delegateSearch" placeholder="بحث برقم الطلب، الفاتورة، العميل...">
             </div>
-            <input type="date" id="delegateDate" class="field-date">
+            <input type="date" id="delegateDate" class="field-date" autocomplete="off" name="shorja-delegate-date">
+            <button type="button" class="btn btn-ghost btn-sm" id="btnDelegateClearDate">كل التواريخ</button>
             <div class="toolbar-row" id="delegateFilters" style="margin:0">
               <button type="button" class="filter-chip active" data-delegate-filter="">الكل</button>
-              <button type="button" class="filter-chip" data-delegate-filter="pending">بانتظار الإداري</button>
+              <button type="button" class="filter-chip" data-delegate-filter="pending">بانتظار الترحيل</button>
               <button type="button" class="filter-chip" data-delegate-filter="synced">مرحّلة</button>
-              <button type="button" class="btn btn-primary btn-sm" id="btnQueueAllDelegates">ترحيل الكل للإداري</button>
+              <button type="button" class="filter-chip" data-delegate-filter="archived">مؤرشفة</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btnQueueAllDelegates">إضافة للطابور</button>
               <button type="button" class="btn btn-secondary btn-sm" id="btnExportDelegates">تصدير CSV</button>
             </div>
           </div>
-          <p class="hint delegate-hint">طلبات المندوبين فقط بعد «تم التجهيز» — منفصلة عن فروع الشورجة.</p>
+          <p class="hint delegate-hint">كل فواتير المندوبين مع تاريخ كل فاتورة بجانبها. التاريخ فارغ افتراضياً حتى تظهر الكل. الفواتير المدخلة يدوياً في الإداري: أرشفة حتى لا تُرحَّل.</p>
+          <p class="sheet-meta" id="delegateListMeta"></p>
           <div class="section-panel-body no-pad">
             <div class="table-wrap" id="delegateTable"></div>
           </div>
@@ -624,41 +650,81 @@
       </section>
 
       <section id="viewEdariSync" class="view hidden" data-app-scope="shared">
-        <div class="edari-sync-panel section-panel">
+        <div class="edari-sync-panel">
           <div class="accounts-scope-banner" id="edariScopeBanner"></div>
+          <div class="edari-hero clickable-stats" id="edariSyncStats"></div>
+          <div class="edari-archive-banner" id="edariArchiveBanner">
+            <div class="edari-archive-copy">
+              <span class="edari-archive-ico" aria-hidden="true">📦</span>
+              <div>
+                <h3>أرشفة الإدخال اليدوي</h3>
+                <p>إذا أُدخلت الفاتورة أو الحساب يدوياً في برنامج الإداري، أرشفها هنا حتى لا تُرحَّل مرة أخرى. المؤرشف يبقى في تبويب الأرشيف ويمكن استعادته لاحقاً.</p>
+              </div>
+            </div>
+            <div class="edari-archive-actions">
+              <button type="button" class="btn btn-archive" id="btnEdariArchiveSelected">أرشفة المحدد</button>
+              <button type="button" class="btn btn-restore" id="btnEdariUnarchiveSelected">استعادة من الأرشيف</button>
+              <button type="button" class="btn btn-ghost" id="btnEdariOpenArchive">عرض الأرشيف</button>
+            </div>
+          </div>
+          <div class="action-card compact-card" id="edariDbCard">
+            <div>
+              <h3>قاعدة الإداري</h3>
+              <p class="hint">بعد تدوير السنة غيّر اسم القاعدة هنا (مثل 2026). يُحفظ في لوحة التحكم ويستخدمه تطبيق الإدارة على Windows فوراً.</p>
+            </div>
+            <div class="price-add-bar edari-db-bar">
+              <label for="edariAliasInput">سنة القاعدة</label>
+              <input type="text" id="edariAliasInput" class="field" dir="ltr" maxlength="32" placeholder="2026" autocomplete="off">
+              <label for="edariDataRootInput">مجلد البيانات</label>
+              <input type="text" id="edariDataRootInput" class="field" dir="ltr" placeholder="D:\Future of Technology\EdariNX\Data" autocomplete="off">
+              <button type="button" class="btn btn-primary" id="btnSaveEdariDb">حفظ القاعدة</button>
+              <button type="button" class="btn btn-secondary" id="btnTestEdariDb">اختبار الاتصال</button>
+            </div>
+            <p class="hint" id="edariDbPathHint"></p>
+          </div>
           <div class="edari-parent-card" id="edariParentPanel"></div>
           <div class="edari-sync-alert" id="edariSyncAlert">
             <strong>أثناء الترحيل:</strong> يمكن إبقاء برنامج الإداري (nprogwin) وEdariNX مفتوحين.
-            تجنّب فقط إضافة حسابات أو حفظ فواتير في الإداري في نفس اللحظة — النظام يضبط العدادات وشجرة 12111 تلقائياً قبل وبعد الترحيل.
-            الترحيل يدوي فقط — لن يُكتب شيء في قاعدة الإداري إلا عند الضغط على أحد أزرار الترحيل.
+            تجنّب فقط إضافة حسابات أو حفظ فواتير في الإداري في نفس اللحظة.
           </div>
-          <div class="edari-sync-stats" id="edariSyncStats"></div>
-          <div class="toolbar edari-sync-toolbar">
-            <div class="search-box">
-              <span class="search-ico" aria-hidden="true">⌕</span>
-              <input type="search" id="edariSyncSearch" placeholder="بحث في الطابور...">
+          <div class="section-panel edari-queue-panel">
+            <div class="workspace-head">
+              <div>
+                <h2>طابور الترحيل</h2>
+                <p class="hint" id="edariSyncHint"></p>
+              </div>
             </div>
-            <div class="filter-chip-row" id="edariStatusFilters">
-              <button type="button" class="filter-chip active" data-edari-status="">الكل</button>
-              <button type="button" class="filter-chip" data-edari-status="pending">معلّق</button>
-              <button type="button" class="filter-chip" data-edari-status="error">أخطاء</button>
+            <div class="edari-toolbar-stack">
+              <div class="edari-toolbar-row">
+                <div class="search-box">
+                  <span class="search-ico" aria-hidden="true">⌕</span>
+                  <input type="search" id="edariSyncSearch" placeholder="بحث في الطابور بالاسم أو الرقم...">
+                </div>
+                <div class="filter-chip-row" id="edariStatusFilters">
+                  <button type="button" class="filter-chip active" data-edari-status="">المعلّق والأخطاء</button>
+                  <button type="button" class="filter-chip" data-edari-status="pending">معلّق</button>
+                  <button type="button" class="filter-chip" data-edari-status="error">أخطاء</button>
+                  <button type="button" class="filter-chip chip-archive" data-edari-status="archived">الأرشيف</button>
+                  <button type="button" class="filter-chip" data-edari-status="all">الكل</button>
+                </div>
+                <select id="edariSyncKindFilter">
+                  <option value="">كل الأنواع</option>
+                  <option value="account">حسابات فقط</option>
+                  <option value="invoice">فواتير فقط</option>
+                  <option value="payment">تسديدات وقيود</option>
+                </select>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnEdariSyncRefresh">تحديث</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnEdariSelectPending">تحديد المعلّق</button>
+              </div>
+              <div class="edari-toolbar-row edari-transfer-row">
+                <button type="button" class="btn btn-sm" id="btnEdariSyncAccounts" disabled>ترحيل الحسابات</button>
+                <button type="button" class="btn btn-sm" id="btnEdariSyncInvoices" disabled>ترحيل الفواتير</button>
+                <button type="button" class="btn btn-sm" id="btnEdariSyncPayments" disabled>ترحيل التسديدات</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnEdariSyncSelected" disabled>ترحيل المحدد</button>
+              </div>
             </div>
-            <select id="edariSyncKindFilter">
-              <option value="">كل الأنواع</option>
-              <option value="account">حسابات فقط</option>
-              <option value="invoice">فواتير فقط</option>
-              <option value="payment">تسديدات وقيود</option>
-            </select>
-            <button type="button" class="btn btn-ghost btn-sm" id="btnEdariSyncRefresh">تحديث</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="btnEdariSelectPending">تحديد المعلّق</button>
-            <span class="edari-sync-spacer"></span>
-            <button type="button" class="btn btn-sm" id="btnEdariSyncAccounts" disabled>ترحيل الحسابات</button>
-            <button type="button" class="btn btn-sm" id="btnEdariSyncInvoices" disabled>ترحيل الفواتير</button>
-            <button type="button" class="btn btn-sm" id="btnEdariSyncPayments" disabled>ترحيل التسديدات</button>
-            <button type="button" class="btn btn-primary btn-sm" id="btnEdariSyncSelected" disabled>ترحيل المحدد</button>
+            <div class="table-wrap ledger-table-wrap" id="edariSyncTable"></div>
           </div>
-          <div class="table-wrap" id="edariSyncTable"></div>
-          <p class="edari-sync-hint" id="edariSyncHint"></p>
         </div>
       </section>
     </main>
@@ -792,7 +858,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=40"></script>
-  <script src="premium.js?v=17"></script>
+  <script src="app.js?v=46"></script>
+  <script src="premium.js?v=21"></script>
 </body>
 </html>

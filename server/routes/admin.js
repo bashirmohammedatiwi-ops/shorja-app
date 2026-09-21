@@ -4,10 +4,10 @@ const { listProducts, upsertProduct, upsertCatalogProduct, bulkUpsert, stats, ge
 const { resolveEdariMaterial, cacheEdariMaterial, mapEdariToShorjaProduct } = require('../lib/edari-materials');
 const { importEdariProductsBatch, importEdariWarehouseBatch, importAllEdariProducts } = require('../lib/edari-product-import');
 const { countEdariMaterials, countEdariWarehouseMaterials, resolveShorjaWarehouse } = require('../lib/edari-lookup');
-const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment, salesReport } = require('../lib/invoices');
+const { listInvoices, loadInvoice, dailySummary, createPayment, listPayments, listJournal, createAdjustment, salesReport, invoiceListStats } = require('../lib/invoices');
 const { listAccounts, createAccount, updateAccount, getAccount, accountStats, resolveInvoiceDebtInfo } = require('../lib/accounts');
 const { getEdariParentInfo } = require('../lib/edari-accounts');
-const { listPendingSync, listPendingSyncEnriched, processEdariQueue, syncAccountToEdari, syncQueueStats, resetSyncItemsForRetry } = require('../lib/edari-sync');
+const { listPendingSync, listPendingSyncEnriched, processEdariQueue, syncAccountToEdari, syncQueueStats, resetSyncItemsForRetry, archiveSyncItems, archiveInvoiceEdari, unarchiveInvoiceEdari, unarchiveSyncItems, mergeScopeInvoices } = require('../lib/edari-sync');
 const { listDelegateInvoices, listWarehousePrepInvoices, delegateInvoiceStats, warehousePrepStats, queueInvoiceForEdari, DELEGATE_BRANCH_CODE } = require('../lib/delegate-processed');
 const { isManualSyncOnlyMode } = require('../lib/edari-safety');
 const { canWriteEdari } = require('../lib/edari-bridge');
@@ -418,8 +418,10 @@ router.get('/prices/packages', (_req, res) => {
 });
 
 router.get('/invoices', (req, res) => {
+  const excludePrepModes = ['delegate'];
   res.json({
     ok: true,
+    stats: invoiceListStats({ excludePrepModes }),
     ...listInvoices({
       branchId: req.query.branchId ? Number(req.query.branchId) : null,
       dateFrom: req.query.from,
@@ -428,8 +430,9 @@ router.get('/invoices', (req, res) => {
       kind: req.query.kind || '',
       paymentMethod: req.query.payment || '',
       edariStatus: req.query.edari || '',
-      limit: Number(req.query.limit) || 100,
-      excludePrepModes: ['delegate']
+      sort: req.query.sort || 'created_desc',
+      limit: Math.min(10000, Number(req.query.limit) || 5000),
+      excludePrepModes
     })
   });
 });
@@ -476,16 +479,22 @@ router.delete('/invoices/:id', (req, res) => {
 });
 
 router.get('/delegate-invoices', (req, res) => {
-  res.json({
-    ok: true,
-    stats: delegateInvoiceStats(),
-    ...listDelegateInvoices({
-      q: req.query.q,
-      dateFrom: req.query.from,
-      dateTo: req.query.to,
-      limit: Number(req.query.limit) || 100
-    })
-  });
+  try {
+    res.json({
+      ok: true,
+      stats: delegateInvoiceStats(),
+      ...listDelegateInvoices({
+        q: req.query.q,
+        dateFrom: req.query.from,
+        dateTo: req.query.to,
+        edariStatus: String(req.query.edari || ''),
+        prepState: String(req.query.prep || ''),
+        limit: Math.min(5000, Number(req.query.limit) || 5000)
+      })
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'تعذّر جلب فواتير المندوبين' });
+  }
 });
 
 router.get('/warehouse-prep-invoices', (req, res) => {
@@ -496,7 +505,9 @@ router.get('/warehouse-prep-invoices', (req, res) => {
       q: req.query.q,
       dateFrom: req.query.from,
       dateTo: req.query.to,
-      limit: Number(req.query.limit) || 100
+      edariStatus: String(req.query.edari || ''),
+      prepState: String(req.query.prep || ''),
+      limit: Math.min(5000, Number(req.query.limit) || 2000)
     })
   });
 });
@@ -505,14 +516,40 @@ router.post('/delegate-invoices/:id/queue-edari', (req, res) => {
   try {
     const invoice = loadInvoice(Number(req.params.id));
     if (!invoice) return res.status(404).json({ ok: false, error: 'الفاتورة غير موجودة' });
-    if (invoice.prepStatus !== 'processing') {
-      return res.status(400).json({ ok: false, error: 'الفاتورة ليست في حالة تجهيز مكتمل' });
+    if (invoice.edariSyncStatus === 'archived') {
+      return res.status(400).json({ ok: false, error: 'الفاتورة مؤرشفة — استعدها من قسم الترحيل أولاً' });
     }
     if (invoice.edariSyncStatus === 'synced' && invoice.edariBillSeq) {
       return res.json({ ok: true, invoice, message: 'الفاتورة مرحّلة مسبقاً' });
     }
-    queueInvoiceForEdari(invoice.id);
-    res.json({ ok: true, invoice: loadInvoice(invoice.id) });
+    const queued = queueInvoiceForEdari(invoice.id);
+    res.json({
+      ok: true,
+      invoice: queued?.invoice || loadInvoice(invoice.id),
+      queueId: queued?.queueId || null
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.post('/delegate-invoices/:id/archive-edari', (req, res) => {
+  try {
+    const invoice = loadInvoice(Number(req.params.id));
+    if (!invoice) return res.status(404).json({ ok: false, error: 'الفاتورة غير موجودة' });
+    const count = archiveInvoiceEdari(invoice.id, req.body?.note);
+    res.json({ ok: true, count, invoice: loadInvoice(invoice.id) });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.post('/delegate-invoices/:id/unarchive-edari', (req, res) => {
+  try {
+    const invoice = loadInvoice(Number(req.params.id));
+    if (!invoice) return res.status(404).json({ ok: false, error: 'الفاتورة غير موجودة' });
+    const count = unarchiveInvoiceEdari(invoice.id);
+    res.json({ ok: true, count, invoice: loadInvoice(invoice.id) });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }
@@ -557,20 +594,42 @@ router.get('/edari/parent', async (_req, res) => {
 });
 
 router.get('/edari/sync-queue', (req, res) => {
-  const limit = Math.min(200, Number(req.query.limit) || 100);
-  const scope = String(req.query.scope || '').trim();
-  const scoped = scope === 'warehouse' || scope === 'delegate' ? scope : 'warehouse';
-  const kinds = req.query.kinds
-    ? String(req.query.kinds).split(',').map((k) => k.trim()).filter(Boolean)
-    : null;
-  res.json({
-    ok: true,
-    scope: scoped,
-    stats: syncQueueStats({ scope: scoped }),
-    items: listPendingSyncEnriched(limit, { kinds, scope: scoped }),
-    manualSyncOnly: isManualSyncOnlyMode(),
-    canWrite: canWriteEdari()
-  });
+  try {
+    const limit = Math.min(5000, Number(req.query.limit) || 2000);
+    const scope = String(req.query.scope || '').trim();
+    const scoped = scope === 'warehouse' || scope === 'delegate' ? scope : 'warehouse';
+    const kinds = req.query.kinds
+      ? String(req.query.kinds).split(',').map((k) => k.trim()).filter(Boolean)
+      : null;
+    const status = String(req.query.status || '').trim();
+    const statuses = status === 'archived'
+      ? ['archived']
+      : status === 'error'
+        ? ['error']
+        : status === 'pending'
+          ? ['pending']
+          : status === 'all'
+            ? ['pending', 'error', 'archived', 'done']
+            : ['pending', 'error'];
+    let items = listPendingSyncEnriched(limit, { kinds, scope: scoped, statuses });
+    if (!kinds || kinds.includes('invoice')) {
+      const listed = scoped === 'delegate'
+        ? listDelegateInvoices({ limit: 5000 })
+        : listWarehousePrepInvoices({ limit: 5000 });
+      items = mergeScopeInvoices(items, listed.invoices || [], statuses);
+    }
+    res.json({
+      ok: true,
+      scope: scoped,
+      stats: syncQueueStats({ scope: scoped }),
+      items,
+      invoiceTotal: items.filter((i) => i.kind === 'invoice').length,
+      manualSyncOnly: isManualSyncOnlyMode(),
+      canWrite: canWriteEdari()
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'تعذّر جلب طابور المزامنة' });
+  }
 });
 
 router.post('/edari/sync-queue/retry', (req, res) => {
@@ -580,6 +639,31 @@ router.post('/edari/sync-queue/retry', (req, res) => {
   const scoped = scope === 'warehouse' || scope === 'delegate' ? scope : 'warehouse';
   const reset = resetSyncItemsForRetry({ itemIds, kinds });
   res.json({ ok: true, reset, stats: syncQueueStats({ scope: scoped }) });
+});
+
+router.post('/edari/sync-queue/archive', (req, res) => {
+  try {
+    const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
+    const note = String(req.body?.note || '').trim();
+    const count = archiveSyncItems(itemIds, note);
+    const scope = String(req.body?.scope || '').trim();
+    const scoped = scope === 'warehouse' || scope === 'delegate' ? scope : 'warehouse';
+    res.json({ ok: true, count, stats: syncQueueStats({ scope: scoped }) });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+router.post('/edari/sync-queue/unarchive', (req, res) => {
+  try {
+    const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
+    const count = unarchiveSyncItems(itemIds);
+    const scope = String(req.body?.scope || '').trim();
+    const scoped = scope === 'warehouse' || scope === 'delegate' ? scope : 'warehouse';
+    res.json({ ok: true, count, stats: syncQueueStats({ scope: scoped }) });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
 });
 
 router.post('/edari/sync-queue/process', async (req, res) => {

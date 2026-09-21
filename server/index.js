@@ -10,6 +10,21 @@ const branchRoutes = require('./routes/branch');
 const adminRoutes = require('./routes/admin');
 const syncRoutes = require('./routes/sync');
 const { getDelegateConfig, probeDelegateIntegration } = require('./lib/warehouse-prep');
+const { getAppSettings } = require('./lib/app-settings');
+const { getEdariConnection } = require('./lib/edari-connection');
+
+function publicEdariDb() {
+  const settings = getAppSettings();
+  const conn = getEdariConnection({
+    alias: settings.edariAlias,
+    dataRoot: settings.edariDataRoot || undefined
+  });
+  return {
+    alias: conn.alias,
+    dataRoot: conn.dataRoot,
+    databasePath: conn.databasePath
+  };
+}
 
 const app = express();
 const PORT = Number(process.env.PORT || 5007);
@@ -33,7 +48,8 @@ app.get('/api/health', async (_req, res) => {
     service: 'shorja-sales-hub',
     port: PORT,
     time: new Date().toISOString(),
-    delegatePrep
+    delegatePrep,
+    edari: publicEdariDb()
   });
 });
 

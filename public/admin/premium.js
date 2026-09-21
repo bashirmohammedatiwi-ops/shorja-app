@@ -180,7 +180,7 @@
     PAGE_TITLES.dashboard = currentApp === 'warehouse'
       ? ['لوحة الشورجة', 'ملخص مبيعات الفروع والمخزن']
       : ['لوحة المندوبين', 'حسابات وطلبات المندوبين — منفصلة عن الشورجة'];
-    PAGE_TITLES.delegates = ['فواتير المندوبين', 'طلبات المندوبين الجاهزة للترحيل'];
+    PAGE_TITLES.delegates = ['فواتير المندوبين', 'كل فواتير المندوبين مع تاريخ كل فاتورة'];
     PAGE_TITLES.edariSync = currentApp === 'warehouse'
       ? ['مزامنة الإداري — الشورجة', 'ترحيل حسابات وفواتير الشورجة فقط']
       : ['مزامنة الإداري — المندوبين', 'ترحيل طلبات وحسابات المندوبين فقط'];
@@ -188,6 +188,13 @@
     updateAccountsBanner();
     updatePaymentsBanner();
     updateEdariBanner();
+
+    if (currentApp === 'delegate' && !window.edariStatusUserSet) {
+      window.edariStatusFilter = 'all';
+    }
+    document.querySelectorAll('#edariStatusFilters .filter-chip').forEach((c) => {
+      c.classList.toggle('active', (c.dataset.edariStatus || '') === (window.edariStatusFilter || ''));
+    });
 
     const edariView = $('viewEdariSync');
     if (edariView && !edariView.classList.contains('hidden') && typeof window.loadEdariSync === 'function') {
@@ -629,31 +636,35 @@
   window.loadInvoices = async function loadInvoicesPremium() {
     await fetchBranches();
     fillBranchSelect($('invBranch'));
-    const from = $('invFrom')?.value || $('invDate')?.value || new Date().toISOString().slice(0, 10);
-    const to = $('invTo')?.value || from;
-    if ($('invFrom')) $('invFrom').value = from;
-    if ($('invTo')) $('invTo').value = to;
-    if ($('invDate')) $('invDate').value = from;
+    const from = $('invFrom')?.value || '';
+    const to = $('invTo')?.value || '';
     const q = $('invSearch')?.value || '';
     const branchId = $('invBranch')?.value || '';
     const kind = $('invKind')?.value || '';
     const payment = $('invPayment')?.value || '';
     const edari = $('invEdari')?.value || '';
-    const params = new URLSearchParams({ from, to, q, limit: '200' });
+    const sort = $('invSort')?.value || 'created_desc';
+    const params = new URLSearchParams({ limit: '5000', sort });
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (q) params.set('q', q);
     if (branchId) params.set('branchId', branchId);
     if (kind) params.set('kind', kind);
     if (payment) params.set('payment', payment);
     if (edari) params.set('edari', edari);
     const data = await api(`/admin/invoices?${params}`);
+    renderInvoiceStats(data.stats || {});
+    const shown = (data.invoices || []).length;
+    const total = data.total != null ? data.total : shown;
     const countEl = $('invResultCount');
-    if (countEl) countEl.textContent = `${data.total ?? (data.invoices || []).length} نتيجة`;
+    if (countEl) countEl.textContent = `عرض ${shown}${total > shown ? ` من ${total}` : ''} فاتورة`;
     $('invoiceTable').innerHTML = `
-      <table id="invoicesDataTable">
+      <table id="invoicesDataTable" class="ledger-table">
         <thead><tr><th>الوقت</th><th>الرقم</th><th>الفرع</th><th>النوع</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>مدفوع</th><th>متبقي</th><th>الدفع</th><th>الإداري</th><th></th></tr></thead>
-        <tbody>${(data.invoices||[]).length ? (data.invoices||[]).map((i) => `
-          <tr class="clickable-row" data-invoice-id="${i.id}">
+        <tbody>${shown ? (data.invoices||[]).map((i) => `
+          <tr class="clickable-row ${i.edariSyncStatus === 'archived' ? 'row-archived' : ''}" data-invoice-id="${i.id}">
             <td>${esc((i.createdAt || '').slice(11, 16) || '—')}</td>
-            <td>${esc(i.invoiceNo)}</td>
+            <td><strong>${esc(i.invoiceNo)}</strong></td>
             <td>${esc(i.branchName || branchesCache.find((b) => b.id === i.branchId)?.name || '—')}</td>
             <td>${kindBadgeHtml(i.kind)}</td>
             <td>${esc(i.customerName||'نقدي')}</td>
@@ -664,16 +675,33 @@
             <td>${payMethodLabel(i.paymentMethod)}</td>
             <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}</td>
             <td class="row-actions">
+              ${i.edariSyncStatus === 'archived'
+                ? `<button type="button" class="btn btn-restore btn-sm" data-unarchive-inv="${i.id}">استعادة</button>`
+                : (i.edariSyncStatus === 'synced' && i.edariBillSeq
+                  ? ''
+                  : `<button type="button" class="btn btn-archive btn-sm" data-archive-inv="${i.id}">أرشفة</button>`)}
               <button type="button" class="btn btn-ghost btn-sm" data-print-invoice="${i.id}">طباعة</button>
               <button type="button" class="btn btn-danger btn-sm" data-delete-invoice="${i.id}">حذف</button>
             </td>
-          </tr>`).join('') : '<tr><td colspan="12" class="empty-cell">لا توجد فواتير مطابقة</td></tr>'}
+          </tr>`).join('') : '<tr><td colspan="12" class="empty-cell">لا توجد فواتير مطابقة — اضغط «عرض الكل» أو اترك التاريخ فارغاً لجلب كل السجل</td></tr>'}
         </tbody>
       </table>`;
     $('invoiceTable').querySelectorAll('[data-invoice-id]').forEach((row) => {
       row.addEventListener('click', (e) => {
-        if (e.target.closest('[data-delete-invoice], [data-print-invoice]')) return;
+        if (e.target.closest('[data-delete-invoice], [data-print-invoice], [data-archive-inv], [data-unarchive-inv]')) return;
         openInvoice(Number(row.dataset.invoiceId));
+      });
+    });
+    $('invoiceTable').querySelectorAll('[data-archive-inv]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        archiveInvoiceFromPrep(Number(btn.dataset.archiveInv));
+      });
+    });
+    $('invoiceTable').querySelectorAll('[data-unarchive-inv]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        unarchiveInvoiceFromPrep(Number(btn.dataset.unarchiveInv));
       });
     });
     $('invoiceTable').querySelectorAll('[data-print-invoice]').forEach((btn) => {
@@ -701,7 +729,33 @@
         } catch (err) { toast(err.message); }
       });
     });
+    $('invoiceStats')?.querySelectorAll('[data-inv-jump]').forEach((btn) => {
+      btn.addEventListener('click', () => applyInvoiceJump(btn.dataset.invJump));
+    });
   };
+
+  function applyInvoiceJump(jump) {
+    if ($('invFrom')) $('invFrom').value = '';
+    if ($('invTo')) $('invTo').value = '';
+    if ($('invKind')) $('invKind').value = '';
+    if ($('invPayment')) $('invPayment').value = '';
+    if ($('invEdari')) $('invEdari').value = '';
+    if ($('invSearch')) $('invSearch').value = '';
+    if ($('invBranch')) $('invBranch').value = '';
+    if (jump === 'today') {
+      const today = isoDay();
+      if ($('invFrom')) $('invFrom').value = today;
+      if ($('invTo')) $('invTo').value = today;
+    }
+    if (jump === 'pending' && $('invEdari')) $('invEdari').value = 'pending';
+    if (jump === 'archived' && $('invEdari')) $('invEdari').value = 'archived';
+    if (jump === 'synced' && $('invEdari')) $('invEdari').value = 'synced';
+    const preset = jump === 'today' ? 'today' : jump === 'archived' ? 'edari-archived' : jump === 'pending' ? 'edari-pending' : 'all';
+    $('invPresetChips')?.querySelectorAll('.filter-chip').forEach((c) => {
+      c.classList.toggle('active', c.dataset.invPreset === preset);
+    });
+    loadInvoices();
+  }
 
   document.getElementById('invPresetChips')?.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-inv-preset]');
@@ -709,40 +763,57 @@
     const today = isoDay();
     const week = new Date(); week.setDate(week.getDate() - 6);
     const month = new Date(); month.setDate(1);
-    if ($('invFrom')) $('invFrom').value = today;
-    if ($('invTo')) $('invTo').value = today;
-    if ($('invDate')) $('invDate').value = today;
+    if ($('invFrom')) $('invFrom').value = '';
+    if ($('invTo')) $('invTo').value = '';
+    if ($('invDate')) $('invDate').value = '';
     if ($('invKind')) $('invKind').value = '';
     if ($('invPayment')) $('invPayment').value = '';
     if ($('invEdari')) $('invEdari').value = '';
     if ($('invSearch')) $('invSearch').value = '';
     const preset = chip.dataset.invPreset;
     const yest = new Date(); yest.setDate(yest.getDate() - 1);
+    if (preset === 'today') {
+      if ($('invFrom')) $('invFrom').value = today;
+      if ($('invTo')) $('invTo').value = today;
+    }
     if (preset === 'yesterday') {
       const y = isoDay(yest);
       if ($('invFrom')) $('invFrom').value = y;
       if ($('invTo')) $('invTo').value = y;
     }
-    if (preset === 'week' && $('invFrom')) $('invFrom').value = isoDay(week);
-    if (preset === 'month' && $('invFrom')) $('invFrom').value = isoDay(month);
-    if (preset === 'today-credit' && $('invPayment')) $('invPayment').value = 'credit';
+    if (preset === 'week') {
+      if ($('invFrom')) $('invFrom').value = isoDay(week);
+      if ($('invTo')) $('invTo').value = today;
+    }
+    if (preset === 'month') {
+      if ($('invFrom')) $('invFrom').value = isoDay(month);
+      if ($('invTo')) $('invTo').value = today;
+    }
+    if (preset === 'today-credit') {
+      if ($('invFrom')) $('invFrom').value = today;
+      if ($('invTo')) $('invTo').value = today;
+      if ($('invPayment')) $('invPayment').value = 'credit';
+    }
     if (preset === 'returns' && $('invKind')) $('invKind').value = 'return';
     if (preset === 'edari-pending' && $('invEdari')) $('invEdari').value = 'pending';
+    if (preset === 'edari-archived' && $('invEdari')) $('invEdari').value = 'archived';
     if (preset === 'edari-error' && $('invEdari')) $('invEdari').value = 'error';
     $('invPresetChips').querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
     loadInvoices();
   });
 
   $('btnResetInvFilters')?.addEventListener('click', () => {
-    const today = isoDay();
-    if ($('invFrom')) $('invFrom').value = today;
-    if ($('invTo')) $('invTo').value = today;
+    if ($('invFrom')) $('invFrom').value = '';
+    if ($('invTo')) $('invTo').value = '';
     if ($('invSearch')) $('invSearch').value = '';
     if ($('invKind')) $('invKind').value = '';
     if ($('invPayment')) $('invPayment').value = '';
     if ($('invEdari')) $('invEdari').value = '';
     if ($('invBranch')) $('invBranch').value = '';
-    $('invPresetChips')?.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
+    if ($('invSort')) $('invSort').value = 'created_desc';
+    $('invPresetChips')?.querySelectorAll('.filter-chip').forEach((c) => {
+      c.classList.toggle('active', c.dataset.invPreset === 'all');
+    });
     loadInvoices();
   });
   $('btnExportInvoices')?.addEventListener('click', () => {
@@ -755,63 +826,57 @@
   $('invKind')?.addEventListener('change', loadInvoices);
   $('invPayment')?.addEventListener('change', loadInvoices);
   $('invEdari')?.addEventListener('change', loadInvoices);
+  $('invSort')?.addEventListener('change', loadInvoices);
 
   function renderPrepTablePremium(tableEl, rows, { labelHeader, labelFn, badgeClass }) {
+    if (!tableEl) return;
     tableEl.innerHTML = `
       <table id="prepDataTable">
         <thead><tr>
-          <th>${labelHeader}</th><th>الفاتورة</th><th>طلب التجهيز</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>الإداري</th><th></th>
+          <th>${labelHeader}</th><th>الفاتورة والتاريخ</th><th>طلب التجهيز</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>الإداري</th><th></th>
         </tr></thead>
           <tbody>${rows.length ? rows.map((i) => `
-          <tr>
+          <tr class="${i.edariSyncStatus === 'archived' ? 'row-archived' : ''}">
             <td><span class="badge-pill ${badgeClass}">${esc(labelFn(i))}</span></td>
-            <td><button type="button" class="linkish" data-invoice-id="${i.id}">${esc(i.invoiceNo)}</button></td>
+            <td><button type="button" class="linkish inv-open-btn" data-invoice-id="${i.id}">${invoiceTitleHtml(i.invoiceNo, i.invoiceDate || i.createdAt)}</button></td>
             <td dir="ltr">${esc(i.prepOrderNo || '—')}</td>
             <td>${esc(i.customerName || 'نقدي')}</td>
-            <td>${esc(i.invoiceDate)}</td>
+            <td dir="ltr">${esc(formatInvoiceDate(i.invoiceDate || i.createdAt) || '—')}</td>
             <td dir="ltr">${fmtPrice(i.total, i.currency)}</td>
-            <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}</td>
-            <td class="row-actions">${i.edariSyncStatus === 'synced' ? '✓' : `<button type="button" class="btn btn-secondary btn-sm" data-queue-edari="${i.id}">ترحيل</button>`}</td>
-          </tr>`).join('') : '<tr><td colspan="8" class="empty-cell">لا توجد فواتير</td></tr>'}
+            <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}${i.edariBillNum ? `<br><small dir="ltr">${esc(i.edariBillNum)}</small>` : ''}</td>
+            <td class="row-actions">${(window.prepEdariActionsHtml || prepEdariActionsHtml)(i)}</td>
+          </tr>`).join('') : '<tr><td colspan="8" class="empty-cell">لا توجد فواتير — إذا كانت الفواتير موجودة امسح التاريخ أو حدّث الصفحة.</td></tr>'}
         </tbody>
       </table>`;
-    tableEl.querySelectorAll('[data-invoice-id]').forEach((btn) => {
-      btn.addEventListener('click', () => openInvoice(Number(btn.dataset.invoiceId)));
-    });
-    tableEl.querySelectorAll('[data-queue-edari]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        try {
-          await api(`/admin/delegate-invoices/${btn.dataset.queueEdari}/queue-edari`, { method: 'POST' });
-          toast('أُضيفت للطابور — راجع مزامنة الإداري');
-          document.querySelector('.nav.active')?.click();
-        } catch (err) { toast(err.message); }
-      });
-    });
+    bindPrepTableActions(tableEl);
   }
 
   function renderPrepStatsPremium(el, stats) {
     el.className = 'kpi-grid premium-kpis';
     el.innerHTML = `
-      <div class="kpi premium-kpi"><div class="lbl">جاهزة</div><div class="val">${stats.total || 0}</div></div>
-      <div class="kpi premium-kpi warn"><div class="lbl">بانتظار الإداري</div><div class="val">${stats.pending || 0}</div></div>
+      <div class="kpi premium-kpi"><div class="lbl">كل الفواتير</div><div class="val">${stats.total || 0}</div></div>
+      <div class="kpi premium-kpi warn"><div class="lbl">بانتظار الترحيل</div><div class="val">${stats.pending || 0}</div></div>
+      <div class="kpi premium-kpi"><div class="lbl">مؤرشفة</div><div class="val">${stats.archived || 0}</div></div>
       <div class="kpi premium-kpi"><div class="lbl">مرحّلة</div><div class="val">${stats.synced || 0}</div></div>`;
   }
 
   // ——— Warehouse Prep (Shorja branches only) ———
   window.loadWarehousePrep = async function loadWarehousePrepPremium() {
+    window.warehouseFilter = warehouseFilter;
+    const params = new URLSearchParams();
+    params.set('limit', '2000');
     const date = $('warehouseDate')?.value || '';
     const q = $('warehouseSearch')?.value || '';
-    const params = new URLSearchParams();
     if (date) { params.set('from', date); params.set('to', date); }
     if (q) params.set('q', q);
+    if (warehouseFilter === 'pending' || warehouseFilter === 'synced' || warehouseFilter === 'archived') {
+      params.set('edari', warehouseFilter);
+    }
     const data = await api(`/admin/warehouse-prep-invoices?${params}`);
     const stats = data.stats || {};
     $('warehouseStats').className = 'kpi-grid premium-kpis warehouse-hero';
     renderPrepStatsPremium($('warehouseStats'), stats);
-    let rows = data.invoices || [];
-    if (warehouseFilter === 'pending') rows = rows.filter((i) => i.edariSyncStatus !== 'synced');
-    if (warehouseFilter === 'synced') rows = rows.filter((i) => i.edariSyncStatus === 'synced');
-    renderPrepTablePremium($('warehouseTable'), rows, {
+    renderPrepTablePremium($('warehouseTable'), data.invoices || [], {
       labelHeader: 'الفرع',
       labelFn: (i) => i.branchName || i.sourceLabel || 'فرع الشورجة',
       badgeClass: 'warehouse'
@@ -822,16 +887,17 @@
     const chip = e.target.closest('[data-warehouse-filter]');
     if (!chip) return;
     warehouseFilter = chip.dataset.warehouseFilter || '';
+    window.warehouseFilter = warehouseFilter;
     $('warehouseFilters').querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
     loadWarehousePrep();
   });
 
   $('btnQueueAllWarehouse')?.addEventListener('click', async () => {
     try {
-      const data = await api('/admin/warehouse-prep-invoices');
-      const pending = (data.invoices || []).filter((i) => i.edariSyncStatus !== 'synced');
+      const data = await api('/admin/warehouse-prep-invoices?limit=2000');
+      const pending = (data.invoices || []).filter((i) => i.edariSyncStatus !== 'synced' && i.edariSyncStatus !== 'archived');
       if (!pending.length) { toast('لا توجد فواتير للترحيل'); return; }
-      if (!confirm(`ترحيل ${pending.length} فاتورة شورجة إلى طابور الإداري؟`)) return;
+      if (!confirm(`ترحيل ${pending.length} فاتورة شورجة إلى طابور الإداري؟\nالمؤرشفة لن تُضاف.`)) return;
       for (const inv of pending) {
         await api(`/admin/delegate-invoices/${inv.id}/queue-edari`, { method: 'POST' });
       }
@@ -854,41 +920,76 @@
   // ——— Delegates only ———
   const _loadDelegates = loadDelegates;
   window.loadDelegates = async function loadDelegatesPremium() {
-    const date = $('delegateDate')?.value || '';
-    const q = $('delegateSearch')?.value || '';
+    window.delegateFilter = delegateFilter;
+    const dateEl = $('delegateDate');
+    if (dateEl && !dateEl.dataset.userSet) dateEl.value = '';
     const params = new URLSearchParams();
+    params.set('limit', '5000');
+    const date = dateEl?.dataset.userSet && dateEl.value ? dateEl.value : '';
+    const q = $('delegateSearch')?.value || '';
     if (date) { params.set('from', date); params.set('to', date); }
     if (q) params.set('q', q);
-    const data = await api(`/admin/delegate-invoices?${params}`);
-    const stats = data.stats || {};
-    $('delegateStats').className = 'kpi-grid premium-kpis delegate-hero';
-    renderPrepStatsPremium($('delegateStats'), stats);
-
-    let rows = data.invoices || [];
-    if (delegateFilter === 'pending') rows = rows.filter((i) => i.edariSyncStatus !== 'synced');
-    if (delegateFilter === 'synced') rows = rows.filter((i) => i.edariSyncStatus === 'synced');
-
-    renderPrepTablePremium($('delegateTable'), rows, {
-      labelHeader: 'المندوب',
-      labelFn: (i) => i.prepOrderNo || i.sourceLabel || '—',
-      badgeClass: 'delegate'
-    });
+    if (delegateFilter === 'pending' || delegateFilter === 'synced' || delegateFilter === 'archived') {
+      params.set('edari', delegateFilter);
+    }
+    const tableEl = $('delegateTable');
+    try {
+      const data = await api(`/admin/delegate-invoices?${params}`);
+      const stats = data.stats || {};
+      if ($('delegateStats')) {
+        $('delegateStats').className = 'kpi-grid premium-kpis delegate-hero';
+        renderPrepStatsPremium($('delegateStats'), stats);
+      }
+      const rows = data.invoices || [];
+      const meta = $('delegateListMeta');
+      const total = data.total != null ? data.total : rows.length;
+      if (meta) {
+        if (!rows.length && Number(stats.total || 0) > 0) {
+          meta.textContent = `يوجد ${stats.total} فاتورة لكن الفلتر الحالي لا يُظهرها — اضغط «كل التواريخ» أو اختر «الكل».`;
+        } else {
+          meta.textContent = `عرض ${rows.length} فاتورة${total > rows.length ? ` من ${total}` : ''} — كل التواريخ ما لم تختار يوماً محدداً.`;
+        }
+      }
+      renderPrepTablePremium(tableEl, rows, {
+        labelHeader: 'المندوب',
+        labelFn: (i) => i.sourceLabel || i.prepOrderNo || '—',
+        badgeClass: 'delegate'
+      });
+    } catch (err) {
+      if (tableEl) {
+        tableEl.innerHTML = `<p style="color:var(--danger);padding:16px">${esc(err.message || 'تعذّر جلب فواتير المندوبين')}</p>`;
+      }
+      toast(err.message || 'تعذّر جلب فواتير المندوبين');
+    }
   };
 
   $('delegateFilters')?.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-delegate-filter]');
     if (!chip) return;
     delegateFilter = chip.dataset.delegateFilter || '';
+    window.delegateFilter = delegateFilter;
     $('delegateFilters').querySelectorAll('.filter-chip').forEach((c) => c.classList.toggle('active', c === chip));
     loadDelegates();
   });
 
+  $('btnDelegateClearDate')?.addEventListener('click', () => {
+    const el = $('delegateDate');
+    if (el) {
+      el.value = '';
+      delete el.dataset.userSet;
+    }
+    loadDelegates();
+  });
+  $('delegateDate')?.addEventListener('change', () => {
+    if ($('delegateDate')) $('delegateDate').dataset.userSet = '1';
+  });
+
   $('btnQueueAllDelegates')?.addEventListener('click', async () => {
     try {
-      const data = await api('/admin/delegate-invoices');
-      const pending = (data.invoices || []).filter((i) => i.edariSyncStatus !== 'synced');
+      const data = await api('/admin/delegate-invoices?limit=5000');
+      const pending = (data.invoices || []).filter((i) => i.edariSyncStatus !== 'synced' && i.edariSyncStatus !== 'archived');
       if (!pending.length) { toast('لا توجد فواتير للترحيل'); return; }
-      if (!confirm(`ترحيل ${pending.length} فاتورة إلى طابور الإداري؟`)) return;
+      if (!confirm(`إضافة ${pending.length} فاتورة إلى طابور الإداري؟\nالمؤرشفة والمدخلة يدوياً لن تُضاف.`)) return;
       for (const inv of pending) {
         await api(`/admin/delegate-invoices/${inv.id}/queue-edari`, { method: 'POST' });
       }
@@ -994,20 +1095,27 @@
   });
 
   window.filterEdariSyncByStatus = function filterEdariSyncByStatus(status) {
-    edariStatusFilter = status || '';
-    window.edariStatusFilter = edariStatusFilter;
-    renderEdariSyncTable();
+    if (typeof setEdariStatusFilter === 'function') setEdariStatusFilter(status);
+    else {
+      edariStatusFilter = status || '';
+      window.edariStatusFilter = edariStatusFilter;
+      loadEdariSync();
+    }
   };
 
   $('edariStatusFilters')?.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-edari-status]');
     if (!chip) return;
-    edariStatusFilter = chip.dataset.edariStatus || '';
-    window.edariStatusFilter = edariStatusFilter;
-    $('edariStatusFilters').querySelectorAll('.filter-chip').forEach((c) => {
-      c.classList.toggle('active', c === chip);
-    });
-    renderEdariSyncTable();
+    const status = chip.dataset.edariStatus || '';
+    if (typeof setEdariStatusFilter === 'function') setEdariStatusFilter(status);
+    else {
+      edariStatusFilter = status;
+      window.edariStatusFilter = edariStatusFilter;
+      $('edariStatusFilters').querySelectorAll('.filter-chip').forEach((c) => {
+        c.classList.toggle('active', c === chip);
+      });
+      loadEdariSync();
+    }
   });
 
   // ——— Enhanced Edari Sync ———
@@ -1032,26 +1140,16 @@
   window.openInvoice = async function openInvoicePremium(id) {
     await _openInvoice(id);
     const detail = $('invoiceDetail');
-    if (!detail) return;
-    const inv = (await api(`/admin/invoices/${id}`)).invoice;
+    if (!detail || $('btnPrintThermal')) return;
     const actions = document.createElement('div');
     actions.className = 'row-actions';
-    actions.style.marginTop = '12px';
-    actions.innerHTML = `
-      <button type="button" class="btn btn-secondary btn-sm" id="btnPrintThermal">طباعة حرارية</button>
-      ${inv.edariSyncStatus !== 'synced' && inv.prepStatus === 'processing' ? `<button type="button" class="btn btn-sm btn-primary" id="btnInvQueueEdari">ترحيل للإداري</button>` : ''}`;
+    actions.style.marginTop = '8px';
+    actions.innerHTML = `<button type="button" class="btn btn-secondary btn-sm" id="btnPrintThermal">طباعة حرارية</button>`;
     detail.appendChild(actions);
     $('btnPrintThermal')?.addEventListener('click', () => {
       const w = window.open('', '_blank', 'width=320,height=640');
       fetch(`/api/admin/invoices/${id}/print?thermal=1`, { headers: { Authorization: `Bearer ${token}` } })
         .then((r) => r.text()).then((html) => { w.document.write(html); w.document.close(); });
-    });
-    $('btnInvQueueEdari')?.addEventListener('click', async () => {
-      try {
-        await api(`/admin/delegate-invoices/${id}/queue-edari`, { method: 'POST' });
-        toast('أُضيفت للطابور');
-        openInvoice(id);
-      } catch (err) { toast(err.message); }
     });
   };
 
@@ -1433,11 +1531,9 @@
     pollDataRevision();
     if (!revisionPollTimer) revisionPollTimer = setInterval(pollDataRevision, 12000);
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = isoDay();
     if ($('reportFrom')) $('reportFrom').value = today;
     if ($('reportTo')) $('reportTo').value = today;
-    if ($('invFrom')) $('invFrom').value = today;
-    if ($('invTo')) $('invTo').value = today;
 
     if (token && $('app') && !$('app').classList.contains('hidden')) {
       api('/auth/me').then((d) => {

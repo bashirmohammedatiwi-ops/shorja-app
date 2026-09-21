@@ -40,7 +40,7 @@ const PAGE_TITLES = {
   accounts: ['حسابات العملاء', 'الديون وحدود الائتمان'],
   payments: ['التسديدات', 'تسجيل دفعات العملاء'],
   journal: ['سجل القيود', 'الحركات والتسويات اليدوية'],
-  edariSync: ['مزامنة الإداري', 'مراجعة الطابور وترحيل انتقائي — حسابات ثم فواتير ثم تسديدات']
+  edariSync: ['مزامنة الإداري', 'قاعدة السنة · مراجعة الطابور وترحيل انتقائي']
 };
 
 const EDARI_KIND_LABELS = { account: 'حساب', invoice: 'فاتورة', payment: 'تسديد' };
@@ -75,15 +75,24 @@ function syncItemScope(item) {
 }
 
 function inferSyncItemScope(item) {
-  const title = String(item.title || item.payload?.invoiceNo || '');
-  if (/^MND-/i.test(title)) return 'delegate';
-  return 'warehouse';
+  const qs = item.queueScope || item.queue_scope;
+  if (qs === 'delegate' || qs === 'warehouse') return qs;
+  const blob = [
+    item.title, item.subtitle, item.refLabel,
+    item.payload?.invoiceNo, item.payload?.notes, item.payload?.customerName
+  ].join(' ');
+  if (/MND|مندوب/i.test(blob)) return 'delegate';
+  return '';
 }
 
 function filterSyncItemsByApp(items) {
   const scope = adminAppScope();
-  if (scope !== 'warehouse' && scope !== 'delegate') return items;
-  return items.filter((item) => syncItemScope(item) === scope);
+  if (scope !== 'warehouse' && scope !== 'delegate') return items || [];
+  return (items || []).filter((item) => {
+    const itemScope = inferSyncItemScope(item);
+    if (!itemScope) return true;
+    return itemScope === scope;
+  });
 }
 
 function debounce(fn, ms = 220) {
@@ -101,6 +110,20 @@ function setPageTitle(view) {
 
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
 function fmt(n) { return Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0}); }
+function formatInvoiceDate(d) {
+  const s = String(d || '').trim();
+  if (!s) return '';
+  const day = s.slice(0, 10);
+  const time = s.length > 10 ? s.slice(11, 16) : '';
+  if (time && time !== '00:00') return `${day}  ${time}`;
+  return day;
+}
+function invoiceTitleHtml(no, date) {
+  const d = formatInvoiceDate(date);
+  return `<span class="inv-title-cell"><strong class="inv-no">${esc(no || '—')}</strong>${d ? `<span class="inv-date-chip" dir="ltr">${esc(d)}</span>` : ''}</span>`;
+}
+window.formatInvoiceDate = formatInvoiceDate;
+window.invoiceTitleHtml = invoiceTitleHtml;
 function currencyLabel(c) { return String(c || '').toLowerCase() === 'usd' ? 'دولار' : 'دينار'; }
 function fmtPrice(n, currency) {
   const usd = String(currency || '').toLowerCase() === 'usd';
@@ -251,6 +274,7 @@ async function loadDashboard() {
   if (fxInput && data.appSettings && !fxInput.matches(':focus')) {
     fxInput.value = data.appSettings.usdToIqd || '';
   }
+  fillEdariDbSettings(data.appSettings);
   const t = data.today;
   const pending = data.pendingSync || 0;
   const edari = data.edariSync || {};
@@ -315,10 +339,17 @@ function edariKindBadge(kind) {
 function updateEdariSyncToolbar() {
   const desktop = !!window.edariDesktop?.processEdariSync;
   const hint = document.getElementById('edariSyncHint');
+  const conn = window.lastEdariConn || {};
   if (hint) {
-    hint.textContent = desktop
-      ? 'الترحيل يتم من هذا الجهاز عبر اتصال EdariNX المحلي.'
-      : 'افتح تطبيق الإدارة على Windows لتمكين الترحيل إلى قاعدة الإداري.';
+    if (conn.alias) {
+      hint.textContent = desktop
+        ? `الترحيل من هذا الجهاز إلى قاعدة الإداري ${conn.alias} — ${conn.databasePath || ''}`.trim()
+        : `قاعدة الإداري المحفوظة: ${conn.alias}`;
+    } else {
+      hint.textContent = desktop
+        ? 'الترحيل يتم من هذا الجهاز عبر اتصال EdariNX المحلي — القاعدة المطلوبة 2026.'
+        : 'افتح تطبيق الإدارة على Windows لتمكين الترحيل إلى قاعدة الإداري 2026.';
+    }
   }
   const selected = [...edariSyncSelected];
   const hasKind = (k) => edariSyncItems.some((i) => i.kind === k);
@@ -331,28 +362,35 @@ function updateEdariSyncToolbar() {
   setBtn('btnEdariSyncAccounts', hasKind('account') && (selected.length === 0 || selectedOf('account') > 0));
   setBtn('btnEdariSyncInvoices', hasKind('invoice') && (selected.length === 0 || selectedOf('invoice') > 0));
   setBtn('btnEdariSyncPayments', hasKind('payment') && (selected.length === 0 || selectedOf('payment') > 0));
+  const archBtn = document.getElementById('btnEdariArchiveSelected');
+  const unarchBtn = document.getElementById('btnEdariUnarchiveSelected');
+  if (archBtn) archBtn.disabled = selected.length === 0;
+  if (unarchBtn) unarchBtn.disabled = selected.length === 0;
 }
 
 function renderEdariSyncTable() {
   const wrap = document.getElementById('edariSyncTable');
   if (!wrap) return;
-  let items = edariSyncItems;
-  if (window.edariStatusFilter) {
-    items = items.filter((i) => i.status === window.edariStatusFilter);
-  }
-  items = filterSyncItemsByApp(items);
+  let items = filterSyncItemsByApp(edariSyncItems);
   const q = (document.getElementById('edariSyncSearch')?.value || '').trim().toLowerCase();
   if (q) {
     items = items.filter((i) =>
       String(i.title || '').toLowerCase().includes(q) ||
       String(i.subtitle || '').toLowerCase().includes(q) ||
       String(i.refLabel || '').toLowerCase().includes(q) ||
+      String(i.invoiceDate || '').toLowerCase().includes(q) ||
       String(i.error || '').toLowerCase().includes(q)
     );
   }
   if (!items.length) {
     const scopeLabel = adminAppScope() === 'delegate' ? 'المندوبين' : 'الشورجة';
-    wrap.innerHTML = `<p style="color:var(--muted);padding:16px">لا توجد عناصر معلّقة في طابور مزامنة ${scopeLabel}.</p>`;
+    const st = window.edariStatusFilter || '';
+    const emptyMsg = st === 'archived'
+      ? `لا توجد عناصر مؤرشفة في طابور ${scopeLabel}.`
+      : st === 'all'
+        ? `لا توجد عناصر في طابور مزامنة ${scopeLabel}.`
+        : `لا توجد عناصر معلّقة في طابور مزامنة ${scopeLabel}.`;
+    wrap.innerHTML = `<p style="color:var(--muted);padding:16px">${emptyMsg}</p>`;
     updateEdariSyncToolbar();
     return;
   }
@@ -364,21 +402,30 @@ function renderEdariSyncTable() {
           <th>النوع</th>
           <th>العنوان</th>
           <th>التفاصيل</th>
+          <th>التاريخ</th>
           <th>المبلغ</th>
           <th>الحالة</th>
           <th>المحاولات</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         ${items.map((item) => `
-          <tr class="${item.status === 'error' ? 'row-error' : ''}">
+          <tr class="${item.status === 'error' ? 'row-error' : item.status === 'archived' ? 'row-archived' : ''}">
             <td><input type="checkbox" class="edari-sync-check" data-id="${item.id}" ${edariSyncSelected.has(item.id) ? 'checked' : ''}></td>
             <td>${edariKindBadge(item.kind)}</td>
-            <td><strong>${esc(item.title)}</strong><div class="sub">${esc(item.refLabel)}</div></td>
+            <td>${item.kind === 'invoice'
+              ? `<button type="button" class="linkish inv-open-btn" data-invoice-id="${item.refId || ''}">${invoiceTitleHtml(item.title, item.invoiceDate || item.createdAt)}</button>`
+              : `<strong>${esc(item.title)}</strong><div class="sub">${esc(item.refLabel)}</div>`}</td>
             <td>${esc(item.subtitle)}</td>
-            <td dir="ltr">${item.amount != null ? fmt(item.amount) : '—'}</td>
+            <td dir="ltr">${esc(formatInvoiceDate(item.invoiceDate || item.createdAt) || '—')}</td>
+            <td dir="ltr">${item.amount != null ? fmtPrice(item.amount, item.currency) : '—'}</td>
             <td>${edariSyncLabel(item.status, item.error)}${item.error ? `<div class="sync-err-msg">${esc(item.error)}</div>` : ''}</td>
             <td>${item.attempts || 0}</td>
+            <td class="row-actions">${item.status === 'archived'
+              ? `<button type="button" class="btn btn-ghost btn-sm" data-unarchive-id="${item.id}">استعادة</button>`
+              : `<button type="button" class="btn btn-ghost btn-sm" data-archive-id="${item.id}">أرشفة</button>`}
+            </td>
           </tr>
         `).join('')}
       </tbody>
@@ -386,8 +433,8 @@ function renderEdariSyncTable() {
   const allCb = document.getElementById('edariSyncSelectAll');
   const checks = wrap.querySelectorAll('.edari-sync-check');
   allCb?.addEventListener('change', () => {
-    if (allCb.checked) edariSyncItems.forEach((i) => edariSyncSelected.add(i.id));
-    else edariSyncSelected.clear();
+    if (allCb.checked) items.forEach((i) => edariSyncSelected.add(i.id));
+    else items.forEach((i) => edariSyncSelected.delete(i.id));
     checks.forEach((c) => { c.checked = allCb.checked; });
     updateEdariSyncToolbar();
   });
@@ -400,17 +447,78 @@ function renderEdariSyncTable() {
       updateEdariSyncToolbar();
     });
   });
+  wrap.querySelectorAll('[data-archive-id]').forEach((btn) => {
+    btn.addEventListener('click', () => archiveEdariItems([Number(btn.dataset.archiveId)]));
+  });
+  wrap.querySelectorAll('[data-unarchive-id]').forEach((btn) => {
+    btn.addEventListener('click', () => unarchiveEdariItems([Number(btn.dataset.unarchiveId)]));
+  });
+  wrap.querySelectorAll('[data-invoice-id]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const id = Number(btn.dataset.invoiceId);
+      if (id) openInvoice(id);
+    });
+  });
   updateEdariSyncToolbar();
 }
 
+function fillEdariDbSettings(settings) {
+  if (!settings) return;
+  const aliasEl = document.getElementById('edariAliasInput');
+  const rootEl = document.getElementById('edariDataRootInput');
+  const hint = document.getElementById('edariDbPathHint');
+  if (aliasEl && !aliasEl.matches(':focus')) aliasEl.value = settings.edariAlias || '2026';
+  if (rootEl && !rootEl.matches(':focus')) rootEl.value = settings.edariDataRoot || '';
+  updateEdariDbPathHint();
+}
+
+function currentEdariConn() {
+  return {
+    alias: (document.getElementById('edariAliasInput')?.value || '2026').trim(),
+    dataRoot: (document.getElementById('edariDataRootInput')?.value || '').trim()
+  };
+}
+
+function updateEdariDbPathHint() {
+  const hint = document.getElementById('edariDbPathHint');
+  if (!hint) return;
+  const { alias, dataRoot } = currentEdariConn();
+  const folder = (dataRoot || 'D:\\Future of Technology\\EdariNX\\Data').replace(/[\\/]+$/, '');
+  hint.textContent = `المسار المستخدم: ${folder}\\${alias || '2026'}`;
+}
+
 async function loadEdariSync() {
+  let savedSettings = null;
+  try {
+    const fx = await api('/admin/app-settings');
+    savedSettings = fx.settings;
+    fillEdariDbSettings(fx.settings);
+  } catch { /* ignore */ }
   const kind = document.getElementById('edariSyncKindFilter')?.value || '';
   const params = new URLSearchParams();
   if (kind) params.set('kinds', kind);
   const scope = adminAppScope();
   params.set('scope', scope === 'delegate' ? 'delegate' : 'warehouse');
+  params.set('limit', '5000');
+  if (scope === 'delegate' && !window.edariStatusUserSet) {
+    window.edariStatusFilter = 'all';
+    document.querySelectorAll('#edariStatusFilters .filter-chip').forEach((c) => {
+      c.classList.toggle('active', (c.dataset.edariStatus || '') === 'all');
+    });
+  }
+  const status = window.edariStatusFilter || '';
+  if (status) params.set('status', status);
   const q = params.toString() ? `?${params}` : '';
-  const data = await api(`/admin/edari/sync-queue${q}`);
+  let data;
+  try {
+    data = await api(`/admin/edari/sync-queue${q}`);
+  } catch (err) {
+    const wrap = document.getElementById('edariSyncTable');
+    if (wrap) wrap.innerHTML = `<p style="color:var(--danger);padding:16px">${esc(err.message || 'تعذّر جلب طابور المزامنة')}</p>`;
+    toast(err.message || 'تعذّر جلب طابور المزامنة');
+    return;
+  }
   const stats = data.stats || {};
   const byKind = stats.queueByKind || {};
   edariSyncItems = filterSyncItemsByApp(data.items || []);
@@ -418,19 +526,57 @@ async function loadEdariSync() {
   const scopeLabel = scope === 'delegate' ? 'المندوبين' : 'الشورجة';
   const statsEl = document.getElementById('edariSyncStats');
   if (statsEl) {
+    const active = window.edariStatusFilter || '';
     statsEl.innerHTML = `
-      <div class="edari-stat"><span class="lbl">معلّق (${scopeLabel})</span><span class="val">${stats.pending || 0}</span></div>
-      <div class="edari-stat warn"><span class="lbl">أخطاء</span><span class="val">${stats.error || 0}</span></div>
-      <div class="edari-stat"><span class="lbl">حسابات</span><span class="val">${byKind.account || 0}</span></div>
-      <div class="edari-stat"><span class="lbl">فواتير</span><span class="val">${byKind.invoice || 0}</span></div>
-      <div class="edari-stat"><span class="lbl">تسديدات</span><span class="val">${byKind.payment || 0}</span></div>
+      <button type="button" class="edari-stat ${active === '' ? 'active' : ''}" data-edari-jump="">
+        <span class="lbl">معلّق (${scopeLabel})</span><span class="val">${stats.pending || 0}</span>
+      </button>
+      <button type="button" class="edari-stat warn ${active === 'error' ? 'active' : ''}" data-edari-jump="error">
+        <span class="lbl">أخطاء</span><span class="val">${stats.error || 0}</span>
+      </button>
+      <button type="button" class="edari-stat archived ${active === 'archived' ? 'active' : ''}" data-edari-jump="archived">
+        <span class="lbl">مؤرشف</span><span class="val">${stats.archived || 0}</span>
+      </button>
+      <div class="edari-stat"><span class="lbl">حسابات بالطابور</span><span class="val">${byKind.account || 0}</span></div>
+      <div class="edari-stat"><span class="lbl">فواتير ظاهرة</span><span class="val">${(edariSyncItems.filter((i) => i.kind === 'invoice').length) || data.invoiceTotal || byKind.invoice || 0}</span></div>
+      <div class="edari-stat"><span class="lbl">تسديدات بالطابور</span><span class="val">${byKind.payment || 0}</span></div>
     `;
+    statsEl.querySelectorAll('[data-edari-jump]').forEach((btn) => {
+      btn.addEventListener('click', () => setEdariStatusFilter(btn.dataset.edariJump || ''));
+    });
   }
   const alert = document.getElementById('edariSyncAlert');
   const canTransfer = !!window.edariDesktop?.processEdariSync;
   if (alert) {
     alert.classList.toggle('ok', canTransfer);
     alert.classList.toggle('warn', !canTransfer);
+  }
+  if (data.edari) window.lastEdariConn = data.edari;
+  else if (savedSettings?.edariAlias) {
+    const root = String(savedSettings.edariDataRoot || 'D:\\Future of Technology\\EdariNX\\Data').replace(/[\\/]+$/, '');
+    window.lastEdariConn = {
+      alias: savedSettings.edariAlias,
+      dataRoot: savedSettings.edariDataRoot,
+      databasePath: `${root}\\${savedSettings.edariAlias}`
+    };
+  }
+  if (window.edariDesktop?.getEdariConnection) {
+    window.edariDesktop.getEdariConnection().then((info) => {
+      if (info?.ok && info.edari) {
+        window.lastEdariConn = info.edari;
+        fillEdariDbSettings({
+          edariAlias: info.edari.alias,
+          edariDataRoot: info.edari.dataRoot
+        });
+        updateEdariSyncToolbar();
+      }
+    }).catch(() => {});
+  }
+  const hint = document.getElementById('edariSyncHint');
+  if (hint) {
+    hint.textContent = scope === 'delegate'
+      ? 'كل فواتير المندوبين تظهر هنا مع تاريخ كل فاتورة بجانبها. «الكل» يعرض المعلّق والمرحّل والمؤرشف.'
+      : 'طابور ترحيل الشورجة. الفواتير المدخلة يدوياً في الإداري تُؤرشف حتى لا تُرحَّل.';
   }
   renderEdariSyncTable();
 }
@@ -440,7 +586,31 @@ async function runEdariSyncTransfer({ kinds = null, itemIds = null } = {}) {
     toast('افتح تطبيق الإدارة على Windows للترحيل');
     return;
   }
-  const ids = itemIds && itemIds.length ? itemIds : (edariSyncSelected.size ? [...edariSyncSelected] : null);
+  let ids = itemIds && itemIds.length ? itemIds : (edariSyncSelected.size ? [...edariSyncSelected] : null);
+  if (ids?.length) {
+    const queuedIds = [];
+    for (const raw of ids) {
+      const id = Number(raw);
+      if (!id) continue;
+      const item = edariSyncItems.find((i) => i.id === id);
+      if (item?.status === 'archived') continue;
+      if (id < 0) {
+        try {
+          const data = await api(`/admin/delegate-invoices/${-id}/queue-edari`, { method: 'POST' });
+          if (data.queueId) queuedIds.push(data.queueId);
+        } catch (err) {
+          toast(err.message || 'تعذّر إضافة الفاتورة للطابور');
+        }
+      } else {
+        queuedIds.push(id);
+      }
+    }
+    ids = queuedIds;
+    if (!ids.length) {
+      toast('العناصر المحددة مؤرشفة أو غير جاهزة للترحيل');
+      return;
+    }
+  }
   const btns = ['btnEdariSyncSelected', 'btnEdariSyncAccounts', 'btnEdariSyncInvoices', 'btnEdariSyncPayments', 'btnEdariSyncRefresh'];
   btns.forEach((id) => { const b = document.getElementById(id); if (b) b.disabled = true; });
   try {
@@ -468,12 +638,14 @@ async function runEdariSyncTransfer({ kinds = null, itemIds = null } = {}) {
     if (result?.error) throw new Error(result.error);
     const ok = result?.okCount ?? result?.processed ?? 0;
     const fail = result?.failCount ?? 0;
-    if (ok > 0) toast(`تم ترحيل ${ok} عنصر/عناصر${fail ? ` — فشل ${fail}` : ''}`);
+    const dbLabel = result?.edari?.alias ? ` على قاعدة ${result.edari.alias}` : ' على قاعدة 2026';
+    if (ok > 0) toast(`تم ترحيل ${ok} عنصر/عناصر${dbLabel}${fail ? ` — فشل ${fail}` : ''}`);
     else if (fail > 0) {
       const errMsg = (result?.results || []).find((r) => r && r.ok === false)?.error;
-      toast(errMsg ? `فشل الترحيل: ${errMsg}` : `فشل ترحيل ${fail} عنصر/عناصر`);
+      toast(errMsg ? `فشل الترحيل${dbLabel}: ${errMsg}` : `فشل ترحيل ${fail} عنصر/عناصر${dbLabel}`);
     }
     else toast('لا توجد عناصر للترحيل');
+    if (result?.edari) window.lastEdariConn = result.edari;
     edariSyncSelected.clear();
     await loadEdariSync();
     loadDashboard();
@@ -527,30 +699,140 @@ document.getElementById('btnEdariSyncPayments')?.addEventListener('click', () =>
   runEdariSyncTransfer({ kinds: ['payment'], itemIds: ids });
 });
 
+async function archiveEdariItems(ids) {
+  const raw = [...new Set(ids || [])].map(Number).filter((id) => id && !Number.isNaN(id));
+  const invoiceIds = raw.filter((id) => id < 0).map((id) => -id);
+  const queueIds = raw.filter((id) => id > 0).filter((id) => {
+    const item = edariSyncItems.find((i) => i.id === id);
+    return !item || item.status !== 'archived';
+  });
+  if (!invoiceIds.length && !queueIds.length) return toast('حدد عناصر غير مؤرشفة');
+  const total = invoiceIds.length + queueIds.length;
+  if (!confirm(`أرشفة ${total} عنصر؟ لن تُرحَّل إلى الإداري حتى تُستعاد من الأرشيف.`)) return;
+  try {
+    let count = 0;
+    for (const invId of invoiceIds) {
+      await api(`/admin/delegate-invoices/${invId}/archive-edari`, {
+        method: 'POST',
+        body: JSON.stringify({ note: 'إدخال يدوي في الإداري — لن يُرحَّل' })
+      });
+      count += 1;
+    }
+    if (queueIds.length) {
+      const data = await api('/admin/edari/sync-queue/archive', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemIds: queueIds,
+          note: 'إدخال يدوي في الإداري — لن يُرحَّل',
+          scope: adminAppScope() === 'delegate' ? 'delegate' : 'warehouse'
+        })
+      });
+      count += Number(data.count || queueIds.length);
+    }
+    toast(`تم أرشفة ${count || total} عنصر — لن تُرحَّل`);
+    raw.forEach((id) => edariSyncSelected.delete(id));
+    await loadEdariSync();
+  } catch (err) {
+    toast(err.message || 'فشل الأرشفة');
+  }
+}
+
+async function unarchiveEdariItems(ids) {
+  const raw = [...new Set(ids || [])].map(Number).filter((id) => id && !Number.isNaN(id));
+  const invoiceIds = raw.filter((id) => id < 0).map((id) => -id);
+  const queueIds = raw.filter((id) => id > 0);
+  if (!invoiceIds.length && !queueIds.length) return toast('حدد عناصر مؤرشفة لاستعادتها');
+  try {
+    let count = 0;
+    for (const invId of invoiceIds) {
+      await api(`/admin/delegate-invoices/${invId}/unarchive-edari`, { method: 'POST' });
+      count += 1;
+    }
+    if (queueIds.length) {
+      const data = await api('/admin/edari/sync-queue/unarchive', {
+        method: 'POST',
+        body: JSON.stringify({
+          itemIds: queueIds,
+          scope: adminAppScope() === 'delegate' ? 'delegate' : 'warehouse'
+        })
+      });
+      count += Number(data.count || queueIds.length);
+    }
+    toast(`تم استعادة ${count || raw.length} عنصر إلى الطابور`);
+    edariSyncSelected.clear();
+    await loadEdariSync();
+  } catch (err) {
+    toast(err.message || 'فشل الاستعادة');
+  }
+}
+
+window.archiveEdariItems = archiveEdariItems;
+window.unarchiveEdariItems = unarchiveEdariItems;
+
+document.getElementById('btnEdariArchiveSelected')?.addEventListener('click', () => {
+  archiveEdariItems([...edariSyncSelected]);
+});
+document.getElementById('btnEdariUnarchiveSelected')?.addEventListener('click', () => {
+  unarchiveEdariItems([...edariSyncSelected]);
+});
+
+function setEdariStatusFilter(status) {
+  window.edariStatusUserSet = true;
+  window.edariStatusFilter = status || '';
+  document.querySelectorAll('#edariStatusFilters .filter-chip').forEach((c) => {
+    c.classList.toggle('active', (c.dataset.edariStatus || '') === (status || ''));
+  });
+  edariSyncSelected.clear();
+  loadEdariSync();
+}
+window.setEdariStatusFilter = setEdariStatusFilter;
+
+document.getElementById('btnEdariOpenArchive')?.addEventListener('click', () => {
+  setEdariStatusFilter('archived');
+});
+
 async function triggerEdariSyncNow() {
   openEdariSyncView();
 }
 
 function edariSyncLabel(status, error = '') {
   const title = error ? ` title="${esc(error)}"` : '';
-  if (status === 'synced') return `<span style="color:var(--ok)"${title}>متزامن</span>`;
-  if (status === 'hold') return `<span style="color:var(--warn)"${title}>بانتظار التجهيز</span>`;
+  if (status === 'synced' || status === 'done') return `<span style="color:var(--ok)"${title}>متزامن</span>`;
+  if (status === 'archived') return `<span style="color:var(--muted)"${title}>مؤرشف</span>`;
   if (status === 'pending') return `<span style="color:var(--warn)"${title}>بانتظار الإداري</span>`;
   if (status === 'error') return `<span class="sync-status-error"${title}>خطأ</span>`;
   return `<span style="color:var(--muted)"${title}>—</span>`;
 }
 
 async function loadInvoices() {
-  const today = new Date().toISOString().slice(0, 10);
-  const from = document.getElementById('invFrom')?.value || document.getElementById('invDate')?.value || today;
-  const to = document.getElementById('invTo')?.value || from;
+  const from = document.getElementById('invFrom')?.value || '';
+  const to = document.getElementById('invTo')?.value || '';
   const q = document.getElementById('invSearch')?.value || '';
-  const data = await api(`/admin/invoices?from=${from}&to=${to}&q=${encodeURIComponent(q)}`);
+  const params = new URLSearchParams({ limit: '5000' });
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  if (q) params.set('q', q);
+  const branchId = document.getElementById('invBranch')?.value || '';
+  const kind = document.getElementById('invKind')?.value || '';
+  const payment = document.getElementById('invPayment')?.value || '';
+  const edari = document.getElementById('invEdari')?.value || '';
+  const sort = document.getElementById('invSort')?.value || 'created_desc';
+  if (branchId) params.set('branchId', branchId);
+  if (kind) params.set('kind', kind);
+  if (payment) params.set('payment', payment);
+  if (edari) params.set('edari', edari);
+  if (sort) params.set('sort', sort);
+  const data = await api(`/admin/invoices?${params}`);
+  renderInvoiceStats(data.stats || {});
+  const shown = (data.invoices || []).length;
+  const total = data.total != null ? data.total : shown;
+  const countEl = document.getElementById('invResultCount');
+  if (countEl) countEl.textContent = `عرض ${shown}${total > shown ? ` من ${total}` : ''} فاتورة`;
   document.getElementById('invoiceTable').innerHTML = `
-    <table>
+    <table class="ledger-table">
       <thead><tr><th>الرقم</th><th>النوع</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>مدفوع</th><th>متبقي</th><th>الإداري</th></tr></thead>
-      <tbody>${(data.invoices||[]).map((i) => `
-        <tr class="clickable-row" data-invoice-id="${i.id}">
+      <tbody>${(data.invoices||[]).length ? (data.invoices||[]).map((i) => `
+        <tr class="clickable-row ${i.edariSyncStatus === 'archived' ? 'row-archived' : ''}" data-invoice-id="${i.id}">
           <td>${esc(i.invoiceNo)}</td>
           <td>${i.kind === 'return' ? 'مرتجع' : i.kind === 'issue' ? 'إخراج' : 'بيع'}</td>
           <td>${esc(i.customerName||'نقدي')}</td>
@@ -559,7 +841,7 @@ async function loadInvoices() {
           <td dir="ltr">${fmtPrice(i.paidAmount, i.currency)}</td>
           <td dir="ltr">${fmtPrice(i.dueAmount, i.currency)}</td>
           <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}${i.edariBillNum ? `<br><small dir="ltr">${esc(i.edariBillNum)}</small>` : ''}</td>
-        </tr>`).join('') || '<tr><td colspan="8">لا توجد فواتير</td></tr>'}
+        </tr>`).join('') : '<tr><td colspan="8" class="empty-cell">لا توجد فواتير — اضغط «عرض الكل» أو اترك التاريخ فارغاً</td></tr>'}
       </tbody>
     </table>`;
   document.getElementById('invoiceTable').querySelectorAll('[data-invoice-id]').forEach((row) => {
@@ -567,40 +849,79 @@ async function loadInvoices() {
   });
 }
 
+function renderInvoiceStats(stats) {
+  const el = document.getElementById('invoiceStats');
+  if (!el) return;
+  el.className = 'invoice-hero kpi-grid premium-kpis';
+  el.innerHTML = `
+    <button type="button" class="kpi premium-kpi" data-inv-jump="all"><div class="lbl">كل الفواتير</div><div class="val">${stats.total || 0}</div></button>
+    <button type="button" class="kpi premium-kpi" data-inv-jump="today"><div class="lbl">اليوم</div><div class="val">${stats.today || 0}</div></button>
+    <button type="button" class="kpi premium-kpi warn" data-inv-jump="pending"><div class="lbl">بانتظار الترحيل</div><div class="val">${stats.pending || 0}</div></button>
+    <button type="button" class="kpi premium-kpi" data-inv-jump="archived"><div class="lbl">مؤرشفة</div><div class="val">${stats.archived || 0}</div></button>
+    <button type="button" class="kpi premium-kpi" data-inv-jump="synced"><div class="lbl">مرحّلة</div><div class="val">${stats.synced || 0}</div></button>
+  `;
+}
+
 document.getElementById('invDate')?.addEventListener('change', loadInvoices);
 document.getElementById('invSearch')?.addEventListener('input', debounce(loadInvoices, 250));
+document.getElementById('invSort')?.addEventListener('change', loadInvoices);
 
 function renderPrepStats(el, stats) {
   if (!el) return;
   el.innerHTML = `
-    <div class="kpi"><div class="lbl">جاهزة للترحيل</div><div class="val">${stats.total || 0}</div></div>
-    <div class="kpi warn"><div class="lbl">بانتظار الإداري</div><div class="val">${stats.pending || 0}</div></div>
+    <div class="kpi"><div class="lbl">كل الفواتير</div><div class="val">${stats.total || 0}</div></div>
+    <div class="kpi warn"><div class="lbl">بانتظار الترحيل</div><div class="val">${stats.pending || 0}</div></div>
+    <div class="kpi"><div class="lbl">مؤرشفة</div><div class="val">${stats.archived || 0}</div></div>
     <div class="kpi"><div class="lbl">مرحّلة</div><div class="val">${stats.synced || 0}</div></div>`;
 }
 
-function renderPrepTable(tableEl, rows, { labelHeader, labelFn }) {
+function prepEdariActionsHtml(i) {
+  if (i.edariSyncStatus === 'synced' && i.edariBillSeq) {
+    return '<span style="color:var(--ok)">✓ مرحّلة</span>';
+  }
+  if (i.edariSyncStatus === 'archived') {
+    return `<button type="button" class="btn btn-ghost btn-sm" data-unarchive-inv="${i.id}">استعادة</button>`;
+  }
+  return `
+    <button type="button" class="btn btn-secondary btn-sm" data-queue-edari="${i.id}">ترحيل للإداري</button>
+    <button type="button" class="btn btn-ghost btn-sm" data-archive-inv="${i.id}">أرشفة</button>`;
+}
+
+function reloadActivePrepView() {
+  const view = document.querySelector('.nav.active')?.dataset.view;
+  if (view === 'delegates') (window.loadDelegates || loadDelegates)();
+  else if (view === 'warehousePrep') (window.loadWarehousePrep || loadWarehousePrep)();
+  else if (view === 'invoices') (window.loadInvoices || loadInvoices)();
+  else if (view === 'edariSync') (window.loadEdariSync || loadEdariSync)();
+  else document.querySelector('.nav.active')?.click();
+}
+
+async function archiveInvoiceFromPrep(invoiceId) {
+  if (!confirm('أرشفة هذه الفاتورة؟ لن تُرحَّل إلى الإداري لأنها مدخلة يدوياً.')) return;
+  try {
+    await api(`/admin/delegate-invoices/${invoiceId}/archive-edari`, {
+      method: 'POST',
+      body: JSON.stringify({ note: 'إدخال يدوي في الإداري — لن يُرحَّل' })
+    });
+    toast('تم أرشفة الفاتورة — لن تُرحَّل');
+    reloadActivePrepView();
+  } catch (err) { toast(err.message); }
+}
+
+async function unarchiveInvoiceFromPrep(invoiceId) {
+  try {
+    await api(`/admin/delegate-invoices/${invoiceId}/unarchive-edari`, { method: 'POST' });
+    toast('أُعيدت الفاتورة من الأرشيف');
+    reloadActivePrepView();
+  } catch (err) { toast(err.message); }
+}
+
+window.archiveInvoiceFromPrep = archiveInvoiceFromPrep;
+window.unarchiveInvoiceFromPrep = unarchiveInvoiceFromPrep;
+window.prepEdariActionsHtml = prepEdariActionsHtml;
+
+function bindPrepTableActions(tableEl) {
   if (!tableEl) return;
-  tableEl.innerHTML = `
-    <table>
-      <thead><tr>
-        <th>${labelHeader}</th><th>رقم الفاتورة</th><th>طلب التجهيز</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>الإداري</th><th></th>
-      </tr></thead>
-      <tbody>${rows.map((i) => `
-        <tr>
-          <td>${esc(labelFn(i))}</td>
-          <td><button type="button" class="linkish" data-invoice-id="${i.id}">${esc(i.invoiceNo)}</button></td>
-          <td dir="ltr">${esc(i.prepOrderNo || '—')}</td>
-          <td>${esc(i.customerName || 'نقدي')}</td>
-          <td>${esc(i.invoiceDate)}</td>
-          <td dir="ltr">${fmtPrice(i.total, i.currency)}</td>
-          <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}${i.edariBillNum ? `<br><small dir="ltr">${esc(i.edariBillNum)}</small>` : ''}</td>
-          <td>${i.edariSyncStatus === 'synced' && i.edariBillSeq
-            ? '<span style="color:var(--ok)">✓</span>'
-            : `<button type="button" class="btn btn-secondary btn-sm" data-queue-edari="${i.id}">ترحيل للإداري</button>`}
-          </td>
-        </tr>`).join('') || '<tr><td colspan="8">لا توجد فواتير</td></tr>'}
-      </tbody>
-    </table>`;
   tableEl.querySelectorAll('[data-invoice-id]').forEach((btn) => {
     btn.addEventListener('click', () => openInvoice(Number(btn.dataset.invoiceId)));
   });
@@ -609,19 +930,57 @@ function renderPrepTable(tableEl, rows, { labelHeader, labelFn }) {
       try {
         await api(`/admin/delegate-invoices/${btn.dataset.queueEdari}/queue-edari`, { method: 'POST' });
         toast('أُضيفت الفاتورة لطابور الإداري — راجع «مزامنة الإداري» للترحيل');
-        document.querySelector('.nav.active')?.click();
+        reloadActivePrepView();
       } catch (err) { toast(err.message); }
     });
   });
+  tableEl.querySelectorAll('[data-archive-inv]').forEach((btn) => {
+    btn.addEventListener('click', () => archiveInvoiceFromPrep(Number(btn.dataset.archiveInv)));
+  });
+  tableEl.querySelectorAll('[data-unarchive-inv]').forEach((btn) => {
+    btn.addEventListener('click', () => unarchiveInvoiceFromPrep(Number(btn.dataset.unarchiveInv)));
+  });
+}
+
+function renderPrepTable(tableEl, rows, { labelHeader, labelFn }) {
+  if (!tableEl) return;
+  tableEl.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>${labelHeader}</th><th>الفاتورة والتاريخ</th><th>طلب التجهيز</th><th>العميل</th><th>التاريخ</th><th>الإجمالي</th><th>الإداري</th><th></th>
+      </tr></thead>
+      <tbody>${rows.map((i) => `
+        <tr class="${i.edariSyncStatus === 'archived' ? 'row-archived' : ''}">
+          <td>${esc(labelFn(i))}</td>
+          <td><button type="button" class="linkish inv-open-btn" data-invoice-id="${i.id}">${invoiceTitleHtml(i.invoiceNo, i.invoiceDate || i.createdAt)}</button></td>
+          <td dir="ltr">${esc(i.prepOrderNo || '—')}</td>
+          <td>${esc(i.customerName || 'نقدي')}</td>
+          <td dir="ltr">${esc(formatInvoiceDate(i.invoiceDate || i.createdAt) || '—')}</td>
+          <td dir="ltr">${fmtPrice(i.total, i.currency)}</td>
+          <td>${edariSyncLabel(i.edariSyncStatus, i.edariSyncError)}${i.edariBillNum ? `<br><small dir="ltr">${esc(i.edariBillNum)}</small>` : ''}</td>
+          <td class="row-actions">${prepEdariActionsHtml(i)}</td>
+        </tr>`).join('') || '<tr><td colspan="8">لا توجد فواتير</td></tr>'}
+      </tbody>
+    </table>`;
+  bindPrepTableActions(tableEl);
+}
+
+function prepListParams(dateEl, searchEl, edariFilter) {
+  const dateInput = document.getElementById(dateEl);
+  const date = dateInput?.dataset.userSet && dateInput.value ? dateInput.value : '';
+  const q = document.getElementById(searchEl)?.value || '';
+  const params = new URLSearchParams();
+  params.set('limit', '5000');
+  if (date) { params.set('from', date); params.set('to', date); }
+  if (q) params.set('q', q);
+  if (edariFilter === 'pending' || edariFilter === 'synced' || edariFilter === 'archived') {
+    params.set('edari', edariFilter);
+  }
+  return params;
 }
 
 async function loadWarehousePrep() {
-  const date = document.getElementById('warehouseDate')?.value || '';
-  const q = document.getElementById('warehouseSearch')?.value || '';
-  const params = new URLSearchParams();
-  if (date) { params.set('from', date); params.set('to', date); }
-  if (q) params.set('q', q);
-  const data = await api(`/admin/warehouse-prep-invoices?${params.toString()}`);
+  const data = await api(`/admin/warehouse-prep-invoices?${prepListParams('warehouseDate', 'warehouseSearch', window.warehouseFilter || '')}`);
   renderPrepStats(document.getElementById('warehouseStats'), data.stats || {});
   renderPrepTable(document.getElementById('warehouseTable'), data.invoices || [], {
     labelHeader: 'الفرع',
@@ -633,21 +992,41 @@ document.getElementById('warehouseDate')?.addEventListener('change', loadWarehou
 document.getElementById('warehouseSearch')?.addEventListener('input', debounce(loadWarehousePrep, 250));
 
 async function loadDelegates() {
-  const date = document.getElementById('delegateDate')?.value || '';
-  const q = document.getElementById('delegateSearch')?.value || '';
-  const params = new URLSearchParams();
-  if (date) { params.set('from', date); params.set('to', date); }
-  if (q) params.set('q', q);
-  const data = await api(`/admin/delegate-invoices?${params.toString()}`);
-  renderPrepStats(document.getElementById('delegateStats'), data.stats || {});
-  renderPrepTable(document.getElementById('delegateTable'), data.invoices || [], {
-    labelHeader: 'المندوب',
-    labelFn: (i) => i.prepOrderNo || i.sourceLabel || '—'
-  });
+  const tableEl = document.getElementById('delegateTable');
+  const dateEl = document.getElementById('delegateDate');
+  if (dateEl && !dateEl.dataset.userSet) dateEl.value = '';
+  try {
+    const data = await api(`/admin/delegate-invoices?${prepListParams('delegateDate', 'delegateSearch', window.delegateFilter || '')}`);
+    renderPrepStats(document.getElementById('delegateStats'), data.stats || {});
+    const meta = document.getElementById('delegateListMeta');
+    const rows = data.invoices || [];
+    const total = data.total != null ? data.total : rows.length;
+    const statsTotal = Number(data.stats?.total || 0);
+    if (meta) {
+      if (!rows.length && statsTotal > 0) {
+        meta.textContent = `يوجد ${statsTotal} فاتورة لكن الفلتر الحالي لا يُظهرها — امسح التاريخ أو اختر «الكل».`;
+      } else {
+        meta.textContent = `عرض ${rows.length} فاتورة${total > rows.length ? ` من ${total}` : ''} — كل التواريخ ما لم تختار يوماً.`;
+      }
+    }
+    renderPrepTable(tableEl, rows, {
+      labelHeader: 'المندوب',
+      labelFn: (i) => i.sourceLabel || i.prepOrderNo || '—'
+    });
+  } catch (err) {
+    if (tableEl) {
+      tableEl.innerHTML = `<p style="color:var(--danger);padding:16px">${esc(err.message || 'تعذّر جلب فواتير المندوبين')}</p>`;
+    }
+    toast(err.message || 'تعذّر جلب فواتير المندوبين');
+  }
 }
 
-document.getElementById('delegateDate')?.addEventListener('change', loadDelegates);
-document.getElementById('delegateSearch')?.addEventListener('input', debounce(loadDelegates, 250));
+document.getElementById('delegateDate')?.addEventListener('change', () => {
+  const el = document.getElementById('delegateDate');
+  if (el) el.dataset.userSet = '1';
+  (window.loadDelegates || loadDelegates)();
+});
+document.getElementById('delegateSearch')?.addEventListener('input', debounce(() => (window.loadDelegates || loadDelegates)(), 250));
 
 async function openInvoice(id) {
   try {
@@ -683,8 +1062,31 @@ async function openInvoice(id) {
             </tr>`).join('')}
           </tbody>
         </table>
+      </div>
+      <div class="row-actions" style="margin-top:12px">
+        ${inv.edariSyncStatus === 'archived'
+          ? `<button type="button" class="btn btn-ghost btn-sm" id="btnInvUnarchiveEdari">استعادة من الأرشيف</button>`
+          : (inv.edariSyncStatus === 'synced' && inv.edariBillSeq
+            ? ''
+            : `<button type="button" class="btn btn-sm btn-primary" id="btnInvQueueEdari">ترحيل للإداري</button>
+               <button type="button" class="btn btn-ghost btn-sm" id="btnInvArchiveEdari">أرشفة (إدخال يدوي)</button>`)}
       </div>`;
     document.getElementById('invoiceModal').showModal();
+    document.getElementById('btnInvQueueEdari')?.addEventListener('click', async () => {
+      try {
+        await api(`/admin/delegate-invoices/${id}/queue-edari`, { method: 'POST' });
+        toast('أُضيفت للطابور — راجع مزامنة الإداري');
+        openInvoice(id);
+      } catch (err) { toast(err.message); }
+    });
+    document.getElementById('btnInvArchiveEdari')?.addEventListener('click', async () => {
+      await archiveInvoiceFromPrep(id);
+      if (document.getElementById('invoiceModal')?.open) openInvoice(id);
+    });
+    document.getElementById('btnInvUnarchiveEdari')?.addEventListener('click', async () => {
+      await unarchiveInvoiceFromPrep(id);
+      if (document.getElementById('invoiceModal')?.open) openInvoice(id);
+    });
   } catch (err) { toast(err.message); }
 }
 
@@ -1237,6 +1639,7 @@ async function loadPrices() {
     if (fxInput && fx.settings && !fxInput.matches(':focus')) {
       fxInput.value = fx.settings.usdToIqd || '';
     }
+    fillEdariDbSettings(fx.settings);
   } catch { /* ignore */ }
   const data = await api('/admin/prices/packages');
   document.getElementById('packagesList').innerHTML = (data.packages || []).length
@@ -2025,6 +2428,50 @@ document.getElementById('btnSaveFxRate')?.addEventListener('click', async () => 
     });
     toast(`تم حفظ سعر الصرف: 1 دولار = ${fmt(data.settings.usdToIqd)} دينار`);
   } catch (err) { toast(err.message); }
+});
+
+document.getElementById('edariAliasInput')?.addEventListener('input', updateEdariDbPathHint);
+document.getElementById('edariDataRootInput')?.addEventListener('input', updateEdariDbPathHint);
+
+document.getElementById('btnSaveEdariDb')?.addEventListener('click', async () => {
+  try {
+    const conn = currentEdariConn();
+    if (!conn.alias) {
+      toast('أدخل سنة القاعدة مثل 2026');
+      return;
+    }
+    const data = await api('/admin/app-settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        edariAlias: conn.alias,
+        edariDataRoot: conn.dataRoot
+      })
+    });
+    fillEdariDbSettings(data.settings);
+    toast(`تم حفظ قاعدة الإداري: ${data.settings.edariAlias}`);
+  } catch (err) { toast(err.message); }
+});
+
+document.getElementById('btnTestEdariDb')?.addEventListener('click', async () => {
+  if (!window.edariDesktop?.getEdariWarehouseImportStatus) {
+    toast('اختبار الاتصال يتطلب تطبيق الإدارة على Windows');
+    return;
+  }
+  try {
+    const conn = currentEdariConn();
+    const data = await api('/admin/app-settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        edariAlias: conn.alias,
+        edariDataRoot: conn.dataRoot
+      })
+    });
+    fillEdariDbSettings(data.settings);
+    const st = await window.edariDesktop.getEdariWarehouseImportStatus();
+    if (!st?.ok) throw new Error(st?.error || 'تعذر الاتصال بقاعدة الإداري');
+    const name = st.warehouse?.name || 'المستودع';
+    toast(`الاتصال ناجح — قاعدة ${data.settings.edariAlias} · ${name} · ${Number(st.totalInEdari || 0)} مادة`);
+  } catch (err) { toast(err.message || 'فشل اختبار الإداري'); }
 });
 
 document.getElementById('btnNewAccount').addEventListener('click', () => {
