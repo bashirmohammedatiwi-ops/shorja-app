@@ -41,6 +41,12 @@ function loadPackagedHandlers() {
 
 const SYNC_HANDLERS = { account: null, invoice: null, payment: null };
 
+function resetEdariHandlers() {
+  SYNC_HANDLERS.account = null;
+  SYNC_HANDLERS.invoice = null;
+  SYNC_HANDLERS.payment = null;
+}
+
 function loadHandlers() {
   if (!SYNC_HANDLERS.account) {
     if (require('electron').app?.isPackaged) {
@@ -89,4 +95,4 @@ async function runEdariSyncWorkerDesktop(options = {}) {
   });
 }
 
-module.exports = { runEdariSyncWorker: runEdariSyncWorkerDesktop };
+module.exports = { runEdariSyncWorker: runEdariSyncWorkerDesktop, resetEdariHandlers };

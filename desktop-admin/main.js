@@ -17,16 +17,52 @@ function getEdariLibPath(name) {
   return path.join(__dirname, '..', 'server', 'lib', name);
 }
 
-function applyEdariEnv() {
+async function loadRemoteEdariSettings() {
+  try {
+    const res = await fetch(`${getServerUrl()}/api/health`, { signal: AbortSignal.timeout(8000) });
+    const data = await res.json();
+    return {
+      alias: String(data.edari?.alias || '').trim(),
+      dataRoot: String(data.edari?.dataRoot || '').trim()
+    };
+  } catch {
+    return {};
+  }
+}
+
+function clearEdariRequireCache() {
+  const names = [
+    'edari-connection.js',
+    'edari-nxscript.js',
+    'edari-bridge.js',
+    'edari-lookup.js',
+    'edari-accounts.js',
+    'edari-invoices.js',
+    'edari-post-write.js',
+    'edari-safety.js',
+    'edari-sync-worker.js'
+  ];
+  for (const name of names) {
+    const filePath = getEdariLibPath(name);
+    try { delete require.cache[require.resolve(filePath)]; } catch { /* not loaded */ }
+  }
+}
+
+async function applyEdariEnv() {
+  const remote = await loadRemoteEdariSettings();
+  clearEdariRequireCache();
   const connPath = getEdariLibPath('edari-connection.js');
-  delete require.cache[require.resolve(connPath)];
-  const { connectionToEnv } = require(connPath);
+  const { connectionToEnv, resolveLiveEdariConnection, CURRENT_EDARI_YEAR } = require(connPath);
   const nxPath = getEdariLibPath('edari-nxscript.js');
-  delete require.cache[require.resolve(nxPath)];
   const { ensureExecuteScriptDeployed, ensureAccountMaintScriptDeployed, ensureTreeRepairScriptDeployed } = require(nxPath);
   ensureExecuteScriptDeployed();
   ensureAccountMaintScriptDeployed();
   ensureTreeRepairScriptDeployed();
+  const connOverrides = {
+    alias: remote.alias && remote.alias !== '2025' ? remote.alias : (CURRENT_EDARI_YEAR || '2026')
+  };
+  if (remote.dataRoot) connOverrides.dataRoot = remote.dataRoot;
+  const live = await resolveLiveEdariConnection(connOverrides);
   Object.assign(process.env, {
     EDARI_READER_ROOT: getEdariReaderRoot(),
     EDARI_WRITE_ENABLED: process.env.EDARI_WRITE_ENABLED || '0',
@@ -49,15 +85,16 @@ function applyEdariEnv() {
     EDARI_SHORJA_BILL_NUM_START: process.env.EDARI_SHORJA_BILL_NUM_START || '9000000',
     EDARI_SHORJA_STORE_NAME: process.env.EDARI_SHORJA_STORE_NAME || 'محل الشورجه',
     EDARI_SHORJA_STORE_INDEX: process.env.EDARI_SHORJA_STORE_INDEX || '4',
-    ...connectionToEnv()
+    ...connectionToEnv(live)
   });
+  return live;
 }
 
 const { logSync } = require(getEdariLibPath('edari-sync-worker.js'));
 
 ipcMain.handle('lookup-edari-material', async (_e, code) => {
   try {
-    applyEdariEnv();
+    await applyEdariEnv();
     const lookupPath = getEdariLibPath('edari-lookup.js');
     delete require.cache[require.resolve(lookupPath)];
     const { lookupEdariMaterial, resetOdbcBridgeCache } = require(lookupPath);
@@ -75,11 +112,12 @@ async function processEdariQueueLocal(options = {}) {
   if (syncBusy) return { skipped: true, reason: 'busy' };
   syncBusy = true;
   try {
-    applyEdariEnv();
-    const { runEdariSyncWorker } = require('./edari-sync-worker');
-    const result = await runEdariSyncWorker(options);
+    const live = await applyEdariEnv();
+    const worker = require('./edari-sync-worker');
+    worker.resetEdariHandlers?.();
+    const result = await worker.runEdariSyncWorker(options);
     if (result.processed > 0) logSync('تطبيق الإدارة — مزامنة يدوية', result);
-    return result;
+    return { ...result, edari: live };
   } catch (err) {
     logSync('تطبيق الإدارة — خطأ', err.message);
     return { ok: false, error: err.message };
@@ -90,9 +128,18 @@ async function processEdariQueueLocal(options = {}) {
 
 ipcMain.handle('process-edari-sync', (_e, options) => processEdariQueueLocal(options || {}));
 
+ipcMain.handle('get-edari-connection', async () => {
+  try {
+    const edari = await applyEdariEnv();
+    return { ok: true, edari };
+  } catch (err) {
+    return { ok: false, error: err.message || 'فشل قراءة اتصال الإداري' };
+  }
+});
+
 ipcMain.handle('edari-product-import-status', async () => {
   try {
-    applyEdariEnv();
+    await applyEdariEnv();
     const workerPath = path.join(__dirname, 'edari-product-import-worker.js');
     delete require.cache[require.resolve(workerPath)];
     const { getEdariProductImportStatus } = require(workerPath);
@@ -104,7 +151,7 @@ ipcMain.handle('edari-product-import-status', async () => {
 
 ipcMain.handle('edari-product-import-batch', async (_e, options) => {
   try {
-    applyEdariEnv();
+    await applyEdariEnv();
     const workerPath = path.join(__dirname, 'edari-product-import-worker.js');
     delete require.cache[require.resolve(workerPath)];
     const { fetchEdariProductImportBatch } = require(workerPath);
@@ -116,7 +163,7 @@ ipcMain.handle('edari-product-import-batch', async (_e, options) => {
 
 ipcMain.handle('edari-warehouse-import-status', async () => {
   try {
-    applyEdariEnv();
+    await applyEdariEnv();
     const workerPath = path.join(__dirname, 'edari-product-import-worker.js');
     delete require.cache[require.resolve(workerPath)];
     const { getEdariWarehouseImportStatus } = require(workerPath);
@@ -128,7 +175,7 @@ ipcMain.handle('edari-warehouse-import-status', async () => {
 
 ipcMain.handle('edari-warehouse-import-batch', async (_e, options) => {
   try {
-    applyEdariEnv();
+    await applyEdariEnv();
     const workerPath = path.join(__dirname, 'edari-product-import-worker.js');
     delete require.cache[require.resolve(workerPath)];
     const { fetchEdariWarehouseImportBatch } = require(workerPath);
