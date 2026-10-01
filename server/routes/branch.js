@@ -19,7 +19,7 @@ router.get('/products', (req, res) => {
   const category = String(req.query.category || '').trim();
   const syncAll = req.query.sync === '1' || req.query.all === '1';
   const limit = syncAll
-    ? Math.min(Number(req.query.limit) || 500, 5000)
+    ? Math.min(Number(req.query.limit) || 2000, 10000)
     : Math.min(Number(req.query.limit) || 80, 500);
   const offset = Math.max(Number(req.query.offset) || 0, 0);
   const settings = getBranchSettings(req.user.branchId);
@@ -31,7 +31,7 @@ router.get('/products', (req, res) => {
     category,
     limit,
     offset,
-    pricedOnly: true,
+    pricedOnly: false,
     stockFilter: ['all', 'in', 'low', 'out'].includes(stockFilter) ? stockFilter : 'all',
     lowThreshold,
     sort
@@ -46,16 +46,13 @@ router.get('/products', (req, res) => {
 router.get('/products/barcode/:code', (req, res) => {
   const product = getByBarcode(req.params.code);
   if (!product) return res.status(404).json({ ok: false, error: 'المنتج غير موجود' });
-  if (!product.priced || !(Number(product.price) > 0)) {
-    return res.status(404).json({ ok: false, error: 'لم يُحدَّد سعر هذا المنتج في لوحة التحكم' });
-  }
   res.json({ ok: true, product });
 });
 
 router.get('/products/low-stock', (req, res) => {
   const settings = getBranchSettings(req.user.branchId);
   const threshold = Number(req.query.threshold) || settings.lowStockThreshold || 5;
-  res.json({ ok: true, products: listLowStock(threshold, 100, { pricedOnly: true }), threshold });
+  res.json({ ok: true, products: listLowStock(threshold, 100, { pricedOnly: false }), threshold });
 });
 
 router.get('/categories', (_req, res) => {

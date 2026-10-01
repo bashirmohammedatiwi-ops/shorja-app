@@ -166,8 +166,7 @@ function fmtDebtSplit(stats) {
   return fmtMoneySplit({ iqd: { amount: iqd }, usd: { amount: usd } }, 'amount');
 }
 function productPriceLabel(p) {
-  if (!p?.priced || !(Number(p.price) > 0)) return 'بدون سعر';
-  return fmtPrice(p.price, p.priceCurrency);
+  return fmtPrice(p?.price || 0, p?.priceCurrency);
 }
 
 function branchOnline(lastSeen) {
@@ -1124,7 +1123,7 @@ function productCardHtml(p, opts = {}) {
     <article class="prod-card${selected ? ' selected' : ''}" data-barcode="${esc(p.barcode)}">
       ${p.hasOffer ? `<span class="prod-offer">${esc(p.offerName || 'عرض')}</span>` : ''}
       ${p.category ? `<span class="prod-category">${esc(p.category)}</span>` : ''}
-      <span class="prod-currency-pill">${p.priced ? currencyLabel(p.priceCurrency) : 'بدون سعر'}</span>
+      <span class="prod-currency-pill">${currencyLabel(p.priceCurrency)}</span>
       <div class="prod-name">${esc(p.name)}</div>
       <div class="prod-barcode">${esc(p.barcode)}</div>
       <div class="prod-meta">
@@ -1307,7 +1306,7 @@ function renderProductTable(products) {
           <td dir="ltr">${esc(p.barcode)}</td>
           <td>${esc(p.name)}</td>
           <td dir="ltr">${productPriceLabel(p)}</td>
-          <td>${p.priced ? currencyLabel(p.priceCurrency) : '—'}</td>
+          <td>${currencyLabel(p.priceCurrency)}</td>
           <td dir="ltr">${fmt(p.stockQty)}</td>
           <td>${esc(p.category)}</td>
           <td class="row-actions">
@@ -1445,7 +1444,7 @@ function mergedSheetProduct(p) {
     category,
     price,
     priceCurrency,
-    priced: price > 0
+    priced: true
   };
 }
 
@@ -1475,19 +1474,19 @@ function renderPriceSheet() {
         <td class="sheet-text" dir="ltr">${esc(p.barcode)}</td>
         <td class="sheet-text sheet-name">${esc(p.name)}</td>
         <td><select class="sheet-cell" data-field="category" tabindex="-1">${catOpts}</select></td>
-        <td class="sheet-price"><input class="sheet-cell sheet-nav" data-field="price" type="number" min="0" step="any" inputmode="decimal" dir="ltr" value="${p.priced || dirty ? p.price || '' : ''}" placeholder=""></td>
+        <td class="sheet-price"><input class="sheet-cell sheet-nav" data-field="price" type="number" min="0" step="any" inputmode="decimal" dir="ltr" value="${p.price ?? 0}" placeholder="0"></td>
         <td class="sheet-currency"><select class="sheet-cell sheet-nav" data-field="priceCurrency">
             <option value="iqd"${p.priceCurrency === 'usd' ? '' : ' selected'}>دينار</option>
             <option value="usd"${p.priceCurrency === 'usd' ? ' selected' : ''}>دولار</option>
           </select></td>
-        <td><span class="sheet-status ${p.priced ? 'ok' : 'miss'}">${p.priced ? 'مسعّر' : 'بدون سعر'}</span></td>
+        <td><span class="sheet-status ok">${Number(p.price) === 0 ? 'سعر 0' : 'مسعّر'}</span></td>
       </tr>`;
     }).join('');
   }
   if (hint) hint.classList.toggle('hidden', false);
   if (meta) {
-    const priced = rows.filter((p) => p.priced).length;
-    meta.textContent = `${rows.length} صف · مسعّر ${priced} · بدون سعر ${rows.length - priced} · Enter للصف التالي · Ctrl+S حفظ`;
+    const zero = rows.filter((p) => Number(p.price) === 0).length;
+    meta.textContent = `${rows.length} صف · سعر 0: ${zero} · Enter للصف التالي · Ctrl+S حفظ`;
   }
   if (publishBtn) publishBtn.disabled = !priceSheetSelected.size;
   updatePriceSheetDirtyUi();
@@ -1585,10 +1584,10 @@ function markPriceSheetDirty(barcode, field, value) {
   tr?.classList.toggle('dirty', priceSheetDirty.has(barcode));
   const status = tr?.querySelector('.sheet-status');
   if (status) {
-    const priced = nextPrice > 0;
-    status.textContent = priced ? 'مسعّر' : 'بدون سعر';
-    status.classList.toggle('ok', priced);
-    status.classList.toggle('miss', !priced);
+    const priced = true;
+    status.textContent = Number(nextPrice) === 0 ? 'سعر 0' : 'مسعّر';
+    status.classList.toggle('ok', true);
+    status.classList.toggle('miss', false);
   }
   updatePriceSheetDirtyUi();
 }
@@ -2242,15 +2241,14 @@ document.getElementById('btnPublishPrices')?.addEventListener('click', async () 
     const ok = await savePriceSheet();
     if (!ok) return;
   }
-  if (!confirm(`رفع المنتجات المسعّرة فقط من المحدد إلى الفروع؟`)) return;
+  if (!confirm(`رفع ${barcodes.length} منتج محدد إلى الفروع — بما فيها التي سعرها صفر؟`)) return;
   try {
     const data = await api('/admin/prices/publish', {
       method: 'POST',
       body: JSON.stringify({ barcodes, note: `تحديث ${barcodes.length} منتج` })
     });
-    let msg = `تم — الإصدار v${data.version} · ${data.itemCount} منتج مسعّر`;
+    let msg = `تم — الإصدار v${data.version} · ${data.itemCount} منتج`;
     if (data.missing?.length) msg += ` · لم يُعثر على: ${data.missing.join(', ')}`;
-    if (data.skippedUnpriced?.length) msg += ` · تُرك بلا سعر: ${data.skippedUnpriced.length}`;
     document.getElementById('publishResult').textContent = msg;
     toast('تم رفع المنتجات المحددة');
     priceSheetSelected.clear();
@@ -2264,17 +2262,17 @@ document.getElementById('btnPublishPriced')?.addEventListener('click', async () 
     const ok = await savePriceSheet();
     if (!ok) return;
   }
-  if (!confirm('رفع كل المنتجات المسعّرة إلى نقاط البيع؟')) return;
+  if (!confirm('رفع كل المنتجات إلى نقاط البيع — بما فيها التي سعرها صفر؟')) return;
   try {
-    const priced = await fetchProductsList({ priced: 'priced', limit: 500000 });
-    const barcodes = (priced.products || []).map((p) => p.barcode);
-    if (!barcodes.length) { toast('لا توجد منتجات مسعّرة'); return; }
+    const all = await fetchProductsList({ limit: 500000 });
+    const barcodes = (all.products || []).map((p) => p.barcode);
+    if (!barcodes.length) { toast('لا توجد منتجات'); return; }
     const data = await api('/admin/prices/publish', {
       method: 'POST',
-      body: JSON.stringify({ barcodes, note: `رفع ${barcodes.length} منتج مسعّر` })
+      body: JSON.stringify({ all: true, note: `رفع ${barcodes.length} منتج` })
     });
     document.getElementById('publishResult').textContent = `تم — الإصدار v${data.version} · ${data.itemCount} منتج`;
-    toast('تم رفع المنتجات المسعّرة');
+    toast('تم رفع كل المنتجات');
     loadPrices();
     loadDashboard();
   } catch (err) { toast(err.message); }

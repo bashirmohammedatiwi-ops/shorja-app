@@ -235,9 +235,9 @@ router.post('/prices/publish', (req, res) => {
     const missing = [];
 
     if (req.body?.all === true || req.body?.all === 1 || req.body?.all === '1') {
-      items = listProducts({ limit: 500000, activeOnly: true, pricedFilter: 'priced' }).products.map(mapProductForPackage);
+      items = listProducts({ limit: 500000, activeOnly: true }).products.map(mapProductForPackage);
       if (!items.length) {
-        return res.status(400).json({ ok: false, error: 'لا توجد منتجات مسعّرة يدوياً للرفع' });
+        return res.status(400).json({ ok: false, error: 'لا توجد منتجات للرفع' });
       }
     } else if (Array.isArray(req.body?.items) && req.body.items.length) {
       items = req.body.items.map(mapProductForPackage);
@@ -254,10 +254,9 @@ router.post('/prices/publish', (req, res) => {
       return res.status(400).json({ ok: false, error: 'حدد منتجات بالباركود للرفع' });
     }
 
-    const unpriced = items.filter((p) => !(Number(p.price) > 0 && p.priced !== false && p.priced !== 0));
-    items = items.filter((p) => Number(p.price) > 0 && p.priced !== false && p.priced !== 0);
+    items = items.map((p) => ({ ...p, priced: true, price: Number(p.price || 0) }));
     if (!items.length) {
-      return res.status(400).json({ ok: false, error: 'المنتجات المحددة بلا سعر يدوي — سعّرها من لوحة التحكم أولاً' });
+      return res.status(400).json({ ok: false, error: 'لا توجد منتجات للرفع' });
     }
 
     const result = publishPricePackage({
@@ -265,7 +264,7 @@ router.post('/prices/publish', (req, res) => {
       branchId: req.body?.branchId || null,
       note: req.body?.note || ''
     });
-    res.json({ ok: true, ...result, missing, skippedUnpriced: unpriced.map((p) => p.barcode) });
+    res.json({ ok: true, ...result, missing, skippedUnpriced: [] });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }

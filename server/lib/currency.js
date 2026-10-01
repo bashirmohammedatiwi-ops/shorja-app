@@ -18,7 +18,7 @@ function currencySuffix(value) {
 }
 
 function isPricedProduct(product) {
-  return !!product && (product.priced === true || Number(product.priced) === 1) && Number(product.price) > 0;
+  return !!product;
 }
 
 function roundMoney(amount, currency) {

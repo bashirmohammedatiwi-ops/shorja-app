@@ -4,10 +4,15 @@ const { normalizeCurrency } = require('./currency');
 
 function isManuallyPriced(p) {
   if (!p) return false;
-  const price = Number(p.price || 0);
-  if (!(price > 0)) return false;
-  if (p.priced === false || p.priced === 0) return false;
+  if (!String(p.barcode || '').trim()) return false;
+  if (p.isActive === false) return false;
   return true;
+}
+
+function resolvePricedFlag(data, price) {
+  if (data.priced === false || data.priced === 0) return 0;
+  if (data.priced === true || Number(data.priced) === 1) return 1;
+  return Number(price) >= 0 ? 1 : 0;
 }
 
 function mapProduct(row) {
@@ -22,7 +27,7 @@ function mapProduct(row) {
     unit: row.unit || 'قطعة',
     price,
     priceCurrency: normalizeCurrency(row.price_currency),
-    priced: priced && price > 0,
+    priced,
     costPrice: Number(row.cost_price || 0),
     stockQty: Number(row.stock_qty || 0),
     category: row.category || '',
@@ -49,8 +54,8 @@ function listProducts({
   const where = [];
   const params = [];
   if (activeOnly) where.push('is_active = 1');
-  if (pricedOnly || pricedFilter === 'priced') where.push('priced = 1 AND COALESCE(price, 0) > 0');
-  if (pricedFilter === 'unpriced') where.push('(priced = 0 OR COALESCE(price, 0) <= 0)');
+  if (pricedOnly || pricedFilter === 'priced') where.push('priced = 1');
+  if (pricedFilter === 'unpriced') where.push('(priced = 0)');
   const cat = String(category || '').trim();
   if (cat === '__none__') {
     where.push("(TRIM(COALESCE(category, '')) = '')");
@@ -185,7 +190,7 @@ function upsertProduct(data) {
   if (!barcode) throw new Error('الباركود مطلوب');
   const price = Number(data.price || 0);
   const priceCurrency = normalizeCurrency(data.priceCurrency);
-  const priced = data.priced === false || data.priced === 0 ? 0 : (price > 0 ? 1 : 0);
+  const priced = resolvePricedFlag(data, price);
   const existing = db.prepare('SELECT id FROM products WHERE barcode = ?').get(barcode);
   if (existing) {
     db.prepare(`
@@ -261,6 +266,7 @@ function patchProduct(barcode, patch = {}) {
     sku: existing.sku,
     unit: patch.unit != null ? patch.unit : existing.unit,
     price: Number.isFinite(nextPrice) ? nextPrice : existing.price,
+    priced: true,
     priceCurrency: patch.priceCurrency || existing.priceCurrency,
     costPrice: patch.costPrice != null && patch.costPrice !== ''
       ? Number(patch.costPrice)
@@ -296,7 +302,7 @@ function categoryStats() {
     SELECT
       TRIM(COALESCE(category, '')) AS name,
       COUNT(*) AS count,
-      SUM(CASE WHEN priced = 1 AND COALESCE(price, 0) > 0 THEN 1 ELSE 0 END) AS pricedCount
+      SUM(CASE WHEN priced = 1 THEN 1 ELSE 0 END) AS pricedCount
     FROM products
     WHERE is_active = 1
     GROUP BY TRIM(COALESCE(category, ''))
@@ -345,7 +351,7 @@ function stats() {
 }
 
 function listLowStock(threshold = 5, limit = 100, { pricedOnly = false } = {}) {
-  const pricedSql = pricedOnly ? ' AND priced = 1 AND COALESCE(price, 0) > 0' : '';
+  const pricedSql = pricedOnly ? ' AND priced = 1' : '';
   const rows = db.prepare(`
     SELECT * FROM products
     WHERE is_active = 1 AND stock_qty <= ?${pricedSql}

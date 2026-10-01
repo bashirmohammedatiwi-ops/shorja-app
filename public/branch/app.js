@@ -405,7 +405,7 @@ function fmtPaySplit(pays) {
 }
 
 function isPricedProduct(p) {
-  return !!p && !!p.priced && Number(p.price) > 0;
+  return !!p && !!p.barcode;
 }
 
 function convertAmount(amount, from, to) {
@@ -425,7 +425,7 @@ function productUnitPrice(product) {
 
 function displayPosPrice(product) {
   try {
-    if (!isPricedProduct(product)) return 'بدون سعر';
+    if (!isPricedProduct(product)) return '—';
     return fmtAmt(productUnitPrice(product));
   } catch {
     return 'حدد سعر الصرف';
@@ -870,7 +870,7 @@ async function fetchProductFromAdmin(code) {
 
 async function loadProducts() {
   try {
-    const data = await api('/branch/products?limit=500');
+    const data = await api('/branch/products?limit=2000');
     state.products = (data.products || []).filter(isPricedProduct);
     cacheProducts(state.products);
     invalidateProducts();
@@ -949,10 +949,6 @@ async function fetchBarcodeFromAdmin() {
     }
     const line = state.cart.find((l) => l.barcode === result.product.barcode);
     if (line) {
-      if (!isPricedProduct(result.product)) {
-        toast('لم يُحدَّد سعر هذا المنتج في لوحة التحكم', 'err');
-        return;
-      }
       try {
         const price = productUnitPrice(result.product);
         line.name = result.product.name;
@@ -1110,11 +1106,6 @@ async function addToCart(barcode, qty = 1) {
   const product = await resolveProduct(barcode);
   if (!product) {
     toast('المنتج غير موجود — تحقق من الباركود أو الاسم', 'err');
-    focusBarcode();
-    return;
-  }
-  if (!isPricedProduct(product)) {
-    toast('لم يُحدَّد سعر هذا المنتج في لوحة التحكم', 'err');
     focusBarcode();
     return;
   }
@@ -2410,7 +2401,7 @@ function renderStockRecentList() {
     ? list.map((p) => `
       <button type="button" class="stock-recent-item" data-barcode="${esc(p.barcode)}">
         <strong>${esc(p.name)}</strong>
-        <small dir="ltr">${esc(p.barcode)} · ${fmt(p.stockQty)} · ${isPricedProduct(p) ? fmtAmt(p.price, p.priceCurrency) : 'بدون سعر'}</small>
+        <small dir="ltr">${esc(p.barcode)} · ${fmt(p.stockQty)} · ${fmtAmt(p.price, p.priceCurrency)}</small>
       </button>`).join('')
     : '<p class="hint">لا توجد استعلامات سابقة</p>';
   el.querySelectorAll('[data-barcode]').forEach((btn) => {
@@ -2478,7 +2469,7 @@ function renderStockProductDetail(product) {
           <span class="stock-status ${st.cls}">${st.label}</span>
           ${product.category ? `<span class="stock-detail-cat">${esc(product.category)}</span>` : ''}
         </div>
-        <span class="stock-detail-price" dir="ltr">${isPricedProduct(product) ? fmtAmt(product.price, product.priceCurrency) : 'بدون سعر'}</span>
+        <span class="stock-detail-price" dir="ltr">${fmtAmt(product.price, product.priceCurrency)}</span>
       </header>
       <h3 class="stock-detail-name">${esc(product.name)}</h3>
       <div class="stock-detail-grid">

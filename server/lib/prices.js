@@ -11,7 +11,7 @@ function getLatestVersion(branchId = null) {
 function publishPricePackage({ items = [], branchId = null, note = '' } = {}) {
   const pricedItems = (items || []).filter(isManuallyPriced);
   if (!pricedItems.length) {
-    throw new Error('لا توجد منتجات مسعّرة يدوياً للرفع إلى نقطة البيع');
+    throw new Error('لا توجد منتجات للرفع إلى نقطة البيع');
   }
   const version = getLatestVersion(branchId) + 1;
   const tx = db.transaction(() => {
@@ -73,7 +73,7 @@ function getPricePackage(version, branchId = null) {
       offerName: i.offer_name,
       originalPrice: i.original_price != null ? Number(i.original_price) : null,
       priceCurrency: i.price_currency || 'iqd',
-      priced: Number(i.priced || 0) === 1 && Number(i.price) > 0
+      priced: Number(i.priced || 0) === 1 || Number(i.price) >= 0
     }))
   };
 }

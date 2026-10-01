@@ -110,12 +110,12 @@ async function importAllEdariProducts({
 
   let publishResult = null;
   if (publish && imported > 0) {
-    const { products } = listProducts({ limit: 500000, activeOnly: true, pricedFilter: 'priced' });
+    const { products } = listProducts({ limit: 500000, activeOnly: true });
     if (!products.length) {
-      throw new Error('لا توجد منتجات مسعّرة يدوياً للرفع إلى نقطة البيع');
+      throw new Error('لا توجد منتجات للرفع إلى نقطة البيع');
     }
     publishResult = publishPricePackage({
-      items: products.map(mapProductForPackage),
+      items: products.map((p) => ({ ...mapProductForPackage(p), priced: true, price: Number(p.price || 0) })),
       note: publishNote
     });
   }
