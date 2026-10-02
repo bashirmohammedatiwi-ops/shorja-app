@@ -1,7 +1,7 @@
 {
-  "name": "shorja-admin-desktop",
-  "version": "1.0.45",
-  "description": "شورجة — الإدارة (سطح المكتب)",
+  "name": "shorja-delegate-desktop",
+  "version": "1.0.1",
+  "description": "المندوبين — الإدارة (سطح المكتب)",
   "main": "main.js",
   "author": "Shorja",
   "scripts": {
@@ -10,10 +10,10 @@
     "build:portable": "electron-builder --win portable --x64"
   },
   "build": {
-    "appId": "com.shorja.admin",
-    "productName": "Shorja Admin",
+    "appId": "com.shorja.delegate",
+    "productName": "Shorja Delegates",
     "directories": {
-      "output": "dist-v145"
+      "output": "dist-v101"
     },
     "files": [
       "main.js",
@@ -122,9 +122,9 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "الشورجة"
+      "shortcutName": "المندوبين"
     },
-    "artifactName": "Shorja-Admin-Setup-${version}.${ext}"
+    "artifactName": "Shorja-Delegates-Setup-${version}.${ext}"
   },
   "devDependencies": {
     "electron": "^34.0.0",

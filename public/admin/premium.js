@@ -3,13 +3,27 @@
  */
 (function () {
   const APP_KEY = 'shorja_admin_app';
-  let currentApp = localStorage.getItem(APP_KEY) || 'warehouse';
+
+  function detectForcedApp() {
+    try {
+      const q = new URLSearchParams(window.location.search).get('app');
+      if (q === 'warehouse' || q === 'delegate') return q;
+    } catch { /* ignore */ }
+    const desktop = window.edariDesktop?.appScope;
+    if (desktop === 'warehouse' || desktop === 'delegate') return desktop;
+    return null;
+  }
+
+  const FORCED_APP = detectForcedApp();
+  let currentApp = FORCED_APP || localStorage.getItem(APP_KEY) || 'warehouse';
+  if (FORCED_APP) localStorage.setItem(APP_KEY, FORCED_APP);
 
   window.getAdminAppScope = () => currentApp;
+  window.isAdminAppLocked = () => !!FORCED_APP;
 
   const APP_META = {
     warehouse: {
-      title: 'ديما الحياة',
+      title: 'الشورجة',
       subtitle: 'لوحة الشورجة',
       logo: 'د',
       themeClass: 'app-warehouse',
@@ -203,6 +217,33 @@
     refreshAppBadges();
 
     document.title = currentApp === 'warehouse' ? 'ديما الحياة — الشورجة' : 'ديما الحياة — المندوبين';
+    applyLockedChrome();
+    applyLoginBrand();
+  }
+
+  function applyLockedChrome() {
+    document.body.classList.toggle('app-locked', !!FORCED_APP);
+    $('appSwitcherBar')?.classList.toggle('hidden', !!FORCED_APP);
+  }
+
+  function applyLoginBrand() {
+    const meta = APP_META[currentApp];
+    const loginTitle = document.querySelector('#loginScreen h1');
+    const loginSub = document.querySelector('#loginScreen .login-brand p');
+    const loginMark = document.querySelector('#loginScreen .logo-mark');
+    if (loginTitle) loginTitle.textContent = currentApp === 'warehouse' ? 'الشورجة' : 'المندوبين';
+    if (loginSub) {
+      loginSub.textContent = currentApp === 'warehouse'
+        ? 'لوحة تحكم الشورجة — فروع · مخزن · ترحيل الإداري'
+        : 'لوحة تحكم المندوبين — فواتير · حسابات · ترحيل الإداري';
+    }
+    if (loginMark) loginMark.textContent = meta.logo;
+    const feats = document.querySelectorAll('#loginScreen .login-features p');
+    if (feats[0]) {
+      feats[0].textContent = currentApp === 'warehouse'
+        ? 'تطبيق الشورجة فقط — منفصل عن المندوبين'
+        : 'تطبيق المندوبين فقط — منفصل عن الشورجة';
+    }
   }
 
   function pickEdariSyncStats(data) {
@@ -224,6 +265,7 @@
   }
 
   function switchApp(app) {
+    if (FORCED_APP) return;
     if (app !== 'warehouse' && app !== 'delegate') return;
     if (app === currentApp) return;
     currentApp = app;
@@ -240,9 +282,13 @@
   }
 
   function setupAppSwitcher() {
-    document.querySelectorAll('.app-switch-tab').forEach((tab) => {
-      tab.addEventListener('click', () => switchApp(tab.dataset.app));
-    });
+    applyLockedChrome();
+    applyLoginBrand();
+    if (!FORCED_APP) {
+      document.querySelectorAll('.app-switch-tab').forEach((tab) => {
+        tab.addEventListener('click', () => switchApp(tab.dataset.app));
+      });
+    }
     applyAppContext();
     patchNavClicks();
   }

@@ -210,6 +210,15 @@ function shorjaStoreIndex() {
   return Number.isFinite(n) && n > 0 ? n : 4;
 }
 
+function hayahStoreName() {
+  return String(process.env.EDARI_DELEGATE_STORE_NAME || 'مستودع الحياة').trim();
+}
+
+function hayahStoreIndex() {
+  const n = Number(process.env.EDARI_DELEGATE_STORE_INDEX || 1);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 function normalizeArName(s) {
   return String(s || '')
     .replace(/[أإآ]/g, 'ا')
@@ -599,6 +608,8 @@ module.exports = {
   serializeWarehouse,
   shorjaStoreName,
   shorjaStoreIndex,
+  hayahStoreName,
+  hayahStoreIndex,
   mapMaterialRow,
   normalizeWholesalePrice,
   wholesalePrice,

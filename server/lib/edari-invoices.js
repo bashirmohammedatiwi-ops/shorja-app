@@ -1,8 +1,9 @@
 const { runQuery, runExecute, rowObjects, canWriteEdari } = require('./edari-bridge');
 const {
-  edariSqlLiteral, sqlEscAscii, loadParentAccount, lookupAccountSeqByNum, clampEdariField
+  edariSqlLiteral, sqlEscAscii, loadParentAccount, lookupAccountSeqByNum,
+  lookupAccountSeqByExactName, clampEdariField
 } = require('./edari-accounts');
-const { lookupEdariMaterial, shorjaStoreIndex } = require('./edari-lookup');
+const { lookupEdariMaterial, shorjaStoreIndex, hayahStoreIndex } = require('./edari-lookup');
 const {
   canWriteEdariInvoices,
   canWriteEdariPayments,
@@ -365,6 +366,40 @@ async function findExistingShorjaBill(payload) {
   };
 }
 
+function isDelegatePayload(payload) {
+  const scope = String(payload?.queueScope || payload?.prepMode || '').toLowerCase();
+  if (scope === 'delegate') return true;
+  const invoiceNo = String(payload?.invoiceNo || '').toUpperCase();
+  if (invoiceNo.startsWith('MND')) return true;
+  const notes = String(payload?.notes || '');
+  if (notes.includes('مندوب')) return true;
+  const branch = String(payload?.branchName || '');
+  if (branch.includes('مندوب')) return true;
+  return false;
+}
+
+function invoiceStoreIndex(payload) {
+  if (isDelegatePayload(payload)) return hayahStoreIndex();
+  return shorjaStoreIndex();
+}
+
+function isGenericWalkInName(name) {
+  const n = String(name || '').replace(/\s+/g, ' ').trim();
+  return !n || n === 'زبون مندوب' || n === 'نقدي' || n === 'الزبون' || n === 'الزبون النقدي';
+}
+
+async function lookupCustomerSeqByExactNames(payload) {
+  const names = [payload?.customerName, payload?.accountName]
+    .map((s) => String(s || '').replace(/\s+/g, ' ').trim())
+    .filter((n) => n && !isGenericWalkInName(n));
+  const unique = [...new Set(names)];
+  for (const name of unique) {
+    const seq = await lookupAccountSeqByExactName(name);
+    if (seq > 0) return seq;
+  }
+  return 0;
+}
+
 async function resolveWalkInCustomerSeq() {
   if (WALKIN_CUSTOMER_SEQ > 0) return WALKIN_CUSTOMER_SEQ;
   if (cachedWalkInSeq) return cachedWalkInSeq;
@@ -424,6 +459,17 @@ function isCashInvoice(payload) {
 async function resolveCustomerSeq(payload) {
   const direct = Number(payload.edariSeq || 0);
   if (direct > 0) return direct;
+
+  const delegate = isDelegatePayload(payload);
+  if (delegate || !isCashInvoice(payload)) {
+    const byName = await lookupCustomerSeqByExactNames(payload);
+    if (byName > 0) {
+      payload.resolvedByName = true;
+      return byName;
+    }
+  }
+
+  if (delegate) return 0;
 
   if (isCashInvoice(payload)) {
     const walkIn = await resolveWalkInCustomerSeq();
@@ -616,7 +662,13 @@ async function createEdariInvoice(payload) {
   const kind = payload.kind === 'return' ? 'return' : 'sale';
   const customerSeq = await resolveCustomerSeq(payload);
   if (!customerSeq) {
-    const name = String(payload.customerName || '').trim();
+    const name = String(payload.customerName || payload.accountName || '').trim();
+    if (isDelegatePayload(payload)) {
+      return {
+        ok: false,
+        error: `لم يُعثر في الإداري على حساب مطابق للاسم «${name || 'بدون اسم'}» — لن تُرحّل الفاتورة إلى حساب نقدي`
+      };
+    }
     if (payload.accountId) {
       return {
         ok: false,
@@ -627,6 +679,13 @@ async function createEdariInvoice(payload) {
       ok: false,
       error: `الحساب غير مربوط بإداري — للمبيعات النقدية عيّن EDARI_WALKIN_CUSTOMER_NUM (الافتراضي ${WALKIN_CUSTOMER_NUM})`
     };
+  }
+
+  if (isDelegatePayload(payload) && customerSeq) {
+    if (String(payload.paymentMethod || '').toLowerCase() !== 'partial') {
+      payload.paymentMethod = 'credit';
+      payload.paidAmount = 0;
+    }
   }
 
   return withEdariRetry('createEdariInvoice', async () => {
@@ -663,7 +722,7 @@ async function createEdariInvoice(payload) {
     return { ok: true, ...priorState, deduped: true };
   }
 
-  const dateStr = payload.invoiceDate || todayIsoIraq();
+  const dateStr = todayIsoIraq();
   const { discount, grossTotal, paid, netTotal } = invoiceAmounts(payload);
   const payFields = invoicePayFields(payload, { netTotal, paid });
   const currCode = edariCurrCode(payload.currency);
@@ -728,7 +787,7 @@ async function createEdariInvoice(payload) {
     const lineSql = `INSERT INTO file14n (BillSeq, BillNo, Mat, MatName, Quant, Price, OBonus, Kind, MatRem, Two, Equa, Frst, Mst, person, Book, Curr, "Date", "Sum")
       VALUES (${billSeq}, ${billNum}, ${Number(mat.seq || 0)}, '',
         ${qty}, ${price}, ${giftQty}, ${edariKind}, '', ${customerSeq},
-        1, ${kindRecNo}, ${shorjaStoreIndex()}, ${INVOICE_PERSON}, ${invoiceBook}, ${currCode}, ${formatEdariDateOnly(dateStr)}, 0)`;
+        1, ${kindRecNo}, ${invoiceStoreIndex(payload)}, ${INVOICE_PERSON}, ${invoiceBook}, ${currCode}, ${formatEdariDateOnly(dateStr)}, 0)`;
     const lineIns = await runExecute(lineSql);
     if (!lineIns.ok) return { ok: false, error: lineIns.error || `فشل سطر الفاتورة: ${line.name}` };
 
@@ -848,7 +907,14 @@ async function createEdariPayment(payload) {
     customerSeq = lookupAccountEdariSeq(payload.accountId);
   }
   if (!customerSeq) {
-    return { ok: false, error: 'الحساب غير مربوط بإداري — رحّل حساب العميل أولاً' };
+    customerSeq = await lookupCustomerSeqByExactNames(payload);
+  }
+  if (!customerSeq) {
+    const name = String(payload.customerName || payload.accountName || '').trim();
+    return {
+      ok: false,
+      error: `لم يُعثر في الإداري على حساب مطابق للاسم «${name || 'بدون اسم'}» — لن يُرحّل التسديد إلى حساب نقدي`
+    };
   }
 
   const currency = normalizeCurrency(payload.currency);

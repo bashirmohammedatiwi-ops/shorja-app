@@ -193,7 +193,11 @@ async function runEdariSyncWorker({
         continue;
       }
       try {
-        const created = await handler(parsePayload(item));
+        const payload = parsePayload(item);
+        if (item.queue_scope && !payload.queueScope) {
+          payload.queueScope = item.queue_scope;
+        }
+        const created = await handler(payload);
         await completeItem(baseUrl, serverJsonPaths, item.id, created);
         results.push({ id: item.id, kind: item.kind, ...created, reported: true });
         if (created.ok) {

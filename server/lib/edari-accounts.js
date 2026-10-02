@@ -250,12 +250,26 @@ async function lookupAccountSeqByNum(num) {
   return Number(row.Seq ?? row.seq ?? 0);
 }
 
+async function lookupAccountSeqByExactName(name) {
+  const displayName = normalizeName(name);
+  if (!displayName) return 0;
+  const r = await runQuery(
+    `SELECT TOP 5 Seq, Name1, SubCount FROM File11n WHERE Name1 = ${edariSqlLiteral(displayName)} ORDER BY SubCount, Seq`
+  );
+  if (!r.ok) return 0;
+  const rows = rowObjects(r);
+  const leaf = rows.find((row) => Number(row.SubCount ?? row.subcount ?? 0) === 0) || rows[0];
+  if (!leaf) return 0;
+  return Number(leaf.Seq ?? leaf.seq ?? 0);
+}
+
 module.exports = {
   PARENT_NUM,
   PARENT_NAME_HINT,
   clearParentCache,
   loadParentAccount,
   lookupAccountSeqByNum,
+  lookupAccountSeqByExactName,
   createEdariCustomerAccount,
   getEdariParentInfo,
   fixEdariAccountName,

@@ -8,7 +8,7 @@ call npm install
 if errorlevel 1 exit /b 1
 
 echo.
-echo [1/2] بناء تطبيق الإدارة...
+echo [1/3] بناء تطبيق الشورجة...
 cd desktop-admin
 set CSC_IDENTITY_AUTO_DISCOVERY=false
 call npm install
@@ -18,7 +18,17 @@ if errorlevel 1 exit /b 1
 cd ..
 
 echo.
-echo [2/2] بناء تطبيق الفرع...
+echo [2/3] بناء تطبيق المندوبين...
+cd desktop-delegate
+set CSC_IDENTITY_AUTO_DISCOVERY=false
+call npm install
+if errorlevel 1 exit /b 1
+call npm run build
+if errorlevel 1 exit /b 1
+cd ..
+
+echo.
+echo [3/3] بناء تطبيق نقطة البيع...
 cd desktop-branch
 set CSC_IDENTITY_AUTO_DISCOVERY=false
 call npm install
@@ -28,7 +38,5 @@ if errorlevel 1 exit /b 1
 cd ..
 
 echo.
-echo تم البناء بنجاح:
-echo   desktop-admin\dist\Shorja-Admin-Setup-1.0.0.exe
-echo   desktop-branch\dist\Shorja-Branch-Setup-1.0.0.exe
+echo تم البناء بنجاح.
 endlocal

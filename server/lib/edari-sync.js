@@ -267,7 +267,7 @@ function hydrateQueuePayload(item) {
     const inv = db.prepare(`
       SELECT i.account_id, i.customer_name, i.subtotal, i.total, i.discount,
              i.paid_amount, i.due_amount, i.payment_method, i.invoice_date, i.notes, i.kind,
-             i.currency, i.exchange_rate,
+             i.currency, i.exchange_rate, i.prep_mode,
              a.edari_seq, a.edari_sync_status, a.name AS account_name, a.currency AS account_currency,
              b.name AS branch_name
       FROM invoices i
@@ -278,7 +278,10 @@ function hydrateQueuePayload(item) {
     if (inv?.account_id) payload.accountId = inv.account_id;
     if (inv?.edari_seq) payload.edariSeq = String(inv.edari_seq);
     payload.customerName = payload.customerName || inv?.customer_name || inv?.account_name || '';
+    payload.accountName = inv?.account_name || payload.accountName || '';
     payload.branchName = payload.branchName || inv?.branch_name || '';
+    payload.prepMode = inv?.prep_mode || payload.prepMode || '';
+    payload.queueScope = item.queue_scope || payload.queueScope || '';
     payload.accountEdariSyncStatus = inv?.edari_sync_status || '';
     if (inv) {
       payload.subtotal = inv.subtotal ?? payload.subtotal;
@@ -321,9 +324,12 @@ function hydrateQueuePayload(item) {
     if (pay?.edari_seq) payload.edariSeq = String(pay.edari_seq);
     payload.accountEdariSyncStatus = pay?.edari_sync_status || '';
     payload.customerName = payload.customerName || pay?.account_name || '';
+    payload.accountName = pay?.account_name || payload.accountName || '';
+    payload.queueScope = item.queue_scope || payload.queueScope || '';
     if (pay?.account_currency) payload.currency = pay.account_currency;
   }
 
+  payload.queueScope = item.queue_scope || payload.queueScope || '';
   return payload;
 }
 
@@ -890,6 +896,8 @@ function queueInvoiceEdariSync(invoice) {
       branchName: invoice.branchName || '',
       notes: invoice.notes,
       invoiceDate: invoice.invoiceDate,
+      prepMode: invoice.prepMode || '',
+      queueScope,
       currency: invoice.currency || 'iqd',
       exchangeRate: invoice.exchangeRate || 0,
       lines: (invoice.lines || []).map((l) => ({

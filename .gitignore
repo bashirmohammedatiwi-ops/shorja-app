@@ -8,6 +8,9 @@ desktop-admin/dist-release/
 desktop-admin/dist-v*/
 desktop-admin/dist-new/
 desktop-admin/node_modules/
+desktop-delegate/dist/
+desktop-delegate/dist-v*/
+desktop-delegate/node_modules/
 desktop-branch/dist/
 desktop-branch/dist-new/
 desktop-branch/dist-v*/

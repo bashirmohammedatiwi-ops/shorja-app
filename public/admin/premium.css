@@ -511,6 +511,10 @@ body.premium-ready { background: #e8edf4; }
   min-height: 0;
 }
 
+body.app-locked .app-switcher-bar {
+  display: none !important;
+}
+
 .app-switcher-bar {
   position: sticky;
   top: 0;

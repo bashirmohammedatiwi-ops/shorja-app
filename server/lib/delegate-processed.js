@@ -152,9 +152,9 @@ function createDelegateInvoiceFromOrder(data) {
   const accountId = resolveAccountId(data.customerAccSeq, data.customerName);
   const subtotal = lines.reduce((s, l) => s + l.lineTotal, 0);
   const total = subtotal;
-  const paymentMethod = accountId ? 'credit' : 'cash';
-  const paidAmount = accountId ? 0 : total;
-  const dueAmount = accountId ? total : 0;
+  const paymentMethod = 'credit';
+  const paidAmount = 0;
+  const dueAmount = total;
   const customerName = String(data.customerName || '').trim() || 'زبون مندوب';
   const invoiceNo = `MND-${String(data.orderNo || orderId).replace(/\s+/g, '')}`;
   const noteParts = [
