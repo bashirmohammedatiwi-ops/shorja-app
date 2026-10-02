@@ -5,21 +5,22 @@
   const APP_KEY = 'shorja_admin_app';
 
   function detectForcedApp() {
+    const lock = window.SHORJA_APP_LOCK;
+    if (lock === 'warehouse' || lock === 'delegate') return lock;
     try {
-      const q = new URLSearchParams(window.location.search).get('app');
-      if (q === 'warehouse' || q === 'delegate') return q;
+      if (/\/delegates\/?/.test(window.location.pathname)) return 'delegate';
     } catch { /* ignore */ }
     const desktop = window.edariDesktop?.appScope;
     if (desktop === 'warehouse' || desktop === 'delegate') return desktop;
-    return null;
+    return 'warehouse';
   }
 
   const FORCED_APP = detectForcedApp();
-  let currentApp = FORCED_APP || localStorage.getItem(APP_KEY) || 'warehouse';
-  if (FORCED_APP) localStorage.setItem(APP_KEY, FORCED_APP);
+  let currentApp = FORCED_APP;
+  try { localStorage.setItem(APP_KEY, FORCED_APP); } catch { /* ignore */ }
 
   window.getAdminAppScope = () => currentApp;
-  window.isAdminAppLocked = () => !!FORCED_APP;
+  window.isAdminAppLocked = () => true;
 
   const APP_META = {
     warehouse: {
@@ -222,8 +223,11 @@
   }
 
   function applyLockedChrome() {
-    document.body.classList.toggle('app-locked', !!FORCED_APP);
-    $('appSwitcherBar')?.classList.toggle('hidden', !!FORCED_APP);
+    document.documentElement.setAttribute('data-app', currentApp);
+    document.body.classList.add('app-locked', `app-lock-${currentApp}`);
+    $('appSwitcherBar')?.remove();
+    if (currentApp === 'warehouse') $('navDelegate')?.remove();
+    if (currentApp === 'delegate') $('navWarehouse')?.remove();
   }
 
   function applyLoginBrand() {
@@ -264,31 +268,13 @@
     }).catch(() => {});
   }
 
-  function switchApp(app) {
-    if (FORCED_APP) return;
-    if (app !== 'warehouse' && app !== 'delegate') return;
-    if (app === currentApp) return;
-    currentApp = app;
-    localStorage.setItem(APP_KEY, app);
-    applyAppContext();
-    const edariView = $('viewEdariSync');
-    if (edariView && !edariView.classList.contains('hidden') && typeof window.loadEdariSync === 'function') {
-      window.loadEdariSync();
-      return;
-    }
-    const homeView = 'dashboard';
-    const navRoot = app === 'delegate' ? '#navDelegate' : '#navWarehouse';
-    document.querySelector(`${navRoot} .nav[data-view="${homeView}"]`)?.click();
+  function switchApp() {
+    return;
   }
 
   function setupAppSwitcher() {
     applyLockedChrome();
     applyLoginBrand();
-    if (!FORCED_APP) {
-      document.querySelectorAll('.app-switch-tab').forEach((tab) => {
-        tab.addEventListener('click', () => switchApp(tab.dataset.app));
-      });
-    }
     applyAppContext();
     patchNavClicks();
   }

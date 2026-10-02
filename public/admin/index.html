@@ -3,13 +3,37 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ديما الحياة — الإدارة</title>
+  <title>ديما الحياة</title>
+  <script>
+    window.SHORJA_APP_LOCK = '__APP_LOCK__';
+    document.documentElement.setAttribute(
+      'data-app',
+      window.SHORJA_APP_LOCK === 'delegate' ? 'delegate' : 'warehouse'
+    );
+  </script>
+  <style>
+    html[data-app="warehouse"] #appSwitcherBar,
+    html[data-app="warehouse"] #navDelegate,
+    html[data-app="warehouse"] .del-only,
+    html[data-app="warehouse"] #viewDelegates { display: none !important; }
+    html[data-app="delegate"] #appSwitcherBar,
+    html[data-app="delegate"] #navWarehouse,
+    html[data-app="delegate"] .wh-only,
+    html[data-app="delegate"] #viewPosMonitor,
+    html[data-app="delegate"] #viewReports,
+    html[data-app="delegate"] #viewInvoices,
+    html[data-app="delegate"] #viewWarehousePrep,
+    html[data-app="delegate"] #viewProducts,
+    html[data-app="delegate"] #viewPrices,
+    html[data-app="delegate"] #viewJournal { display: none !important; }
+    html[data-app="delegate"] #navDelegate { display: block !important; }
+  </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=17">
-  <link rel="stylesheet" href="premium.css?v=15">
-  <link rel="stylesheet" href="official.css?v=5">
+  <link rel="stylesheet" href="/admin/styles.css?v=18">
+  <link rel="stylesheet" href="/admin/premium.css?v=16">
+  <link rel="stylesheet" href="/admin/official.css?v=5">
 </head>
 <body>
   <div id="loginScreen" class="login-screen">
@@ -36,24 +60,6 @@
   </div>
 
   <div id="app" class="app hidden">
-    <header class="app-switcher-bar" id="appSwitcherBar">
-      <div class="app-switcher-inner">
-        <button type="button" class="app-switch-tab active" data-app="warehouse" id="appTabWarehouse">
-          <span class="app-switch-ico">🏪</span>
-          <span class="app-switch-text">
-            <strong>الشورجة</strong>
-            <small>فروع · نقاط البيع · المخزن</small>
-          </span>
-        </button>
-        <button type="button" class="app-switch-tab" data-app="delegate" id="appTabDelegate">
-          <span class="app-switch-ico">🚚</span>
-          <span class="app-switch-text">
-            <strong>المندوبين</strong>
-            <small>طلبات · حسابات المندوبين</small>
-          </span>
-        </button>
-      </div>
-    </header>
     <div class="app-body">
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <aside class="sidebar">
@@ -858,7 +864,7 @@
   </dialog>
 
   <button type="button" id="btnSidebarToggle" aria-label="القائمة">☰</button>
-  <script src="app.js?v=48"></script>
-  <script src="premium.js?v=22"></script>
+  <script src="/admin/app.js?v=49"></script>
+  <script src="/admin/premium.js?v=23"></script>
 </body>
 </html>

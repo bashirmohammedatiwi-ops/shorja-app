@@ -511,6 +511,20 @@ body.premium-ready { background: #e8edf4; }
   min-height: 0;
 }
 
+html[data-app="warehouse"] #appSwitcherBar,
+html[data-app="warehouse"] #navDelegate,
+html[data-app="warehouse"] .del-only {
+  display: none !important;
+}
+html[data-app="delegate"] #appSwitcherBar,
+html[data-app="delegate"] #navWarehouse,
+html[data-app="delegate"] .wh-only {
+  display: none !important;
+}
+html[data-app="delegate"] #navDelegate {
+  display: block !important;
+}
+
 body.app-locked .app-switcher-bar {
   display: none !important;
 }

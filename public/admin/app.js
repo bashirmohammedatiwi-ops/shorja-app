@@ -48,7 +48,10 @@ let edariSyncItems = [];
 let edariSyncSelected = new Set();
 
 function adminAppScope() {
-  return window.getAdminAppScope?.() || localStorage.getItem(APP_KEY) || 'warehouse';
+  const lock = window.SHORJA_APP_LOCK;
+  if (lock === 'warehouse' || lock === 'delegate') return lock;
+  if (/\/delegates\/?/.test(location.pathname)) return 'delegate';
+  return window.getAdminAppScope?.() || 'warehouse';
 }
 
 window.viewAllowed = (view) => {

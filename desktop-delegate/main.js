@@ -193,7 +193,8 @@ ipcMain.handle('edari-warehouse-import-batch', async (_e, options) => {
 
 function createWindow() {
   const server = getServerUrl();
-  const startUrl = `${server}/admin/?app=${encodeURIComponent(APP_SCOPE)}`;
+  const startPath = APP_SCOPE === 'delegate' ? '/delegates/' : '/admin/';
+  const startUrl = `${server}${startPath}`;
   const iconPath = path.join(__dirname, 'icon.png');
 
   const win = new BrowserWindow({
@@ -211,7 +212,8 @@ function createWindow() {
     }
   });
 
-  win.loadURL(startUrl);
+  const load = () => win.loadURL(startUrl);
+  win.webContents.session.clearCache().then(load).catch(load);
 }
 
 app.whenReady().then(() => {

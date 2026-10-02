@@ -1,6 +1,6 @@
 {
   "name": "shorja-delegate-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "المندوبين — الإدارة (سطح المكتب)",
   "main": "main.js",
   "author": "Shorja",
@@ -13,7 +13,7 @@
     "appId": "com.shorja.delegate",
     "productName": "Shorja Delegates",
     "directories": {
-      "output": "dist-v101"
+      "output": "dist-v102"
     },
     "files": [
       "main.js",

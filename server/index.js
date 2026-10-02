@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 require('./db');
 
@@ -58,15 +59,29 @@ app.use('/api/branch', branchRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/sync', syncRoutes);
 
+const adminDir = path.join(__dirname, '..', 'public', 'admin');
+const adminIndex = path.join(adminDir, 'index.html');
+
+function sendLockedAdmin(res, scope) {
+  const appScope = scope === 'delegate' ? 'delegate' : 'warehouse';
+  let html = fs.readFileSync(adminIndex, 'utf8');
+  html = html.replace(/__APP_LOCK__/g, appScope);
+  html = html.replace('<body>', `<body class="app-locked app-lock-${appScope}">`);
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.type('html').send(html);
+}
+
 app.use('/branch', express.static(path.join(__dirname, '..', 'public', 'branch')));
 app.get('/branch/*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'branch', 'index.html'));
 });
 
-app.use('/admin', express.static(path.join(__dirname, '..', 'public', 'admin')));
-app.get('/admin/*', (_req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'admin', 'index.html'));
-});
+app.get(['/delegates', '/delegates/'], (_req, res) => sendLockedAdmin(res, 'delegate'));
+app.get('/delegates/*', (_req, res) => sendLockedAdmin(res, 'delegate'));
+app.get(['/admin', '/admin/'], (_req, res) => sendLockedAdmin(res, 'warehouse'));
+app.use('/admin', express.static(adminDir, { index: false }));
+app.get('/admin/*', (_req, res) => sendLockedAdmin(res, 'warehouse'));
 
 app.get('/', (_req, res) => {
   res.redirect('/branch/');
@@ -81,4 +96,5 @@ app.listen(PORT, HOST, () => {
   console.log(`Shorja Sales Hub: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   console.log(`  Branch POS:  http://localhost:${PORT}/branch/`);
   console.log(`  Admin:       http://localhost:${PORT}/admin/`);
+  console.log(`  Delegates:   http://localhost:${PORT}/delegates/`);
 });
