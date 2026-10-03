@@ -358,7 +358,7 @@ function updateEdariSyncToolbar() {
   const selectedOf = (k) => selected.filter((id) => edariSyncItems.find((i) => i.id === id && i.kind === k)).length;
   const setBtn = (id, enabled) => {
     const el = document.getElementById(id);
-    if (el) el.disabled = !desktop || !enabled;
+    if (el) el.disabled = !enabled;
   };
   setBtn('btnEdariSyncSelected', selected.length > 0);
   setBtn('btnEdariSyncAccounts', hasKind('account') && (selected.length === 0 || selectedOf('account') > 0));
@@ -583,9 +583,72 @@ async function loadEdariSync() {
   renderEdariSyncTable();
 }
 
+async function postEdariSync(options) {
+  if (!window.edariDesktop?.processEdariSync) {
+    throw new Error('الترحيل يعمل من تطبيق ويندوز فقط. ثبّت آخر نسخة من الشورجة أو المندوبين.');
+  }
+  const result = await window.edariDesktop.processEdariSync(options);
+  if (result?.skipped) {
+    const reasons = {
+      busy: 'المزامنة قيد التشغيل',
+      missing_sync_key: 'مفتاح المزامنة غير مضبوط في ملف server.json بجانب التطبيق',
+      not_windows: 'يتطلب Windows',
+      edari_writes_disabled: 'كتابة الإداري معطّلة على هذا الجهاز'
+    };
+    throw new Error(reasons[result.reason] || 'تعذر الترحيل');
+  }
+  if (result?.error) throw new Error(result.error);
+  return result;
+}
+
+function reportEdariSyncResult(result) {
+  const ok = result?.okCount ?? result?.processed ?? 0;
+  const fail = result?.failCount ?? 0;
+  const dbLabel = result?.edari?.alias ? ` على قاعدة ${result.edari.alias}` : '';
+  if (ok > 0) toast(`تم ترحيل ${ok} عنصر/عناصر${dbLabel}${fail ? ` — فشل ${fail}` : ''}`);
+  else if (fail > 0) {
+    const errMsg = (result?.results || []).find((r) => r && r.ok === false)?.error;
+    toast(errMsg ? `فشل الترحيل${dbLabel}: ${errMsg}` : `فشل ترحيل ${fail} عنصر/عناصر${dbLabel}`);
+  } else toast('لا توجد عناصر للترحيل');
+  if (result?.edari) window.lastEdariConn = result.edari;
+}
+
+async function queueInvoiceIds(invoiceIds) {
+  const queueIds = [];
+  for (const invoiceId of invoiceIds) {
+    const id = Number(invoiceId);
+    if (!id) continue;
+    const data = await api(`/admin/delegate-invoices/${id}/queue-edari`, { method: 'POST' });
+    if (data.queueId) queueIds.push(Number(data.queueId));
+  }
+  return queueIds;
+}
+
+async function transferInvoicesNow(invoiceIds) {
+  const ids = [...new Set((invoiceIds || []).map(Number).filter((id) => id > 0))];
+  if (!ids.length) {
+    toast('لا توجد فواتير جاهزة للترحيل');
+    return;
+  }
+  const queueIds = await queueInvoiceIds(ids);
+  if (!queueIds.length) {
+    toast('الفواتير مؤرشفة أو مرحّلة مسبقاً');
+    return;
+  }
+  const result = await postEdariSync({
+    kinds: ['invoice'],
+    itemIds: queueIds,
+    limit: Math.max(100, queueIds.length),
+    scope: adminAppScope() === 'delegate' ? 'delegate' : 'warehouse'
+  });
+  reportEdariSyncResult(result);
+  return result;
+}
+window.transferInvoicesNow = transferInvoicesNow;
+
 async function runEdariSyncTransfer({ kinds = null, itemIds = null } = {}) {
   if (!window.edariDesktop?.processEdariSync) {
-    toast('افتح تطبيق الإدارة على Windows للترحيل');
+    toast('الترحيل يعمل من تطبيق ويندوز فقط. ثبّت آخر نسخة من الشورجة أو المندوبين.');
     return;
   }
   let ids = itemIds && itemIds.length ? itemIds : (edariSyncSelected.size ? [...edariSyncSelected] : null);
@@ -626,28 +689,13 @@ async function runEdariSyncTransfer({ kinds = null, itemIds = null } = {}) {
         })
       });
     }
-    const result = await window.edariDesktop.processEdariSync({
+    const result = await postEdariSync({
       kinds: kinds || null,
       itemIds: ids,
-      limit: 100,
+      limit: Math.max(100, ids?.length || 100),
       scope: adminAppScope() === 'delegate' ? 'delegate' : 'warehouse'
     });
-    if (result?.skipped) {
-      const reasons = { busy: 'المزامنة قيد التشغيل', missing_sync_key: 'مفتاح المزامنة غير مضبوط', not_windows: 'يتطلب Windows' };
-      toast(reasons[result.reason] || 'تعذر الترحيل');
-      return;
-    }
-    if (result?.error) throw new Error(result.error);
-    const ok = result?.okCount ?? result?.processed ?? 0;
-    const fail = result?.failCount ?? 0;
-    const dbLabel = result?.edari?.alias ? ` على قاعدة ${result.edari.alias}` : ' على قاعدة 2026';
-    if (ok > 0) toast(`تم ترحيل ${ok} عنصر/عناصر${dbLabel}${fail ? ` — فشل ${fail}` : ''}`);
-    else if (fail > 0) {
-      const errMsg = (result?.results || []).find((r) => r && r.ok === false)?.error;
-      toast(errMsg ? `فشل الترحيل${dbLabel}: ${errMsg}` : `فشل ترحيل ${fail} عنصر/عناصر${dbLabel}`);
-    }
-    else toast('لا توجد عناصر للترحيل');
-    if (result?.edari) window.lastEdariConn = result.edari;
+    reportEdariSyncResult(result);
     edariSyncSelected.clear();
     await loadEdariSync();
     loadDashboard();
@@ -678,26 +726,33 @@ document.getElementById('btnEdariSelectPending')?.addEventListener('click', () =
   toast(`تم تحديد ${edariSyncSelected.size} عنصر`);
 });
 document.getElementById('btnEdariSyncRefresh')?.addEventListener('click', () => loadEdariSync());
+function pendingSyncIds(kind) {
+  const pool = filterSyncItemsByApp(edariSyncItems).filter((item) => {
+    if (kind && item.kind !== kind) return false;
+    if (edariSyncSelected.size && !edariSyncSelected.has(item.id)) return false;
+    return item.status === 'pending' || item.status === 'error';
+  });
+  return pool.map((item) => item.id);
+}
+
 document.getElementById('btnEdariSyncSelected')?.addEventListener('click', () => {
-  if (!edariSyncSelected.size) return toast('حدد عناصر من الجدول');
-  runEdariSyncTransfer({ itemIds: [...edariSyncSelected] });
+  const ids = pendingSyncIds('');
+  if (!ids.length) return toast('حدد عناصر معلّقة من الجدول');
+  runEdariSyncTransfer({ itemIds: ids });
 });
 document.getElementById('btnEdariSyncAccounts')?.addEventListener('click', () => {
-  const ids = edariSyncSelected.size
-    ? [...edariSyncSelected].filter((id) => edariSyncItems.find((i) => i.id === id && i.kind === 'account'))
-    : null;
+  const ids = pendingSyncIds('account');
+  if (!ids.length) return toast('لا توجد حسابات معلّقة للترحيل');
   runEdariSyncTransfer({ kinds: ['account'], itemIds: ids });
 });
 document.getElementById('btnEdariSyncInvoices')?.addEventListener('click', () => {
-  const ids = edariSyncSelected.size
-    ? [...edariSyncSelected].filter((id) => edariSyncItems.find((i) => i.id === id && i.kind === 'invoice'))
-    : null;
+  const ids = pendingSyncIds('invoice');
+  if (!ids.length) return toast('لا توجد فواتير معلّقة للترحيل');
   runEdariSyncTransfer({ kinds: ['invoice'], itemIds: ids });
 });
 document.getElementById('btnEdariSyncPayments')?.addEventListener('click', () => {
-  const ids = edariSyncSelected.size
-    ? [...edariSyncSelected].filter((id) => edariSyncItems.find((i) => i.id === id && i.kind === 'payment'))
-    : null;
+  const ids = pendingSyncIds('payment');
+  if (!ids.length) return toast('لا توجد تسديدات معلّقة للترحيل');
   runEdariSyncTransfer({ kinds: ['payment'], itemIds: ids });
 });
 
@@ -929,11 +984,13 @@ function bindPrepTableActions(tableEl) {
   });
   tableEl.querySelectorAll('[data-queue-edari]').forEach((btn) => {
     btn.addEventListener('click', async () => {
+      btn.disabled = true;
       try {
-        await api(`/admin/delegate-invoices/${btn.dataset.queueEdari}/queue-edari`, { method: 'POST' });
-        toast('أُضيفت الفاتورة لطابور الإداري — راجع «مزامنة الإداري» للترحيل');
+        await transferInvoicesNow([Number(btn.dataset.queueEdari)]);
         reloadActivePrepView();
+        loadEdariSync().catch(() => {});
       } catch (err) { toast(err.message); }
+      finally { btn.disabled = false; }
     });
   });
   tableEl.querySelectorAll('[data-archive-inv]').forEach((btn) => {
@@ -1075,11 +1132,13 @@ async function openInvoice(id) {
       </div>`;
     document.getElementById('invoiceModal').showModal();
     document.getElementById('btnInvQueueEdari')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btnInvQueueEdari');
+      if (btn) btn.disabled = true;
       try {
-        await api(`/admin/delegate-invoices/${id}/queue-edari`, { method: 'POST' });
-        toast('أُضيفت للطابور — راجع مزامنة الإداري');
+        await transferInvoicesNow([id]);
         openInvoice(id);
       } catch (err) { toast(err.message); }
+      finally { if (btn) btn.disabled = false; }
     });
     document.getElementById('btnInvArchiveEdari')?.addEventListener('click', async () => {
       await archiveInvoiceFromPrep(id);

@@ -1,9 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const { APP_SCOPE } = require('./app-scope');
 
 contextBridge.exposeInMainWorld('edariDesktop', {
   isDesktop: true,
-  appScope: APP_SCOPE,
   lookupEdariMaterial: (code) => ipcRenderer.invoke('lookup-edari-material', code),
   processEdariSync: (options) => ipcRenderer.invoke('process-edari-sync', options || {}),
   getEdariConnection: () => ipcRenderer.invoke('get-edari-connection'),

@@ -195,7 +195,8 @@ function createWindow() {
   const server = getServerUrl();
   const startPath = APP_SCOPE === 'delegate' ? '/delegates/' : '/admin/';
   const startUrl = `${server}${startPath}`;
-  const iconPath = path.join(__dirname, 'icon.png');
+  const iconPath = [path.join(__dirname, 'icon.ico'), path.join(__dirname, 'icon.png')]
+    .find((p) => fs.existsSync(p));
 
   const win = new BrowserWindow({
     width: 1200,
@@ -203,12 +204,13 @@ function createWindow() {
     minWidth: 960,
     minHeight: 600,
     title: APP_TITLE,
-    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: false
     }
   });
 

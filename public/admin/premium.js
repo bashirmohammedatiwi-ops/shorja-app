@@ -929,11 +929,8 @@
       const data = await api('/admin/warehouse-prep-invoices?limit=2000');
       const pending = (data.invoices || []).filter((i) => i.edariSyncStatus !== 'synced' && i.edariSyncStatus !== 'archived');
       if (!pending.length) { toast('لا توجد فواتير للترحيل'); return; }
-      if (!confirm(`ترحيل ${pending.length} فاتورة شورجة إلى طابور الإداري؟\nالمؤرشفة لن تُضاف.`)) return;
-      for (const inv of pending) {
-        await api(`/admin/delegate-invoices/${inv.id}/queue-edari`, { method: 'POST' });
-      }
-      toast(`تمت إضافة ${pending.length} فاتورة للطابور`);
+      if (!confirm(`ترحيل ${pending.length} فاتورة شورجة إلى الإداري؟`)) return;
+      await window.transferInvoicesNow(pending.map((inv) => inv.id));
       loadWarehousePrep();
     } catch (err) { toast(err.message); }
   });
@@ -1021,11 +1018,8 @@
       const data = await api('/admin/delegate-invoices?limit=5000');
       const pending = (data.invoices || []).filter((i) => i.edariSyncStatus !== 'synced' && i.edariSyncStatus !== 'archived');
       if (!pending.length) { toast('لا توجد فواتير للترحيل'); return; }
-      if (!confirm(`إضافة ${pending.length} فاتورة إلى طابور الإداري؟\nالمؤرشفة والمدخلة يدوياً لن تُضاف.`)) return;
-      for (const inv of pending) {
-        await api(`/admin/delegate-invoices/${inv.id}/queue-edari`, { method: 'POST' });
-      }
-      toast(`تمت إضافة ${pending.length} فاتورة للطابور`);
+      if (!confirm(`ترحيل ${pending.length} فاتورة مندوبين إلى الإداري؟`)) return;
+      await window.transferInvoicesNow(pending.map((inv) => inv.id));
       loadDelegates();
     } catch (err) { toast(err.message); }
   });

@@ -1,6 +1,6 @@
 {
   "name": "shorja-admin-desktop",
-  "version": "1.0.46",
+  "version": "1.0.48",
   "description": "شورجة — الإدارة (سطح المكتب)",
   "main": "main.js",
   "author": "Shorja",
@@ -13,7 +13,7 @@
     "appId": "com.shorja.admin",
     "productName": "Shorja Admin",
     "directories": {
-      "output": "dist-v146"
+      "output": "dist-v148"
     },
     "files": [
       "main.js",
@@ -24,7 +24,8 @@
       "edari-module-paths.js",
       "edari-product-import-worker.js",
       "server.json.example",
-      "icon.png"
+      "icon.png",
+      "icon.ico"
     ],
     "extraResources": [
       {
@@ -107,7 +108,7 @@
       }
     ],
     "win": {
-      "icon": "icon.png",
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": [
         {
@@ -122,9 +123,13 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "الشورجة"
+      "shortcutName": "الشورجة",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     },
-    "artifactName": "Shorja-Admin-Setup-${version}.${ext}"
+    "artifactName": "Shorja-Admin-Setup-${version}.${ext}",
+    "afterPack": "../scripts/after-pack-icon.js"
   },
   "devDependencies": {
     "electron": "^34.0.0",

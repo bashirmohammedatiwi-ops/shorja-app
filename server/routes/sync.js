@@ -53,7 +53,7 @@ router.post('/heartbeat/:branchId', authSyncKey, (req, res) => {
 });
 
 router.get('/edari/queue', authSyncKey, (req, res) => {
-  const limit = Math.min(200, Number(req.query.limit) || 50);
+  const limit = Math.min(5000, Number(req.query.limit) || 50);
   const scope = String(req.query.scope || '').trim();
   const scoped = scope === 'warehouse' || scope === 'delegate' ? scope : '';
   const kinds = req.query.kinds
