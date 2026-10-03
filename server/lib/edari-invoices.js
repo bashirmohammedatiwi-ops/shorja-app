@@ -876,7 +876,7 @@ async function createEdariInvoice(payload) {
 }
 
 async function finalizeInvoiceWrites() {
-  return syncAutoIncTables(['File15n', 'file14n', 'File12n', 'File13n']);
+  return syncAutoIncTables(['File15n', 'file14n', 'File12n']);
 }
 
 let localDb;

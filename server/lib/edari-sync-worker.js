@@ -168,7 +168,7 @@ async function runEdariSyncWorker({
     : (() => {
       const tables = [];
       if (sessionOpts.accounts) tables.push('File11n');
-      if (sessionOpts.invoices) tables.push('File15n', 'file14n', 'File12n', 'File13n');
+      if (sessionOpts.invoices) tables.push('File15n', 'file14n', 'File12n');
       if (sessionOpts.payments) tables.push('File12n');
       return [...new Set(tables)];
     })();
@@ -176,14 +176,27 @@ async function runEdariSyncWorker({
   logSync(`معالجة يدوية ${workItems.length} عنصر/عناصر`, { serverUrl: baseUrl, kinds: sessionKinds });
   const results = [];
 
+  const withTimeout = (promise, ms, label) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(label)), ms);
+    Promise.resolve(promise).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+
   try {
     const prep = prepareEdariWriteSession || finalizeEdariWriteSession;
     if (prep && sessionTables.length) {
-      await prep({
-        tables: sessionTables,
-        rebuildShorjaParent: sessionOpts.accounts
-      });
-      logSync('تهيئة آمنة قبل الترحيل (AUTOINC + Sub)', { tables: sessionTables });
+      try {
+        await withTimeout(
+          prep({ tables: sessionTables, rebuildShorjaParent: sessionOpts.accounts }),
+          20000,
+          'تهيئة الإداري تجاوزت 20 ثانية'
+        );
+        logSync('تهيئة آمنة قبل الترحيل (AUTOINC + Sub)', { tables: sessionTables });
+      } catch (err) {
+        logSync('متابعة الترحيل بدون انتظار التهيئة', err.message);
+      }
     }
 
     for (const item of workItems) {

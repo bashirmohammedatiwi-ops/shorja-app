@@ -127,7 +127,7 @@ async function runAccountMaintViaNxscript(params, connOverrides = {}) {
   const url = `${getNexusAdminUrl()}/${ACCOUNT_MAINT_SCRIPT}?${q.toString()}`;
   let response;
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+    response = await fetch(url, { signal: AbortSignal.timeout(8000) });
   } catch (err) {
     return { ok: false, error: `فشل الاتصال بـ nxServer: ${err.message}` };
   }

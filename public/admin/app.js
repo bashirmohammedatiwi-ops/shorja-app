@@ -589,8 +589,13 @@ async function postEdariSync(options) {
   }
   const result = await window.edariDesktop.processEdariSync(options);
   if (result?.skipped) {
+    if (result.reason === 'busy') {
+      const sec = Number(result.runningForSec || 0);
+      throw new Error(sec
+        ? `الترحيل يعمل الآن منذ ${sec} ثانية. انتظر انتهاء هذه الدفعة ولا تضغط الزر مرة أخرى.`
+        : 'الترحيل يعمل الآن. انتظر انتهاء هذه الدفعة ولا تضغط الزر مرة أخرى.');
+    }
     const reasons = {
-      busy: 'المزامنة قيد التشغيل',
       missing_sync_key: 'مفتاح المزامنة غير مضبوط في ملف server.json بجانب التطبيق',
       not_windows: 'يتطلب Windows',
       edari_writes_disabled: 'كتابة الإداري معطّلة على هذا الجهاز'
@@ -635,14 +640,7 @@ async function transferInvoicesNow(invoiceIds) {
     toast('الفواتير مؤرشفة أو مرحّلة مسبقاً');
     return;
   }
-  const result = await postEdariSync({
-    kinds: ['invoice'],
-    itemIds: queueIds,
-    limit: Math.max(100, queueIds.length),
-    scope: adminAppScope() === 'delegate' ? 'delegate' : 'warehouse'
-  });
-  reportEdariSyncResult(result);
-  return result;
+  return runEdariSyncTransfer({ kinds: ['invoice'], itemIds: queueIds });
 }
 window.transferInvoicesNow = transferInvoicesNow;
 
@@ -689,13 +687,33 @@ async function runEdariSyncTransfer({ kinds = null, itemIds = null } = {}) {
         })
       });
     }
-    const result = await postEdariSync({
-      kinds: kinds || null,
-      itemIds: ids,
-      limit: Math.max(100, ids?.length || 100),
-      scope: adminAppScope() === 'delegate' ? 'delegate' : 'warehouse'
-    });
-    reportEdariSyncResult(result);
+    const scope = adminAppScope() === 'delegate' ? 'delegate' : 'warehouse';
+    const chunks = [];
+    if (ids?.length) {
+      for (let i = 0; i < ids.length; i += 5) chunks.push(ids.slice(i, i + 5));
+    } else {
+      chunks.push(null);
+    }
+    let ok = 0;
+    let fail = 0;
+    let lastError = '';
+    toast(ids?.length > 5 ? `ترحيل ${ids.length} عنصراً على دفعات من 5` : 'بدء الترحيل');
+    for (let i = 0; i < chunks.length; i += 1) {
+      const slice = chunks[i];
+      if (chunks.length > 1) toast(`الدفعة ${i + 1} من ${chunks.length}`);
+      const result = await postEdariSync({
+        kinds: kinds || null,
+        itemIds: slice,
+        limit: slice ? slice.length : 5,
+        scope
+      });
+      ok += Number(result?.okCount || 0);
+      fail += Number(result?.failCount || 0);
+      const errMsg = (result?.results || []).find((r) => r && r.ok === false)?.error;
+      if (errMsg) lastError = errMsg;
+      if (result?.edari) window.lastEdariConn = result.edari;
+    }
+    reportEdariSyncResult({ okCount: ok, failCount: fail, results: lastError ? [{ ok: false, error: lastError }] : [] });
     edariSyncSelected.clear();
     await loadEdariSync();
     loadDashboard();

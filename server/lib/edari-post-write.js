@@ -103,7 +103,7 @@ async function prepareEdariWriteSession(options = {}) {
 function tablesForSessionKinds({ accounts = false, invoices = false, payments = false } = {}) {
   const tables = [];
   if (accounts) tables.push('File11n');
-  if (invoices) tables.push('File15n', 'file14n', 'File12n', 'File13n');
+  if (invoices) tables.push('File15n', 'file14n', 'File12n');
   if (payments) tables.push('File12n');
   return [...new Set(tables)];
 }

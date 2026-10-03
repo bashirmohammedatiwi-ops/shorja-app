@@ -111,9 +111,14 @@ ipcMain.handle('lookup-edari-material', async (_e, code) => {
 });
 
 let syncBusy = false;
+let syncStartedAt = 0;
 async function processEdariQueueLocal(options = {}) {
-  if (syncBusy) return { skipped: true, reason: 'busy' };
+  if (syncBusy) {
+    const runningForSec = Math.max(1, Math.round((Date.now() - syncStartedAt) / 1000));
+    return { skipped: true, reason: 'busy', runningForSec };
+  }
   syncBusy = true;
+  syncStartedAt = Date.now();
   try {
     const live = await applyEdariEnv();
     const worker = require('./edari-sync-worker');

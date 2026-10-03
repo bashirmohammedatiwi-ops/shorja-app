@@ -40,7 +40,11 @@ async function runQuery(sql, connOverrides = {}) {
   if (!odbcBridge) {
     return { ok: false, error: 'Edari reader غير متوفر — عيّن EDARI_READER_ROOT' };
   }
-  return odbcBridge.runQuery({ ...getEdariConnection(connOverrides), sql });
+  return odbcBridge.runQuery({
+    ...getEdariConnection(connOverrides),
+    sql,
+    timeoutMs: 8000
+  });
 }
 
 async function runExecuteOdbc(sql, connOverrides = {}) {
